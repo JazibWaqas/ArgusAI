@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
@@ -31,6 +31,7 @@ class ForensicReport(BaseModel):
     explanation: str
     score_breakdown: ScoreBreakdown
     evidence: EvidenceProfile
+    pipeline_health: dict[str, Any] = Field(default_factory=dict)
     generated_at: datetime
 
     @staticmethod

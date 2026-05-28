@@ -5,13 +5,22 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 import numpy as np
-import torch
 from PIL import Image
 
 from ..core.config import settings
 from ..models.evidence import EvidenceSignal, SignalStatus, SignalSupport
 from .base import Detector
-from .spectral_model import SpectralFusionModel, load_state_dict_from_path
+
+try:
+    import torch
+    from .spectral_model import SpectralFusionModel, load_state_dict_from_path
+except Exception as exc:
+    torch = None  # type: ignore[assignment]
+    SpectralFusionModel = None  # type: ignore[assignment]
+    load_state_dict_from_path = None  # type: ignore[assignment]
+    _TORCH_IMPORT_ERROR = str(exc)
+else:
+    _TORCH_IMPORT_ERROR = None
 
 
 class SpectralArtifactDetector(Detector):
@@ -23,6 +32,7 @@ class SpectralArtifactDetector(Detector):
     _model_error: Optional[str] = None
     _model_health_error: Optional[str] = None
     _model_health_notes: Optional[str] = None
+    _model_health_gap: Optional[float] = None
     _resolved_ai_index: Optional[int] = None
 
     def _preprocess_image(self, image: Image.Image) -> torch.Tensor:
@@ -98,6 +108,7 @@ class SpectralArtifactDetector(Detector):
                     collapse = is_collapsed
 
             if best_gap < 0.15 or collapse:
+                self._model_health_gap = best_gap
                 self._model_health_error = (
                     "Reference self-test failed: the spectral model does not separate local real and AI samples."
                 )
@@ -120,6 +131,10 @@ class SpectralArtifactDetector(Detector):
 
     def _load_model(self, model_path: str) -> Optional[str]:
         if self._model is not None or self._model_error is not None:
+            return self._model_error
+
+        if torch is None or SpectralFusionModel is None or load_state_dict_from_path is None:
+            self._model_error = f"PyTorch spectral runtime is unavailable: {_TORCH_IMPORT_ERROR or 'torch import failed'}"
             return self._model_error
 
         try:
@@ -200,6 +215,11 @@ class SpectralArtifactDetector(Detector):
                 why_it_matters="A broken spectral model can wrongly push the whole report toward AI generation.",
                 caveat="This is a model health issue, not evidence about the uploaded image.",
                 observations=observations,
+                metrics={
+                    "circuit_breaker": True,
+                    "circuit_breaker_reason": "reference_self_test_failed",
+                    "gap_score": self._model_health_gap,
+                },
                 supports=SignalSupport.UNKNOWN,
                 notes="Replace the checkpoint or align the inference model with the original training/export pipeline.",
             )

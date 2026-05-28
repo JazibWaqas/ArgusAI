@@ -1,42 +1,65 @@
 # ArgusAI
 
-Explainable forensic verification for AI-generated images.
+Forensic investigation platform for image authenticity.
 
-## Current Status
+ArgusAI is not a single-score deepfake detector. It runs seven parallel forensic detectors, builds an evidence trail, investigates public provenance with Gemini grounding, and uses Arize Phoenix as the audit layer for detector health.
 
-**✅ Fully Functional Implementation**
-- 7 forensic detectors with parallel processing
-- FastAPI backend with async pipeline
-- React chat UI (analyze + optional context, follow-up questions)
-- In-memory sessions for chat and last report
-- OSINT: Gemini Google Search grounding when enabled, DuckDuckGo fallback
-- LLM-powered reasoning (Gemini/Groq)
-- Evidence-based explanations
-- Each signal includes `verdict_influence_percent`: share of total weighted evidence mass after reasoning (UI bar), not raw detector reliability alone
-- X-ray performance logging
+## Hackathon Build Status
 
-## Quick start
+Target event: Google Cloud Rapid Agent Hackathon, Arize partner track.
 
-### Backend Setup
+Current implementation:
+
+- FastAPI backend with session analysis, follow-up chat, PDF reports, and Agent Builder-facing endpoints.
+- React/Vite frontend with upload flow, animated analysis, signal cards, OSINT research details, Arize health badge, and PDF export.
+- Seven detectors running in parallel: spectral, metadata, noise, lighting, semantic vision, ELA, and OSINT.
+- Gemini-only AI stack for semantic analysis, OSINT synthesis, grounded research, report narratives, and chat follow-ups.
+- Arize Phoenix/OpenTelemetry instrumentation for root analysis traces and detector child spans.
+- Arize reliability governor: circuit-breaker events are not passive logs. They mark a detector unhealthy and remove it from future verdict influence during the health TTL.
+- OSINT research agent output: research hops, earliest appearance candidate, fact-check sources, timeline contradiction, search queries, and optional reverse-image matches when the user provides a public image URL.
+
+Still required outside code:
+
+- Deploy to Google Cloud Run.
+- Configure Google Cloud Agent Builder tools against `/agent/analyze` and `/agent/chat`.
+- Create Phoenix Cloud space and set the Phoenix env vars.
+- Connect the official Phoenix MCP server using `mcp/phoenix-mcp.json` for prompts/datasets/experiments.
+- Record the 3-minute demo.
+- Confirm whether model weights can be redistributed based on training dataset licenses.
+
+## Core Story
+
+The winning demo framing is:
+
+> ArgusAI investigates images like a forensic newsroom. It checks the pixels, checks the physics, checks the file, checks the live web, and checks whether its own detectors are healthy enough to vote.
+
+The Arize integration is intentionally load-bearing. If the spectral detector fails its reference self-test, Phoenix receives the circuit-breaker trace, the reliability governor records the health event, and the verdict is based on the remaining signals. Removing Arize removes the audit trail and health governance story.
+
+## API
+
+- `GET /health` - runtime status, detector list, LLM readiness, Phoenix tracing state, detector governor state.
+- `GET /arize/health` - compact status for the frontend Arize badge.
+- `POST /sessions` - create an in-memory session.
+- `POST /sessions/{session_id}/analyze` - multipart `file`, optional `context`; returns full forensic report.
+- `POST /sessions/{session_id}/messages` - follow-up question about the last report.
+- `POST /analyze` - direct full analysis without a session.
+- `POST /agent/analyze` - Agent Builder-friendly analysis response with simplified schema.
+- `POST /agent/chat` - Agent Builder-friendly follow-up endpoint.
+- `GET /sessions/{session_id}/report.pdf` - PDF export for a session.
+- `POST /reports/official.pdf` - PDF export from a report JSON payload.
+
+## Local Setup
+
+Backend:
 
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\pip install -r backend\requirements.txt
-```
-
-Copy environment values and add API keys as needed:
-
-```powershell
 Copy-Item .env.example .env
-```
-
-Run the backend:
-
-```powershell
 .\.venv\Scripts\uvicorn backend.app.main:app --reload
 ```
 
-### Frontend Setup
+Frontend:
 
 ```powershell
 cd frontend
@@ -44,103 +67,53 @@ npm install
 npm run dev
 ```
 
-Set the API URL if needed:
+Set `VITE_API_BASE=http://localhost:8000` if needed.
 
-```
-VITE_API_BASE=http://localhost:8000
-```
+## Environment
 
-## Deploy on Render
+See `.env.example`.
 
-This repo includes `render.yaml` (Blueprint): one **Python web service** (`argusai-backend`) and one **static site** (`argusai-frontend`). Connect the repo and apply the blueprint from your Render account (sign-in and Git access are required).
+Important variables:
 
-1. Push the repo to GitHub (or GitLab/Bitbucket that Render supports).
-2. In [Render](https://dashboard.render.com): **New** → **Blueprint** → connect the repository → apply `render.yaml`.
-3. On the **backend** service, open **Environment** and add secrets (not committed to git): at minimum `GEMINI_API_KEY` and usually `GROQ_API_KEY` for full behavior. See **API Configuration** above. Redeploy after saving.
-4. The static site build uses `VITE_API_BASE=https://argusai-backend.onrender.com` (see `render.yaml`). If you **rename** the backend service, set `VITE_API_BASE` on the static site to `https://<your-backend-service-name>.onrender.com` and redeploy the frontend.
+- `GEMINI_API_KEY` - required for semantic vision, OSINT grounding, narrative explanation, and chat.
+- `PHOENIX_API_KEY` and `PHOENIX_COLLECTOR_ENDPOINT` - enable Phoenix tracing.
+- `PHOENIX_DASHBOARD_URL` - shown in the frontend Arize badge.
+- `SERPAPI_KEY` - optional reverse-image enrichment when the user includes a public image URL in context.
+- `ARIZE_HEALTH_GOVERNOR=1` - keeps detector health events load-bearing.
+- `SPECTRAL_MODEL_PATH=argusai_fuse_best` - spectral model directory or checkpoint path.
 
-**Notes:** Free instances sleep when idle (cold start). PyTorch plus the spectral model can be tight on memory; if the backend crashes on analyze, upgrade the web service plan or consider hosting the spectral model elsewhere. Ensure `argusai_fuse_best` (directory checkpoint) or a `.pth` weight file is present where `SPECTRAL_MODEL_PATH` points; large checkpoints can use Git LFS or an external asset if the repo should stay small.
+## Detector Notes
 
-Render’s default Python is often **3.14+**; `pydantic-core` may then build from source (Rust) and fail on their builders. This repo includes **`.python-version`** (`3.12`) so pip installs wheels. Alternatively set **`PYTHON_VERSION`** on the web service to a full version like `3.12.8` (overrides the file).
+The spectral detector has the most important reliability behavior. On load, it can run a small reference self-test against local real/AI folders. If the class gap collapses, it returns a circuit-breaker signal:
 
-## API (testing)
+- `circuit_breaker=True`
+- `circuit_breaker_reason=reference_self_test_failed`
+- `gap_score=<measured gap>`
 
-- `POST /sessions` — create a session id (in-memory).
-- `POST /sessions/{session_id}/analyze` — multipart form: `file` (image), optional `context` (user text for OSINT and pipeline).
-- `POST /sessions/{session_id}/messages` — JSON `{ "message": "..." }` follow-up about the last report (requires a prior analyze in that session).
-- `POST /analyze` — multipart: `file`, optional `context` (same pipeline as above, no session).
+The pipeline traces that event to Phoenix and records it in `logs/arize/detector_health.json`. While active, future analyses treat the detector as unavailable so it cannot influence the verdict.
 
-## Implemented Detectors
+## Deployment Notes
 
-The system currently runs 7 parallel forensic detectors:
+Cloud Run should use CPU PyTorch and at least 2GiB memory. For demo reliability, 4GiB and one warm instance are safer.
 
-1. **Spectral Analysis** - CNN-based frequency artifact detection
-2. **Metadata Analysis** - EXIF data and provenance verification  
-3. **Noise Pattern Analysis** - Thermal noise and sensor consistency
-4. **Lighting Consistency** - Physical lighting and shadow analysis
-5. **Semantic Analysis** - LLM-powered logical inconsistency detection
-6. **Error Level Analysis** - JPEG compression artifact analysis
-7. **OSINT Verification** - Grounded Google Search (Gemini tool) when enabled, else DuckDuckGo + LLM synthesis
+The Dockerfile exists, but before final deployment:
 
-## Spectral model setup
+- Build and run the container locally.
+- Confirm the spectral model path works inside the image.
+- Decide whether weights are shipped by Git LFS or downloaded from Cloud Storage at startup.
+- Set `SPECTRAL_REFERENCE_REAL_DIR=""` and `SPECTRAL_REFERENCE_AI_DIR=""` in Cloud Run if reference images are not packaged.
 
-The spectral model is expected as a directory (default: `argusai_fuse_best/`) containing the PyTorch
-state dictionary files. Install PyTorch CPU with:
+## Demo Plan
 
-```powershell
-.\.venv\Scripts\pip install torch --index-url https://download.pytorch.org/whl/cpu
-```
+Use one image: the viral Pope Francis white puffer jacket image.
 
-Update `.env` if your model path differs:
+Flow:
 
-```
-SPECTRAL_MODEL_PATH=argusai_fuse_best
-```
+1. Upload image with context: `Is this a real photo of Pope Francis in a white puffer jacket?`
+2. Show seven detectors running.
+3. Open OSINT card: research hops, named fact-checkers, dates, provenance.
+4. Show verdict and detector influence.
+5. Show Arize badge and Phoenix trace.
+6. Show a prepared circuit-breaker trace where spectral self-test failed and ArgusAI removed that detector from the verdict.
 
-Before trusting a new checkpoint, validate it against local real/AI folders:
-
-```powershell
-.\.venv\Scripts\python scripts\validate_spectral_model.py
-```
-
-Full-folder evaluation (local weights only, no API keys): runs `SpectralFusionModel` on every image under `Images Dataset/Real Images` and `Images Dataset/AI Images`, writes `summary.json`, `report.txt`, and figures (`confusion_matrix.png`, `prob_ai_histogram.png`, `roc.png`) to `spectral_eval_out/` by default:
-
-```powershell
-.\.venv\Scripts\python scripts\evaluate_spectral_dataset.py
-```
-
-The backend now also runs a small reference self-test when local real/AI folders are available. If the spectral checkpoint behaves like a one-class model, the detector disables itself instead of influencing the final verdict.
-
-## API Configuration
-
-- `GEMINI_API_KEY` — **Vision + structured tasks**: semantic detector (image JSON), OSINT query generation, OSINT synthesis when not using grounding, and **grounded OSINT** (`google_search` tool on `GEMINI_GROUNDING_MODEL`). In `.env` you can repeat `GEMINI_API_KEY=` on multiple lines (one key per line); the client rotates on HTTP 429. With no `.env` (e.g. Render), use one key in the service environment.
-- `GEMINI_GROUNDING_MODEL` — Model for OSINT with Google Search. Recommended: `gemini-3-flash-preview`.
-- `GEMINI_FALLBACK_MODEL` — Automatic Gemini fallback used when the primary model name is unavailable for a request. Recommended fallback: `gemini-2.5-flash`.
-- `OSINT_USE_GROUNDING` — Set to `0` to use DuckDuckGo + Gemini synthesis instead of grounded search.
-- `GROQ_API_KEY` — **Final report narrative** (Investigator’s Summary): default provider is Groq (`LLM_EXPLANATION_PROVIDER=groq`) for longer, clearer prose. Chat follow-ups use Groq first when this is set to `groq`.
-- `LLM_EXPLANATION_PROVIDER` — `groq` (default) or `gemini` for the main written explanation only.
-- `LLM_EXPLANATION_MAX_TOKENS` — Cap for that narrative (default `900`).
-
-## Notes
-
-- Keep API keys only in environment variables or your host’s secret store. The backend calls Gemini with the `x-goog-api-key` header (not `?key=` in the URL) so HTTP client error text does not embed the key. Error strings shown to users or written into reports are still scrubbed as a second line of defense. `.gitignore` only skips `logs/xray/` (high-volume traces), `spectral_eval_out/`, frontend build dirs, and secrets—spectral weights and shared datasets can be committed; use Git LFS if files are very large.
-- If any Gemini key was ever pushed in a file or CI log, revoke it in Google AI Studio and create a new key; git history may still contain old material until rewritten.
-- If `GEMINI_API_KEY` is not set, the semantic detector and Gemini-dependent OSINT paths are degraded or unavailable.
-- If `GROQ_API_KEY` is not set while `LLM_EXPLANATION_PROVIDER=groq`, the main narrative falls back to the built-in template (or set provider to `gemini` if you only have Gemini).
-- The spectral model loads from `SPECTRAL_MODEL_PATH` (default `argusai_fuse_best/`).
-- `GET /health` now exposes non-secret runtime diagnostics including selected Gemini/Groq models, key availability, detector registration, and the configured spectral model path.
-- ELA heatmaps are generated as part of the forensic signals and included in the response.
-- All detectors run in parallel with performance tracking logged to `logs/xray/`.
-- The system produces three possible verdicts: `LIKELY_AUTHENTIC`, `LIKELY_AI_GENERATED`, or `INCONCLUSIVE`.
-
-## Recent Updates (2026-03-24)
-
-- **Chat UI + sessions** — Frontend uses `POST /sessions` and session-scoped analyze; optional context field; follow-up messages against the last report.
-- **Pipeline context** — Optional `user_context` is passed to detectors (OSINT uses it for grounding and DDG queries).
-- **OSINT grounding** — Primary path uses Gemini `google_search` tool + JSON synthesis; falls back to DuckDuckGo if grounding fails or `OSINT_USE_GROUNDING=0`.
-- **Six‑Lens Spectral Model** – `SpectralFusionModel` now implements six parallel branches (ConvNeXt, FFT, SRM, Chroma (YCbCr), SPAI, Robustness) and a 1792‑dim fusion head. The model loads cleanly from `argusai_fuse_best/`.
-- **Grayscale conversion** – Uses BT.601 luma weights (`0.299, 0.587, 0.114`) instead of uniform ones.
-- **Environment** – `SPECTRAL_AI_INDEX` should be `1` because the current fine-tuned model uses `0=Real, 1=AI`.
-- **Semantic Detector** – LLM prompt now explicitly checks for AI watermarks; confidence‑driven `supports` mapping added.
-- **Reliability weighting** – Semantic signal reliability boosts to `0.9` when confidence > 0.9 (e.g., watermark detection).
-- **Verification script** – `test_full_model.py` validates weight loading and forward pass.
+Do not spend demo time on PDF export, raw JSON, or multiple images.

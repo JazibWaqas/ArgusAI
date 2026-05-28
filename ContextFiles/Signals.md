@@ -1,92 +1,79 @@
-# ArgusAI Analysis Engine: Signal Master Library
+# ArgusAI Signals
 
-**✅ FULLY IMPLEMENTED** - All 7 signals are operational and integrated into the analysis pipeline.
+Last updated: May 28, 2026.
 
-The ArgusAI Architecture does not rely on a single primitive "AI vs Real" classifier. Modern generative models (like Midjourney, Flux, and Sora) can easily defeat isolated checks by injecting artificial film grain or scrubbing frequency anomalies. 
+ArgusAI uses seven evidence signals. The goal is not to make each signal perfect. The goal is to make each signal explicit, weighted, and auditable.
 
-To achieve absolute reliability, ArgusAI utilizes a **Multi-Modal Forensics Pipeline**. It extracts 7 independent forensic Signals (ranging from invisible mathematical anomalies to live global web scraping), scoring each with a calculated `Reliability Weight`. A Central LLM Reasoning Engine then calculates the physical consensus.
+## 1. Spectral Artifacts
 
----
+File: `backend/app/detectors/spectral.py`
 
-## Implementation Status
+Custom Six-Lens PyTorch model:
 
-All signals are implemented in `backend/app/detectors/` and run in parallel via `asyncio.gather()`:
+- ConvNeXt texture branch.
+- FFT frequency branch.
+- SRM residual branch.
+- Chroma/YCbCr branch.
+- SPAI spatial predictability branch.
+- Robustness perturbation branch.
 
-1. ✅ **Spectral Artifacts** (`spectral.py`) - CNN-based frequency analysis
-2. ✅ **Error Level Analysis** (`ela.py`) - JPEG compression artifact detection  
-3. ✅ **Thermal Noise & Sensor** (`noise.py`) - Variance and convolution analysis
-4. ✅ **Lighting Physics** (`lighting.py`) - Luminance topography analysis
-5. ✅ **Metadata Integrity** (`metadata.py`) - EXIF data parsing
-6. ✅ **Semantic Consistency** (`semantic.py`) - LLM vision analysis
-7. ✅ **Open Source Intelligence** (`osint.py`) - Web scraping verification
+Most important hackathon behavior: reference self-test. If the model collapses or fails to separate local real/AI references, it emits a circuit-breaker signal and does not influence the verdict.
 
----
+## 2. Metadata and Provenance
 
-## 1. Topographical & Frequency Signals
-### Spectral Artifacts (`spectral.py`)
-* **Core Technology:** **Six-Lens Spectral Fusion Model**
-* **Implementation:** Parallel feature extraction branches (ConvNeXt-Small, FFT/Frequency, SRM, Chroma (YCbCr), SPAI, and Robustness branches) fused into a 1792-dim head.
-* **How it Works:** Generative AI creates images procedurally. This mathematically leaves invisible artifacts in several domains (not just Fourier). The Six-Lens model scrutinizes the image through multiple filters simultaneously to catch even subtle GAN and Diffusion footprints.
-* **Reliability (0.7-0.9):** High reliability across a wide range of models. The SRM and Chroma branches are particularly effective against modern diffusion models that attempt to hide frequency signatures.
+File: `backend/app/detectors/metadata.py`
 
-### Error Level Analysis / ELA (`forensic.py`)
-* **Core Technology:** JPEG Recompression Delta Math
-* **Implementation:** PIL-based recompression at 90% quality with numpy subtraction
-* **How it Works:** Real photographs compress at uniform rates based on optical complexity. ELA re-saves an image at 90% quality and subtracts it from the original. Edited or AI-spliced images will reveal massive glowing edge anomalies in the generated "Heatmap" because their localized compression artifacts are mismatched.
-* **Reliability (0.4-0.6):** Great for catching "photoshopped" or altered authentic images (like pasting a fake face onto a real body). Weak against 100% cleanly generated virgin AI images.
+Reads EXIF metadata and looks for camera traces, software traces, and explicit generative-tool fingerprints such as Midjourney, DALL-E, Stable Diffusion, ComfyUI, or OpenAI.
 
----
+## 3. Noise Pattern Analysis
 
-## 2. Optical Physics & Hardware Constraints
-### Thermal Noise & Sensor Consistency (`noise.py`)
-* **Core Technology:** Mathematical Variance & Laplacian Convolution Matrices
-* **Implementation:** Uses `cv2.Laplacian()` and numpy variance calculations
-* **How it Works:** Real optical cameras possess CCD/CMOS sensors that generate physical heat. This leaves a uniform, globally consistent "thermal grain" across every pixel. Procedural AI creates mathematically perfect gradients, resulting in spatial "dead zones" of zero variance. 
-* **The Counter-Attack:** SOTA AI now injects "simulated film grain". The engine counters this by checking the total standard deviation; if artificial noise is purely uniform but lacks optical depth variation, the engine flags it.
-* **Reliability (0.5-0.7):** Highly reliable against smooth AI generations, but easily confused by low-light authentic smartphone photos or heavy noise-reduction filters.
+File: `backend/app/detectors/noise.py`
 
-### Lighting Physics & Contrast Geometry (`lighting.py`)
-* **Core Technology:** Lighting Consistency (Grayscale Histograms)
-* **Implementation:** PIL grayscale conversion with numpy histogram analysis
-* **How it Works:** Real-world light follows the inverse-square law. Generative AI frequently struggles with extreme dynamic range, relying on mathematically constrained "HDR" aesthetics. ArgusAI measures crushed blacks (pixel value 0) against clipped highlights (pixel value 255) to see if the global illumination profile physically obeys geometry.
-* **Reliability (0.3-0.5):** Used mostly as a supporting signal. Heavily manipulated studio photography can trigger false positives here.
+Measures sensor-noise-like texture, high-frequency energy, variance, and smooth dead zones. Real cameras leave baseline noise. AI images often become too smooth or add artificial grain inconsistently.
 
----
+## 4. Lighting Consistency
 
-## 3. Provenance & Logic 
-### Metadata Integrity (`metadata.py`)
-* **Core Technology:** ExifTag Parsing
-* **Implementation:** Uses `PIL.ExifTags` and `PIL.Image` metadata extraction
-* **How it Works:** Extracts embedded raw strings from the image. Authentic images carry Apple/Samsung hardware IDs, GPS tags, and shutter speeds. AI images have absolutely nothing, or explicitly read "Generated by Midjourney".
-* **Reliability (0.1-1.0):** If it literally says "Generated by AI", reliability is 1.0. If metadata is simply blank, reliability ranks lower (0.3), because social media websites (like Twitter/Instagram) completely obliterate EXIF tags during upload compression.
+File: `backend/app/detectors/lighting.py`
 
-### Semantic & Physical Consistency (`semantic.py`)
-* **Core Technology:** Multi-Modal LLM Vision (Gemini 3.0 / 2.0 Flash)
-* **Implementation:** Uses rotating API keys (Gemini/Groq) with detailed logical forensic prompts.
-* **How it Works:** The primary counter-measure to mathematically perfect AI textures. A sophisticated image might fake noise correctly, but the Semantic engine looks at the *logic of the scene*. It actively hunts for non-Euclidean background geometry, 6-fingered hands, gibberish street signs, impossible shadows, and warped pupil reflections.
-* **Reliability (0.8-0.95):** The system's logical "safety net." Reliability boosts to 0.95 when explicit AI watermarks or nonsensical anatomical artifacts are detected with high confidence.
+Measures dynamic range, clipping, crushed shadows, and regional contrast. This detects suspiciously perfect exposure as well as authentic camera clipping.
 
----
+## 5. Semantic and Physical Consistency
 
-## 4. The Reality Anchor: Live OSINT
-### Open Source Intelligence / Fact-Checking (`osint.py`)
-* **Core Technology:** **Grounded Google Search** (Gemini) + Multi-Vector DDGS Scraping
-* **Implementation:** Uses Gemini `google_search` tool for authoritative grounding, with DuckDuckGo synthesis as a fallback.
-* **How it Works:** The "Digital Witness" module. 
-    1. It analyzes the visual context and user prompts to identify specific events or people.
-    2. It executes direct searches via Google Search grounding to find news verification or Snopes debunks.
-    3. If generic, it performs a broad sweep using DuckDuckGo to identify if the image is part of a known viral AI-generation trend.
-* **Reliability (0.98):** Irrefutable contextual anchoring. Even if a deepfake is mathematically perfect, a confirmation that the event never occurred (or that the image is a known viral parody) effectively settles the verdict.
+File: `backend/app/detectors/semantic.py`
 
----
+Uses Gemini vision to inspect visible scene logic: hands, shadows, geometry, text, logos, watermarks, and impossible materials. This is the most human-readable image-only signal.
 
-## The Verdict Engine (engine.py)
-**Implementation:** `backend/app/reasoning/engine.py`
+## 6. Error Level Analysis
 
-Once all 7 signals are extracted, the `ReasoningEngine` aggregates their raw weights based on their individual reliabilities. If the AI score outweighs the Authentic score heavily, it declares `LIKELY_AI_GENERATED`. It then pipes the raw math into the final Executive LLM to generate the warm, human-readable paragraph that explains exactly *why* the physics failed.
+File: `backend/app/detectors/ela.py`
 
-**Current Verdict Logic:**
-- Aggregate reliability scores for authentic vs AI-generated evidence
-- Handle conflicts with INCONCLUSIVE verdicts when scores are balanced
-- Generate explanations via LLM with fallback templates
-- Always provide reasoning, never just a probability score
+Re-saves the image and measures compression residuals. Produces a base64 PNG heatmap for the UI. ELA is weak for AI-vs-real directly, but useful for edits, composites, and localized tampering.
+
+## 7. OSINT Verification
+
+File: `backend/app/detectors/osint.py`
+
+Uses Gemini grounded search as a provenance research agent. Output includes:
+
+- research hops
+- earliest web appearance candidate
+- named fact-check sources
+- source URLs and dates
+- timeline contradiction
+- search queries
+- optional reverse-image matches when a public image URL is supplied
+
+This is the headline user-facing feature for the demo.
+
+## Aggregation
+
+File: `backend/app/reasoning/engine.py`
+
+Each signal is weighted by:
+
+- strategic importance
+- reliability
+- status factor
+- directional confidence
+
+Signals with `error` or `unavailable` status contribute zero. That is what makes the Arize reliability governor load-bearing: an unhealthy detector is not allowed to keep voting.

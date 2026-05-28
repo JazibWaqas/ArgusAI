@@ -1,106 +1,42 @@
 # ArgusAI Implementation Progress
 
-**Last Updated:** April 20, 2026
+Last updated: May 28, 2026
 
----
+## Current Status
 
-## Executive Summary
+ArgusAI is now a hackathon-oriented forensic investigation platform with the core Arize and OSINT upgrades implemented in code.
 
-ArgusAI has evolved from conceptual design to a **fully functional explainable forensic verification system**. The project has reached its target maturity with the integration of multi-signal parallel processing, LLM-driven reasoning, and live OSINT grounding.
+The main strategic change from the earlier version: Arize is no longer treated as passive logging. The pipeline now has a detector health governor that records circuit-breaker events and removes unhealthy detectors from future verdict influence during the configured TTL.
 
-**Status: ✅ MISSION ACCOMPLISHED (v1.0 Ready)**
+## Completed
 
----
+- Seven-detector FastAPI analysis pipeline.
+- Weighted evidence reasoning engine.
+- Gemini-only LLM stack for vision, OSINT, report narrative, and chat.
+- React/Vite frontend with forensic signal cards, ELA heatmap, chat, and PDF export.
+- Phoenix/OpenTelemetry tracing wrapper.
+- Root analysis span and detector child spans.
+- Spectral circuit-breaker attributes: `circuit_breaker`, `circuit_breaker_reason`, `gap_score`.
+- File-backed Arize reliability governor at `logs/arize/detector_health.json`.
+- `/arize/health` endpoint for UI and demo.
+- Frontend Arize badge.
+- OSINT research-agent output with research hops, fact-check sources, earliest appearance candidate, timeline contradiction, and optional reverse-image matches.
+- Agent Builder-facing endpoints: `/agent/analyze` and `/agent/chat`.
+- `.env.example`.
+- README and handoff docs updated.
 
-## Core Implementation Status
+## Verification Performed In This Session
 
-### ✅ Complete - All Major Components Implemented
+- Frontend production build passed with `npm run build`.
+- Python files compiled with `python -m compileall backend/app`.
+- Backend app import passed after making optional detector dependencies degrade gracefully.
+- A synthetic 64x64 PNG analysis completed through the registered FastAPI pipeline and returned 7 signals. The spectral detector reported `error` because the local environment did not have the PyTorch spectral runtime installed.
 
-#### Backend Infrastructure
-- **FastAPI Server** (`backend/app/main.py`) - Async REST API with session-based chat and PDF reporting.
-- **Analysis Pipeline** (`backend/app/core/pipeline.py`) - Parallel detector execution with X-ray diagnostics.
-- **Reasoning Engine** (`backend/app/reasoning/engine.py`) - Weighted evidence synthesis with LLM narrative generation.
-- **Data Models** (`backend/app/models/`) - Pydantic v2 validation for reports and sessions.
-- **Session Store** (`backend/app/chat/store.py`) - In-memory persistence for multi-turn forensic chat.
+## Remaining
 
-#### Detection System (State-of-the-Art)
-All 7 forensic detectors are fully implemented:
-
-1. **Spectral Analysis** (`spectral.py`) - **Six-Lens Fusion Model** (ConvNeXt, FFT, SRM, Chroma, SPAI, Robustness).
-2. **Metadata Analysis** (`metadata.py`) - EXIF parsing + AI generator signature detection (Midjourney, DALL-E, Adobe).
-3. **Noise Pattern Analysis** (`noise.py`) - Thermal variance + Laplacian consistency (counts synthetic film grain).
-4. **Lighting Consistency** (`lighting.py`) - Luminance topography and physical lighting geometry.
-5. **Semantic Analysis** (`semantic.py`) - LLM-powered visual logic (anatomical anomalies, impossible geometry).
-6. **Error Level Analysis** (`ela.py`) - JPEG compression delta artifacting.
-7. **OSINT Verification** (`osint.py`) - **Grounded Google Search** (via Gemini) + DuckDuckGo fallback.
-
-#### Frontend Application
-- **React UI** (`frontend/src/App.jsx`) - Premium dark-mode interface with evidence visualization.
-- **Chat Interface** - Session-scoped follow-ups to discuss specific forensic evidence.
-- **Live Analysis** - Real-time progress tracking of parallel detector threads.
-- **Forensic PDF** - Official investigation reports available for local export.
-
----
-
-## Technical Achievements
-
-### Architecture Realization
-- ✅ **Six-Lens Spectral Fusion:** Advanced mathematical branch fusion for robust frequency detection.
-- ✅ **Grounded OSINT:** Direct web-fact-checking via Gemini tool grounding.
-- ✅ **Explainable Reasoning:** LLM narratives that explain the "physics" of the verdict.
-- ✅ **Three-verdict system**: Authentic, AI-generated, Inconclusive.
-- ✅ **X-Ray Logging**: Transparent execution traces for every upload.
-
-### Performance & Reliability
-- ✅ **Parallel execution** reduces complex 7-layer analysis to < 10 seconds.
-- ✅ **Error isolation** ensures that if one provider (e.g. Groq) fails, the system falls back gracefully.
-- ✅ **Spectral Self-Test**: Automatic sanity checks of ML weights against local reference bags.
-
----
-
-## Current Capabilities
-
-### What ArgusAI Can Do Right Now
-
-1. **Analyze uploaded images** across 7 forensic dimensions concurrently.
-2. **Generate structured evidence** with reliability weights and explainability tokens.
-3. **Explain conclusions** in plain English via the Reasoning Engine.
-4. **Perform live OSINT** to verify if an image is a known viral deepfake.
-5. **Session-based Chat:** Allow users to ask follow-ups like "Why is the lighting inconsistent?"
-6. **PDF Generation:** Export official-looking forensic reports.
-
----
-
-## Deployment Status
-
-### Production Readiness
-- ✅ **Render-ready** via `render.yaml` blueprint.
-- ✅ **Environment-driven** configuration for Gemini/Groq rotation.
-- ✅ **Secure Logging**: X-ray traces scrubbed of API keys.
-
----
-
-## Documentation Alignment
-
-All project documentation reflects the April 2026 production state:
-
-- ✅ **README.md** - Current setup and capabilities.
-- ✅ **Architecture.md** - Details of the Six-Lens and Grounded pipeline.
-- ✅ **Signals.md** - Technical breakdown of the 7-detector methodology.
-- ✅ **EvidenceSchema.md** - Reflects explainability fields and session models.
-
----
-
-## Quality Assurance
-
-### Testing Coverage
-- ✅ **Verification Scripts**: `test_full_model.py` and `validate_spectral_model.py` ensure ML health.
-- ✅ **Health Check**: `/health` endpoint exposes real-time detector and key status.
-
----
-
-## Conclusion
-
-ArgusAI is no longer an experiment; it is a mature, production-ready system for explainable image forensics. The platform successfully bridges the gap between invisible mathematical anomalies and human-interpretable reasoning, providing a powerful tool for visual verification.
-
-**Project Status: MISSION ACCOMPLISHED** ✅
+- Install backend dependencies in the target environment and run a full analysis.
+- Deploy to Cloud Run.
+- Configure Phoenix Cloud environment variables.
+- Configure Google Cloud Agent Builder tools.
+- Run the Pope puffer image demo end to end.
+- Confirm model weight redistribution rights.

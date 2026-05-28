@@ -107,6 +107,25 @@ img { display: block; max-width: 100%; }
 .nav-link { font-size: 13px; color: var(--text-sub); transition: color 0.15s; }
 .nav-link:hover { color: var(--text); }
 
+.arize-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 6px 11px;
+  border-radius: 999px;
+  border: 1px solid rgba(0,229,255,0.24);
+  color: #b8f7ff;
+  background: rgba(0,229,255,0.08);
+  font-size: 12px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+.arize-badge-warn {
+  border-color: rgba(255,176,32,0.45);
+  color: #ffd38a;
+  background: rgba(255,176,32,0.11);
+}
+
 .status-pill {
   display: flex;
   align-items: center;
@@ -137,6 +156,63 @@ img { display: block; max-width: 100%; }
   text-align: center;
   padding: 8px 24px;
   font-size: 13px;
+}
+
+.osint-research-panel {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255,255,255,0.08);
+}
+.osint-research-item {
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: var(--radius-sm);
+  background: rgba(255,255,255,0.03);
+}
+.osint-research-wide {
+  grid-column: span 2;
+}
+.osint-research-item strong,
+.osint-research-item a {
+  display: block;
+  margin-top: 4px;
+  color: var(--text);
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.source-badges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-top: 6px;
+}
+.source-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(0,229,255,0.22);
+  background: rgba(0,229,255,0.08);
+  color: #c8fbff;
+  font-size: 12px;
+  font-weight: 700;
+}
+.osint-timeline-warning {
+  grid-column: span 2;
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  padding: 10px;
+  border: 1px solid rgba(255,176,32,0.34);
+  border-radius: var(--radius-sm);
+  background: rgba(255,176,32,0.09);
+  color: #ffd99a;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 /* ────────────────────────────────────────────────────────────────

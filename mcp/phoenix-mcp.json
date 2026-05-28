@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "phoenix": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@arizeai/phoenix-mcp@latest",
+        "--baseUrl",
+        "${PHOENIX_COLLECTOR_ENDPOINT}",
+        "--apiKey",
+        "${PHOENIX_API_KEY}"
+      ]
+    }
+  }
+}

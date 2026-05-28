@@ -132,6 +132,11 @@ function isOsintSignal(signal) {
   return id === "osint_verification" || name.includes("osint") || name.includes("web fact-checking");
 }
 
+function formatSourceDate(value) {
+  if (!value) return "date unknown";
+  return String(value);
+}
+
 const formatStatusLabel = (status) => {
   const value = (status || "").toLowerCase();
   if (value === "ok") return "Completed";
@@ -204,6 +209,10 @@ function AnimatedSignalCard({ signal, index }) {
   );
 
   const signalDescription = getSignalDescription(signal);
+  const osintMetrics = signal.metrics || {};
+  const factSources = Array.isArray(osintMetrics.fact_check_sources) ? osintMetrics.fact_check_sources : [];
+  const earliest = osintMetrics.earliest_web_appearance || null;
+  const timeline = osintMetrics.timeline_contradiction || null;
 
   // ELA heatmap is always visible above the toggle (not hidden behind expand)
   const elaImage = signal.metrics?.ela_image_base64 ? (
@@ -296,6 +305,50 @@ function AnimatedSignalCard({ signal, index }) {
               <div className="signal-summary signal-summary-osint">{signal.summary}</div>
             </div>
           </div>
+          {(osintMetrics.research_hops || earliest || factSources.length > 0 || timeline?.present) && (
+            <div className="osint-research-panel">
+              {osintMetrics.research_hops && (
+                <div className="osint-research-item">
+                  <span className="signal-detail-label">Research hops</span>
+                  <strong>{osintMetrics.research_hops}</strong>
+                </div>
+              )}
+              {earliest && (
+                <div className="osint-research-item osint-research-wide">
+                  <span className="signal-detail-label">Earliest web appearance</span>
+                  {earliest.url ? (
+                    <a href={earliest.url} target="_blank" rel="noreferrer">
+                      {earliest.source_name || earliest.title || "Source"} · {formatSourceDate(earliest.date)}
+                    </a>
+                  ) : (
+                    <strong>{earliest.source_name || "Unknown source"} · {formatSourceDate(earliest.date)}</strong>
+                  )}
+                </div>
+              )}
+              {factSources.length > 0 && (
+                <div className="osint-research-item osint-research-wide">
+                  <span className="signal-detail-label">Fact-checkers</span>
+                  <div className="source-badges">
+                    {factSources.slice(0, 5).map((source, idx) => (
+                      source?.url ? (
+                        <a key={idx} className="source-badge" href={source.url} target="_blank" rel="noreferrer">
+                          {source.outlet || "Source"}
+                        </a>
+                      ) : (
+                        <span key={idx} className="source-badge">{source?.outlet || "Source"}</span>
+                      )
+                    ))}
+                  </div>
+                </div>
+              )}
+              {timeline?.present && (
+                <div className="osint-timeline-warning">
+                  <AlertOctagon size={14} />
+                  <span>{timeline.explanation}</span>
+                </div>
+              )}
+            </div>
+          )}
           {detailsSection}
           {toggleBtn}
         </>
@@ -386,6 +439,7 @@ function ForensicReportCard({ reportData, showJson, onToggleJson, onDownloadPdf,
     .map((paragraph) => paragraph.trim())
     .filter(Boolean);
   const showLeaning = reportData.verdict === "inconclusive" && reportData.leaning;
+  const modelHealth = reportData.pipeline_health?.model_health_label;
 
   return (
     <div className="report-inner">
@@ -423,7 +477,7 @@ function ForensicReportCard({ reportData, showJson, onToggleJson, onDownloadPdf,
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.18, duration: 0.4 }}
       >
-        This score tells you how strongly the evidence agrees overall. It is not a guarantee, and the explanation below matters more than the number by itself.
+        {modelHealth || "All detector health gates operational"}. The verdict is based on evidence agreement, not a naked classifier output.
       </motion.div>
 
       <motion.div
@@ -519,7 +573,7 @@ function LandingPage({ fileInputRef, previewUrl, handleDrop, handleFileChange, c
             AI-generated images are becoming harder to spot by eye. ArgusAI is a forensic tool that analyzes images the same way an investigator would, looking at the technical evidence inside the image itself rather than just how it looks.
           </p>
           <p className="lp-hero-sub">
-            Upload any image and get a verdict: real or AI-generated. Each check explains exactly what it found and why it matters, so you understand the result instead of just trusting a score.
+            Upload any image and get a forensic verdict: real or AI-generated. Each check explains exactly what it found and why it matters, so you understand the evidence trail instead of trusting a single number.
           </p>
           <ul className="lp-hero-bullets">
             <li>Analyzes pixel-level noise, lighting physics, and frequency patterns that AI images get wrong</li>
@@ -637,7 +691,7 @@ function LandingPage({ fileInputRef, previewUrl, handleDrop, handleFileChange, c
           <div className="lp-diff-icon" style={{background:"rgba(0,229,255,0.08)",borderColor:"rgba(0,229,255,0.2)",color:"#00e5ff"}}><Zap size={18}/></div>
           <div>
             <h4>Results in under 30 seconds</h4>
-            <p>All six checks run in parallel. You get a full forensic report with a clear verdict in the time it takes to read this sentence.</p>
+            <p>All seven checks run in parallel. You get a full forensic report with a clear verdict in the time it takes to read this sentence.</p>
           </div>
         </div>
       </section>
@@ -660,6 +714,7 @@ export default function App() {
   const [showJsonById, setShowJsonById] = useState({});
   const [scanStep, setScanStep]         = useState(0);
   const [pdfLoadingForId, setPdfLoadingForId] = useState(null);
+  const [arizeHealth, setArizeHealth] = useState(null);
 
   const fileInputRef = useRef(null);
   const feedEndRef   = useRef(null);
@@ -695,6 +750,26 @@ export default function App() {
     })();
     return () => { cancelled = true; };
   }, [createFreshSession]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const loadArizeHealth = async () => {
+      try {
+        const res = await fetch(`${API_BASE}/arize/health`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (!cancelled) setArizeHealth(data);
+      } catch {
+        if (!cancelled) setArizeHealth(null);
+      }
+    };
+    loadArizeHealth();
+    const id = setInterval(loadArizeHealth, 45000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
 
   useEffect(() => {
     feedEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -856,6 +931,25 @@ export default function App() {
             <span className="logo-name">ArgusAI</span>
             <span className="logo-sub">Forensic image verification</span>
           </div>
+        </div>
+        <div className="header-nav">
+          {arizeHealth?.dashboard_url ? (
+            <a
+              className={`arize-badge ${arizeHealth.status === "anomaly" ? "arize-badge-warn" : ""}`}
+              href={arizeHealth.dashboard_url}
+              target="_blank"
+              rel="noreferrer"
+              title="Open Phoenix dashboard"
+            >
+              <Activity size={13} />
+              {arizeHealth.label || "Monitored by Arize Phoenix"}
+            </a>
+          ) : (
+            <span className={`arize-badge ${arizeHealth?.status === "anomaly" ? "arize-badge-warn" : ""}`}>
+              <Activity size={13} />
+              {arizeHealth?.label || "Phoenix monitor ready"}
+            </span>
+          )}
         </div>
       </header>
 

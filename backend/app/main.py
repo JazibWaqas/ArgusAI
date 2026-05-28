@@ -12,6 +12,7 @@ from .chat.store import store as session_store
 from .core.config import settings
 from .core.llm import llm_settings
 from .core.llm_client import LLMClient
+from .core.observability import tracing_health
 from .core.pipeline import AnalysisPipeline
 from .detectors.lighting import LightingConsistencyDetector
 from .detectors.metadata import MetadataDetector
@@ -22,13 +23,17 @@ from .detectors.ela import ErrorLevelAnalysisDetector
 from .detectors.spectral import SpectralArtifactDetector
 from .detectors.osint import OpenSourceIntelligenceDetector
 from .models.report import ForensicReport
-from .reports import build_official_forensic_pdf
 
 app = FastAPI(title=settings.project_name)
 pipeline = AnalysisPipeline()
 
 
 class ChatMessageRequest(BaseModel):
+    message: str = Field(..., min_length=1, max_length=8000)
+
+
+class AgentChatRequest(BaseModel):
+    session_id: str
     message: str = Field(..., min_length=1, max_length=8000)
 
 app.add_middleware(
@@ -81,6 +86,29 @@ async def health() -> dict:
         "detectors": [detector.id for detector in registry.all()],
         "spectral_model_path": settings.spectral_model_path,
         "spectral_model_exists": os.path.exists(settings.spectral_model_path),
+        "arize": tracing_health(),
+        "detector_governor": pipeline.health_governor.snapshot(),
+    }
+
+
+@app.get("/arize/health")
+async def arize_health() -> dict:
+    governor = pipeline.health_governor.snapshot()
+    trace = tracing_health()
+    if governor.get("status") == "anomaly":
+        label = "Detector anomaly detected - view in Arize"
+    elif trace.get("enabled"):
+        label = "Monitored by Arize Phoenix"
+    elif trace.get("configured"):
+        label = "Phoenix configured, waiting for tracer"
+    else:
+        label = "Phoenix monitor not configured"
+    return {
+        "status": governor.get("status", "ok"),
+        "label": label,
+        "dashboard_url": settings.phoenix_dashboard_url,
+        "tracing": trace,
+        "detector_governor": governor,
     }
 
 
@@ -165,6 +193,70 @@ async def analyze_image(
     return report.model_dump(mode="json")
 
 
+def _agent_report_summary(report: ForensicReport) -> dict[str, Any]:
+    signals = sorted(
+        report.evidence.signals,
+        key=lambda sig: (sig.verdict_influence_percent or 0, sig.reliability),
+        reverse=True,
+    )
+    top_signals = [
+        {
+            "id": sig.id,
+            "name": sig.name,
+            "status": sig.status.value,
+            "supports": sig.supports.value,
+            "summary": sig.summary,
+            "verdict_influence_percent": sig.verdict_influence_percent,
+        }
+        for sig in signals[:3]
+    ]
+    osint = next((sig for sig in report.evidence.signals if sig.id == "osint_verification"), None)
+    return {
+        "verdict": report.verdict.value,
+        "certainty": report.certainty,
+        "confidence_label": report.confidence_label,
+        "short_summary": report.short_summary,
+        "top_signals": top_signals,
+        "osint_summary": {
+            "summary": osint.summary if osint else None,
+            "what_found": osint.what_found if osint else None,
+            "research_hops": (osint.metrics or {}).get("research_hops") if osint else None,
+            "earliest_web_appearance": (osint.metrics or {}).get("earliest_web_appearance") if osint else None,
+            "fact_check_sources": (osint.metrics or {}).get("fact_check_sources") if osint else [],
+        },
+        "model_health": report.pipeline_health.get("model_health_label"),
+        "arize_health": report.pipeline_health.get("detector_governor"),
+    }
+
+
+@app.post("/agent/analyze")
+async def agent_analyze(
+    file: UploadFile = File(...),
+    context: str = Form(""),
+):
+    contents = await file.read()
+    if _too_large(contents):
+        return JSONResponse(status_code=413, content={"error": "File too large."})
+    report = await pipeline.analyze(contents, user_context=context)
+    sid = session_store.create()
+    session_store.set_report(sid, report)
+    return {"session_id": sid, **_agent_report_summary(report)}
+
+
+@app.post("/agent/chat")
+async def agent_chat(body: AgentChatRequest):
+    data = session_store.get(body.session_id)
+    if not data or not data.last_report:
+        return JSONResponse(status_code=404, content={"error": "Unknown session or no prior analysis."})
+    client = LLMClient()
+    reply = await client.followup_answer(
+        body.message,
+        data.last_report.verdict.value,
+        data.last_report.evidence.model_dump(),
+    )
+    return {"reply": reply or "I could not answer from the available forensic evidence.", "session_id": body.session_id}
+
+
 @app.get("/sessions/{session_id}/report.pdf")
 async def download_session_report_pdf(session_id: str):
     data = session_store.get(session_id)
@@ -174,6 +266,8 @@ async def download_session_report_pdf(session_id: str):
             content={"error": "No report for this session. Run analyze first."},
         )
     try:
+        from .reports import build_official_forensic_pdf
+
         pdf_bytes = build_official_forensic_pdf(
             data.last_report,
             reference_id=session_id,
@@ -209,6 +303,8 @@ async def download_official_pdf_from_payload(request: Request):
             content={"error": "Report payload did not match the forensic schema.", "detail": str(exc)},
         )
     try:
+        from .reports import build_official_forensic_pdf
+
         short = (report.evidence.image.sha256 or "report")[:8]
         pdf_bytes = build_official_forensic_pdf(
             report,

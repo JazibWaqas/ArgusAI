@@ -9,6 +9,7 @@ from typing import Any, Dict, Optional, Tuple
 import httpx
 from PIL import Image
 
+from .config import settings
 from .llm import llm_settings
 
 
@@ -207,6 +208,150 @@ class LLMClient:
                 return None
         return None
 
+    def _extract_url(self, text: str) -> Optional[str]:
+        match = re.search(r"https?://[^\s)>\]\"']+", text or "")
+        return match.group(0).rstrip(".,;") if match else None
+
+    async def reverse_image_search(
+        self,
+        image_bytes: bytes,
+        user_context: str = "",
+    ) -> list[Dict[str, Any]]:
+        """
+        Reverse search when the user provides a public image URL.
+
+        Most commercial reverse-image APIs cannot inspect arbitrary local bytes
+        directly; they need a hosted URL. We keep this honest and fall back to
+        text/grounded provenance research when only an uploaded file is present.
+        """
+        if not settings.serpapi_key:
+            return []
+        image_url = self._extract_url(user_context)
+        if not image_url:
+            return []
+
+        params = {
+            "engine": "google_lens",
+            "url": image_url,
+            "api_key": settings.serpapi_key,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=20.0) as client:
+                response = await client.get("https://serpapi.com/search.json", params=params)
+                response.raise_for_status()
+                data = response.json()
+        except Exception as exc:
+            self._note_error(f"Reverse image search failed: {exc}", provider="serpapi", model="google_lens")
+            return []
+
+        matches = []
+        visual_matches = data.get("visual_matches") if isinstance(data, dict) else None
+        if isinstance(visual_matches, list):
+            for item in visual_matches[:8]:
+                if not isinstance(item, dict):
+                    continue
+                matches.append(
+                    {
+                        "url": item.get("link") or item.get("source"),
+                        "title": item.get("title"),
+                        "source": item.get("source"),
+                        "date": item.get("date"),
+                    }
+                )
+        if matches:
+            self._note_success(provider="serpapi", model="google_lens")
+        return [m for m in matches if m.get("url") or m.get("title")]
+
+    async def grounded_osint_research_agent(
+        self,
+        image_bytes: bytes,
+        user_context: str,
+        reverse_matches: Optional[list[Dict[str, Any]]] = None,
+    ) -> Optional[Tuple[Dict[str, Any], Dict[str, Any]]]:
+        if not llm_settings.gemini_api_key:
+            return None
+
+        ctx = (user_context or "").strip()
+        reverse_json = json.dumps(reverse_matches or [], indent=2)
+        prompt = (
+            "You are a forensic investigative journalist. Use Google Search as a tool to determine the provenance "
+            "and authenticity of the uploaded image. Treat the user's context as a claim to investigate, not as proof.\n\n"
+            f"User-provided context: {ctx or 'No user claim provided.'}\n\n"
+            f"Reverse-image matches already gathered, if any:\n{reverse_json}\n\n"
+            "Conduct up to three research hops: first identify the subject or claim, then search for fact-checking or original coverage, "
+            "then verify dates and contradictions. Find named sources, dates, URLs, and whether the image is a known fabrication, verified real, or unresolved.\n\n"
+            "Return ONLY one JSON object with exactly these keys:\n"
+            "- known_deepfake (boolean)\n"
+            "- verified_real (boolean)\n"
+            "- earliest_web_appearance (object or null): {date, url, source_name, title}. Use null values inside the object if unknown.\n"
+            "- fact_check_sources (array): each {outlet, verdict, url, date}. Include only credible named sources.\n"
+            "- timeline_contradiction (object): {present:boolean, explanation:string}\n"
+            "- context (string): 4-6 plain sentences naming sources and dates. No generic hedging. If unresolved, say exactly what was missing.\n"
+            "- research_hops (integer): number of distinct search rounds or reasoning hops conducted, 1 to 3.\n"
+            "- search_queries (array of strings): the main queries used or inferred from grounding metadata.\n"
+            "Do not use markdown fences."
+        )
+        payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {"text": prompt},
+                        {
+                            "inline_data": {
+                                "mime_type": self._image_mime_type(image_bytes),
+                                "data": base64.b64encode(image_bytes).decode("utf-8"),
+                            }
+                        },
+                    ]
+                }
+            ],
+            "tools": [{"google_search": {}}],
+            "generationConfig": {"temperature": 0.15},
+        }
+        headers = {"Content-Type": "application/json"}
+
+        async with httpx.AsyncClient(timeout=90.0) as client:
+            try:
+                response = await self._post_with_fallback(client, llm_settings.gemini_grounding_model, headers, payload)
+                data = response.json()
+            except Exception:
+                return None
+
+        try:
+            text = data["candidates"][0]["content"]["parts"][0]["text"]
+        except (KeyError, IndexError, TypeError):
+            return None
+        parsed = self._extract_json_object(text)
+        if not parsed:
+            self._note_error("Grounded OSINT research agent response was not valid JSON.", provider="gemini", model=llm_settings.gemini_grounding_model)
+            return None
+
+        cand0 = data["candidates"][0]
+        meta = cand0.get("groundingMetadata") or cand0.get("grounding_metadata") or {}
+        if isinstance(meta, dict):
+            meta_queries = meta.get("webSearchQueries") or meta.get("web_search_queries") or []
+            if meta_queries and not parsed.get("search_queries"):
+                parsed["search_queries"] = meta_queries
+
+        try:
+            research_hops = int(parsed.get("research_hops") or 1)
+        except Exception:
+            research_hops = 1
+
+        out = {
+            "known_deepfake": bool(parsed.get("known_deepfake")),
+            "verified_real": bool(parsed.get("verified_real")),
+            "earliest_web_appearance": parsed.get("earliest_web_appearance"),
+            "fact_check_sources": parsed.get("fact_check_sources") if isinstance(parsed.get("fact_check_sources"), list) else [],
+            "timeline_contradiction": parsed.get("timeline_contradiction") if isinstance(parsed.get("timeline_contradiction"), dict) else {"present": False, "explanation": ""},
+            "context": str(parsed.get("context") or "").strip(),
+            "research_hops": max(1, min(3, research_hops)),
+            "search_queries": parsed.get("search_queries") if isinstance(parsed.get("search_queries"), list) else [],
+            "reverse_image_matches": reverse_matches or [],
+            "grounded_text": text.strip(),
+        }
+        return out, meta if isinstance(meta, dict) else {}
+
     async def grounded_osint_investigation(
         self,
         image_bytes: bytes,
@@ -312,36 +457,6 @@ class LLMClient:
         )
         user = f"Verdict: {verdict}\n\nEvidence JSON:\n{json.dumps(evidence, indent=2)}\n\nUser question:\n{user_message}"
 
-        async def groq_reply() -> Optional[str]:
-            if not llm_settings.groq_api_key:
-                return None
-            url = "https://api.groq.com/openai/v1/chat/completions"
-            hdrs = {"Authorization": f"Bearer {llm_settings.groq_api_key}"}
-            payload = {
-                "model": llm_settings.groq_model,
-                "messages": [
-                    {"role": "system", "content": system},
-                    {"role": "user", "content": user},
-                ],
-                "temperature": 0.2,
-                "max_tokens": min(llm_settings.explanation_max_tokens, 768),
-            }
-            async with httpx.AsyncClient(timeout=45.0) as client:
-                try:
-                    response = await client.post(url, headers=hdrs, json=payload)
-                    response.raise_for_status()
-                    data = response.json()
-                    self._note_success(provider="groq", model=llm_settings.groq_model)
-                    return data["choices"][0]["message"]["content"].strip()
-                except Exception as exc:
-                    detail = self.last_error or str(exc)
-                    self._note_error(
-                        f"Groq follow-up request failed: {detail}",
-                        provider="groq",
-                        model=llm_settings.groq_model,
-                    )
-                    return None
-
         async def gemini_reply() -> Optional[str]:
             if not llm_settings.gemini_api_key:
                 return None
@@ -364,16 +479,7 @@ class LLMClient:
                     )
                     return None
 
-        if llm_settings.explanation_provider == "groq":
-            out = await groq_reply()
-            if out:
-                return out
-            return await gemini_reply()
-
-        out = await gemini_reply()
-        if out:
-            return out
-        return await groq_reply()
+        return await gemini_reply()
 
     async def generate_explanation(
         self,
@@ -381,8 +487,6 @@ class LLMClient:
         evidence: Dict[str, Any],
         reasoning_summary: Optional[Dict[str, Any]] = None,
     ) -> Optional[str]:
-        if llm_settings.explanation_provider == "groq" and llm_settings.groq_api_key:
-            return await self._groq_explanation(verdict, evidence, reasoning_summary)
         if llm_settings.explanation_provider == "gemini" and llm_settings.gemini_api_key:
             return await self._gemini_text_explanation(verdict, evidence, reasoning_summary)
         return None
@@ -574,52 +678,6 @@ class LLMClient:
             "- Each paragraph: 3 to 5 sentences. The whole explanation should take under 45 seconds to read.\n"
             "- Never invent findings. Only describe what is in the evidence data provided."
         )
-
-    async def _groq_explanation(
-        self,
-        verdict: str,
-        evidence: Dict[str, Any],
-        reasoning_summary: Optional[Dict[str, Any]] = None,
-    ) -> Optional[str]:
-        url = "https://api.groq.com/openai/v1/chat/completions"
-        headers = {"Authorization": f"Bearer {llm_settings.groq_api_key}"}
-        summary_json = json.dumps(reasoning_summary or {}, indent=2)
-        messages = [
-            {
-                "role": "system",
-                "content": self._get_reasoner_system_prompt(),
-            },
-            {
-                "role": "user",
-                "content": (
-                    f"Verdict Declared: {verdict}\n\n"
-                    f"Reasoning Summary:\n{summary_json}\n\n"
-                    f"Evidence JSON Profile:\n{json.dumps(evidence, indent=2)}"
-                ),
-            },
-        ]
-        payload = {
-            "model": llm_settings.groq_model,
-            "messages": messages,
-            "temperature": 0.3,
-            "max_tokens": llm_settings.explanation_max_tokens,
-        }
-
-        async with httpx.AsyncClient(timeout=30) as client:
-            try:
-                response = await client.post(url, headers=headers, json=payload)
-                response.raise_for_status()
-                data = response.json()
-                self._note_success(provider="groq", model=llm_settings.groq_model)
-                return data["choices"][0]["message"]["content"].strip()
-            except Exception as exc:
-                detail = self.last_error or str(exc)
-                self._note_error(
-                    f"Groq explanation request failed: {detail}",
-                    provider="groq",
-                    model=llm_settings.groq_model,
-                )
-                return None
 
     async def _gemini_text_explanation(
         self,

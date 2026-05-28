@@ -313,7 +313,7 @@ def build_official_forensic_pdf(
 
     story.append(Paragraph("7. Limitations", h_style))
     limitations = (
-        "This assessment is produced by automated classifiers and heuristics. "
+        "This assessment is produced by automated forensic detectors and heuristics. "
         "It is not legal or scientific certification of origin. "
         "Results depend on image quality, compression, and which detectors succeeded. "
         "Adversarial editing or uncommon generators may not be represented in training data. "

@@ -48,17 +48,13 @@ class LLMSettings:
         self.gemini_fallback_model = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-2.5-flash")
         self.osint_use_grounding = os.getenv("OSINT_USE_GROUNDING", "1") == "1"
         
-        self.groq_api_key = os.getenv("GROQ_API_KEY")
-        self.groq_model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
-        self.explanation_provider = os.getenv("LLM_EXPLANATION_PROVIDER", "groq")
+        self.explanation_provider = os.getenv("LLM_EXPLANATION_PROVIDER", "gemini")
         self.explanation_max_tokens = int(os.getenv("LLM_EXPLANATION_MAX_TOKENS", "900"))
         self.vision_timeout_seconds = float(os.getenv("LLM_VISION_TIMEOUT_SECONDS", "20"))
 
     def provider_ready(self) -> Optional[str]:
         if self.explanation_provider == "gemini":
             return "gemini" if self.gemini_api_key else None
-        if self.explanation_provider == "groq":
-            return "groq" if self.groq_api_key else None
         return None
 
     def health_snapshot(self) -> Dict[str, object]:
@@ -70,8 +66,6 @@ class LLMSettings:
             "gemini_grounding_model": self.gemini_grounding_model,
             "gemini_fallback_model": self.gemini_fallback_model,
             "osint_use_grounding": self.osint_use_grounding,
-            "groq_available": bool(self.groq_api_key),
-            "groq_model": self.groq_model,
             "explanation_provider": self.explanation_provider,
             "provider_ready": self.provider_ready(),
         }

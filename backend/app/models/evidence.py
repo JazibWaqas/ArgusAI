@@ -56,3 +56,4 @@ class EvidenceProfile(BaseModel):
     image: ImageInfo
     signals: List[EvidenceSignal]
     warnings: List[str] = Field(default_factory=list)
+    health: Dict[str, Any] = Field(default_factory=dict)

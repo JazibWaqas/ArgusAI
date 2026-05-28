@@ -3,7 +3,10 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Dict
 
-from ddgs import DDGS
+try:
+    from ddgs import DDGS
+except Exception:
+    DDGS = None  # type: ignore[assignment]
 
 from ..core.llm import llm_settings
 from ..core.llm_client import LLMClient
@@ -55,6 +58,97 @@ class OpenSourceIntelligenceDetector(Detector):
         client = LLMClient()
 
         if llm_settings.osint_use_grounding and llm_settings.gemini_api_key:
+            reverse_matches = await client.reverse_image_search(image_bytes, user_context)
+            research = await client.grounded_osint_research_agent(image_bytes, user_context, reverse_matches)
+            if research:
+                fact_check, meta = research
+                is_deepfake = fact_check.get("known_deepfake", False)
+                is_real = fact_check.get("verified_real", False)
+                research_context = fact_check.get("context", "")
+                hops = int(fact_check.get("research_hops") or 1)
+                earliest = fact_check.get("earliest_web_appearance") or None
+                fact_sources = fact_check.get("fact_check_sources") or []
+                timeline = fact_check.get("timeline_contradiction") or {"present": False, "explanation": ""}
+                queries_used = fact_check.get("search_queries") or []
+
+                observations = [
+                    "OSINT mode: Gemini grounded multi-hop research agent.",
+                    f"Research hops conducted: {hops}",
+                    f"Reverse image matches: {len(reverse_matches)}",
+                ]
+                if queries_used:
+                    observations.append(f"Search queries used: {len(queries_used)}")
+                if earliest:
+                    observations.append(f"Earliest appearance candidate: {earliest}")
+                if fact_sources:
+                    observations.append(
+                        "Fact-check sources: "
+                        + ", ".join(str(item.get("outlet") or item.get("url") or "source") for item in fact_sources[:5] if isinstance(item, dict))
+                    )
+                if timeline.get("present"):
+                    observations.append(f"Timeline contradiction: {timeline.get('explanation')}")
+                if research_context:
+                    observations.append(f"Grounded synthesis: {research_context}")
+
+                context_preview = (research_context[:450].rstrip() + ("..." if len(research_context) > 450 else "")) if research_context else ""
+                if is_deepfake:
+                    summary = "The research agent found credible public sources flagging this image or claim as fabricated."
+                    supports = SignalSupport.AI_GENERATED
+                    reliability = 0.98
+                    why_it_matters = (
+                        "Named fact-checks and dated public provenance are stronger than a naked model score because they show where the claim came from "
+                        "and whether journalists have already verified or debunked it."
+                    )
+                elif is_real:
+                    summary = "The research agent found credible reporting that corroborates the depicted event or scene."
+                    supports = SignalSupport.AUTHENTIC
+                    reliability = 0.75
+                    why_it_matters = (
+                        "Corroborated public reporting supports the underlying event. It still does not prove every pixel is untouched, "
+                        "so the image-level detectors remain important."
+                    )
+                else:
+                    summary = "The research agent found related public context but no decisive provenance verdict."
+                    supports = SignalSupport.INCONCLUSIVE
+                    reliability = 0.45
+                    why_it_matters = (
+                        "Public context can narrow the investigation, but unresolved provenance should not be over-weighted as proof."
+                    )
+
+                metrics: Dict[str, Any] = {
+                    "deepfake_flag": is_deepfake,
+                    "verified_flag": is_real,
+                    "grounding": True,
+                    "research_hops": hops,
+                    "earliest_web_appearance": earliest,
+                    "fact_check_sources": fact_sources,
+                    "timeline_contradiction": timeline,
+                    "reverse_image_matches": reverse_matches,
+                    "search_queries": queries_used,
+                    "provider": client.last_provider,
+                    "model": client.last_model,
+                    "fallback_used": client.last_fallback_used,
+                }
+                if isinstance(meta, dict) and meta:
+                    metrics["grounding_metadata"] = meta
+
+                return EvidenceSignal(
+                    id=self.id,
+                    name=self.name,
+                    category=self.category,
+                    status=SignalStatus.OK,
+                    reliability=reliability,
+                    summary=summary,
+                    what_checked="A Gemini research agent searched live public sources for provenance, fact-checks, original context, and timeline contradictions.",
+                    what_found=context_preview or "The research agent completed, but did not return a concise public-source synthesis.",
+                    why_it_matters=why_it_matters,
+                    caveat="OSINT is strongest for public figures, viral claims, and news events. Generic private images may have no searchable provenance.",
+                    observations=observations,
+                    metrics=metrics,
+                    supports=supports,
+                    notes="Grounded multi-hop provenance research with optional reverse-image search when a public image URL is supplied.",
+                )
+
             grounded = await client.grounded_osint_investigation(image_bytes, user_context)
             if grounded:
                 fact_check, meta = grounded
@@ -163,6 +257,8 @@ class OpenSourceIntelligenceDetector(Detector):
 
         try:
             def sync_search(search_queries):
+                if DDGS is None:
+                    raise RuntimeError("ddgs package is not installed.")
                 pooled_results = []
                 seen_urls = set()
                 with DDGS() as ddgs:
@@ -303,4 +399,3 @@ class OpenSourceIntelligenceDetector(Detector):
             },
             supports=supports,
         )
-

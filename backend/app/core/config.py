@@ -9,6 +9,7 @@ class Settings:
     def __init__(self) -> None:
         self.project_name = "ArgusAI"
         self.spectral_model_path = os.getenv("SPECTRAL_MODEL_PATH", "argusai_fuse_best")
+        self.spectral_model_gcs_uri = os.getenv("SPECTRAL_MODEL_GCS_URI", "")
         self.max_upload_mb = int(os.getenv("MAX_UPLOAD_MB", "20"))
         self.env_file = os.getenv("ENV_FILE", ".env")
         self.spectral_ai_index = int(os.getenv("SPECTRAL_AI_INDEX", "1"))

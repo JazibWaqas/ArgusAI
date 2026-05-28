@@ -35,6 +35,30 @@ class SpectralArtifactDetector(Detector):
     _model_health_gap: Optional[float] = None
     _resolved_ai_index: Optional[int] = None
 
+    def _download_gcs_model_if_needed(self) -> Optional[str]:
+        uri = (settings.spectral_model_gcs_uri or "").strip()
+        if not uri:
+            return None
+        target = Path(settings.spectral_model_path)
+        if target.exists():
+            return None
+        if not uri.startswith("gs://"):
+            return f"SPECTRAL_MODEL_GCS_URI must start with gs://, got {uri}"
+
+        try:
+            from google.cloud import storage
+
+            without_scheme = uri[5:]
+            bucket_name, blob_name = without_scheme.split("/", 1)
+            target.parent.mkdir(parents=True, exist_ok=True)
+            client = storage.Client()
+            bucket = client.bucket(bucket_name)
+            blob = bucket.blob(blob_name)
+            blob.download_to_filename(str(target))
+            return None
+        except Exception as exc:
+            return f"Failed to download spectral model from {uri}: {exc}"
+
     def _preprocess_image(self, image: Image.Image) -> torch.Tensor:
         resized = image.resize((settings.spectral_input_size, settings.spectral_input_size), Image.BICUBIC)
         arr = np.asarray(resized, dtype=np.float32) / 255.0
@@ -160,6 +184,22 @@ class SpectralArtifactDetector(Detector):
     async def analyze(self, image, context: Dict[str, Any]) -> EvidenceSignal:
         # Check primary path and potential relative paths if not found
         model_path = settings.spectral_model_path
+        gcs_error = self._download_gcs_model_if_needed()
+        if gcs_error:
+            return EvidenceSignal(
+                id=self.id,
+                name=self.name,
+                category=self.category,
+                status=SignalStatus.UNAVAILABLE,
+                reliability=0.0,
+                summary="This check could not run because the spectral model could not be downloaded.",
+                what_checked="We load the Six-Lens spectral checkpoint before checking hidden frequency artifacts.",
+                what_found="Cloud model retrieval failed.",
+                why_it_matters="Without the checkpoint, the spectral detector cannot contribute to the verdict.",
+                caveat="This is an infrastructure issue, not evidence about the uploaded image.",
+                observations=[gcs_error],
+                supports=SignalSupport.UNKNOWN,
+            )
         if not os.path.exists(model_path):
             # Try parent directory (common when running from backend/ folder)
             parent_path = os.path.join("..", model_path)

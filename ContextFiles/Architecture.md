@@ -1,6 +1,6 @@
 # ArgusAI Architecture
 
-Last updated: May 28, 2026.
+Last updated: May 29, 2026.
 
 ArgusAI is a multi-signal forensic investigation platform. The architecture is organized around evidence extraction, detector health governance, evidence reasoning, and user-facing provenance explanation.
 

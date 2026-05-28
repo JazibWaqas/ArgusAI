@@ -1,6 +1,6 @@
 # ArgusAI Signals
 
-Last updated: May 28, 2026.
+Last updated: May 29, 2026.
 
 ArgusAI uses seven evidence signals. The goal is not to make each signal perfect. The goal is to make each signal explicit, weighted, and auditable.
 

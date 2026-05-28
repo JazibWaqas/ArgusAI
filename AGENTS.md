@@ -23,17 +23,24 @@ Current implemented hackathon additions:
 - `.env.example` documents required env vars.
 - `mcp/phoenix-mcp.json` is the official Phoenix MCP server template.
 - `ContextFiles/AgentBuilderPhoenixSetup.md` documents Agent Builder and Phoenix MCP setup.
+- Backend Cloud Run service is live at `https://argusai-backend-1007754127412.us-central1.run.app`.
+- Spectral weights are stored at `gs://argusai-497719-models/models/argusai_best_weights.pth`.
+- Local self-hosted Phoenix is working through `docker-compose.phoenix.yml` at `http://localhost:6006`.
+- Local `.env` points tracing to `http://localhost:6006/v1/traces`; Phoenix logs confirmed successful trace POSTs.
 
 Next highest-leverage work:
 
-1. Deploy to Google Cloud Run.
-2. Configure Phoenix Cloud and confirm traces arrive.
-3. Configure Agent Builder tools against `/agent/analyze` and `/agent/chat`.
-4. Connect the Phoenix MCP server using `mcp/phoenix-mcp.json`.
-5. Run the Pope puffer demo image end to end.
-6. Capture a prepared spectral circuit-breaker trace for the demo.
-7. Update any final submission copy to emphasize “forensic investigation platform.”
+1. Run a real Cloud Run `/analyze` request to verify lazy model download and detector behavior.
+2. Deploy the frontend with `VITE_API_BASE=https://argusai-backend-1007754127412.us-central1.run.app`.
+3. Configure Phoenix Cloud env vars and confirm traces arrive, or keep using verified self-hosted Phoenix for the recorded demo if hosted Arize remains blocked.
+4. Configure Agent Builder tools against `/agent/analyze` and `/agent/chat`.
+5. Connect the Phoenix MCP server using `mcp/phoenix-mcp.json`.
+6. Run the Pope puffer demo image end to end.
+7. Capture a prepared spectral circuit-breaker trace for the demo.
+8. Update any final submission copy to emphasize “forensic investigation platform.”
 
 Known caveat:
 
-The local Codex environment used for the May 28 update did not have the PyTorch spectral runtime installed. Frontend build, Python compile, backend import, and a synthetic registered-pipeline analysis were verified, but spectral degraded to `error`. Re-test with full backend dependencies before the demo.
+Cloud Run uses `min-instances=0` to avoid idle spend, so first requests may cold start. Keep it that way during setup; switch to `min-instances=1` only near demo/judging if needed.
+
+Cloud Run cannot use `http://localhost:6006` for Phoenix. That local URL only works on the laptop. Cloud Run needs Phoenix Cloud or another publicly reachable Phoenix collector.

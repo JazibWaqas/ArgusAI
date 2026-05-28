@@ -1,0 +1,14 @@
+services:
+  phoenix:
+    image: arizephoenix/phoenix:latest
+    container_name: argusai-phoenix
+    ports:
+      - "6006:6006"
+      - "4317:4317"
+    environment:
+      PHOENIX_PROJECT_NAME: argusai-forensics
+    volumes:
+      - phoenix_data:/root/.phoenix
+
+volumes:
+  phoenix_data:

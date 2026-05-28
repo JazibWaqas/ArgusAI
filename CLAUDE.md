@@ -1,6 +1,6 @@
 # CLAUDE.md — ArgusAI Hackathon Source of Truth
 
-Last updated: May 28, 2026.
+Last updated: May 29, 2026.
 
 This file is the handoff document for fresh sessions. It captures what ArgusAI is, what has been implemented for the hackathon, and why the current path is the highest-leverage route for the Arize track.
 
@@ -116,7 +116,33 @@ Docs/config:
 - `README.md` rewritten around current hackathon state.
 - `.env.example` added.
 - `backend/requirements.txt` includes Phoenix/OpenInference packages.
-- `LICENSE`, `.gitattributes`, and `Dockerfile` exist.
+- `LICENSE`, `.gitattributes`, `.gcloudignore`, and `Dockerfile` exist.
+- `docker-compose.phoenix.yml` runs self-hosted Phoenix locally for development and demo fallback.
+
+Cloud:
+
+- Google Cloud project: `argusai-497719`.
+- Project number: `1007754127412`.
+- Region: `us-central1`.
+- Backend service: `argusai-backend`.
+- Backend URL: `https://argusai-backend-1007754127412.us-central1.run.app`.
+- Backend health URL: `https://argusai-backend-1007754127412.us-central1.run.app/health`.
+- Cloud Run settings: `4Gi` memory, `2` CPU, `300s` timeout, concurrency `1`, `min-instances=0`, `max-instances=3`.
+- Gemini key is in Secret Manager as `argusai-gemini-api-key`.
+- Cloud Run Gemini model env vars currently use `gemini-3.5-flash` for text, vision, grounding, and fallback.
+- Spectral weight is in Cloud Storage at `gs://argusai-497719-models/models/argusai_best_weights.pth`.
+- Cloud Run env has `SPECTRAL_MODEL_PATH=/tmp/argusai_best_weights.pth` and `SPECTRAL_MODEL_GCS_URI=gs://argusai-497719-models/models/argusai_best_weights.pth`.
+
+Local Phoenix:
+
+- Self-hosted Phoenix is working locally through Docker.
+- Container: `argusai-phoenix`.
+- UI: `http://localhost:6006`.
+- HTTP collector: `http://localhost:6006/v1/traces`.
+- gRPC collector: `http://localhost:4317`.
+- Local `.env` points Phoenix tracing to `http://localhost:6006/v1/traces`.
+- `PHOENIX_API_KEY` is not required for local self-hosted Phoenix.
+- Verified Phoenix logs show successful `POST /v1/traces` traffic from ArgusAI.
 
 ## The Seven Detectors
 
@@ -189,14 +215,16 @@ Agent Builder only needs a short compliance shot showing it can call `/agent/ana
 
 ## Known Gaps / Next Work
 
-- Deploy to Cloud Run and verify memory/cold-start behavior.
-- Configure Phoenix Cloud env vars.
+- Deploy the frontend connected to the live backend.
+- Configure Phoenix Cloud env vars if hosted Arize access starts working. If not, use the verified self-hosted Phoenix path for the recorded demo.
 - Configure Agent Builder tools.
 - Connect Phoenix MCP with `mcp/phoenix-mcp.json`.
 - Test with real Pope image and capture a successful trace.
 - Decide model weight distribution based on dataset licenses.
 - If the model weights cannot be published, document “bring your own weights” or host them outside the repo for the demo.
-- The local environment used by this Codex session did not have the PyTorch spectral runtime, so the app imports and a synthetic analysis run succeeded, but the spectral detector degraded to `error`. Re-test with full backend dependencies before the demo.
+- A Cloud Run backend deployment exists and `/health` passes. `spectral_model_exists=false` on `/health` before the first analysis is expected because the model downloads lazily from GCS.
+- Local Phoenix tracing is already verified; Cloud Run tracing still needs Phoenix Cloud because Cloud Run cannot send to this laptop's `localhost`.
+- A deployed Cloud Run dataset smoke test passed with `gemini-3.5-flash`: spectral `ok`, semantic `ok`, OSINT `warning` on a non-public-claim image, verdict `likely_ai_generated`, certainty `0.837`.
 
 ## Environment Variables
 
@@ -213,6 +241,13 @@ Core:
 - `ARIZE_HEALTH_GOVERNOR=1`
 
 No competing inference providers are used in code after the current update.
+
+For local self-hosted Phoenix:
+
+- `PHOENIX_COLLECTOR_ENDPOINT=http://localhost:6006/v1/traces`
+- `PHOENIX_DASHBOARD_URL=http://localhost:6006`
+- `PHOENIX_PROJECT_NAME=argusai-forensics`
+- leave `PHOENIX_API_KEY` empty
 
 ## Engineering Rule
 

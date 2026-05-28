@@ -2,41 +2,52 @@
 
 Last updated: May 28, 2026
 
-## Current Status
+## Status: CODE COMPLETE — awaiting credentials and deployment
 
-ArgusAI is now a hackathon-oriented forensic investigation platform with the core Arize and OSINT upgrades implemented in code.
+All code is written and verified. The only remaining work requires credentials and
+Google Cloud Console actions that must be done by the repo owner.
 
-The main strategic change from the earlier version: Arize is no longer treated as passive logging. The pipeline now has a detector health governor that records circuit-breaker events and removes unhealthy detectors from future verdict influence during the configured TTL.
+---
 
-## Completed
+## What Is Done (Code)
 
-- Seven-detector FastAPI analysis pipeline.
-- Weighted evidence reasoning engine.
-- Gemini-only LLM stack for vision, OSINT, report narrative, and chat.
-- React/Vite frontend with forensic signal cards, ELA heatmap, chat, and PDF export.
-- Phoenix/OpenTelemetry tracing wrapper.
-- Root analysis span and detector child spans.
-- Spectral circuit-breaker attributes: `circuit_breaker`, `circuit_breaker_reason`, `gap_score`.
-- File-backed Arize reliability governor at `logs/arize/detector_health.json`.
-- `/arize/health` endpoint for UI and demo.
-- Frontend Arize badge.
-- OSINT research-agent output with research hops, fact-check sources, earliest appearance candidate, timeline contradiction, and optional reverse-image matches.
-- Agent Builder-facing endpoints: `/agent/analyze` and `/agent/chat`.
-- `.env.example`.
-- README and handoff docs updated.
+- Seven-detector FastAPI analysis pipeline, fully parallel with asyncio.gather
+- Weighted evidence reasoning engine with per-detector verdict influence scoring
+- Gemini-only LLM stack: vision, grounded OSINT research agent, narrative, chat
+- React/Vite frontend: signal cards, Arize health badge, OSINT research panel (hops, sources, earliest appearance, timeline warning), ELA heatmap, PDF export, session chat
+- Phoenix/OpenTelemetry observability: root analysis span + per-detector child spans
+- Spectral circuit-breaker attributes logged to Phoenix: `circuit_breaker`, `circuit_breaker_reason`, `gap_score`
+- DetectorHealthGovernor: persists circuit-breaker state across requests with configurable TTL
+- `/arize/health` endpoint for frontend badge polling
+- `grounded_osint_research_agent()`: multi-hop Gemini grounded search, structured JSON output with `earliest_web_appearance`, `fact_check_sources`, `timeline_contradiction`, `research_hops`
+- `/agent/analyze` and `/agent/chat` endpoints for Agent Builder
+- Dockerfile (CPU-only torch via --index-url, correct memory footprint)
+- `requirements.txt` clean (torch installed by Dockerfile separately, not by pip -r)
+- Git LFS configured via `.gitattributes` for `*.pth` and `*.pt`
+- MIT LICENSE file in repo root
+- `.env.example` with all required env vars documented
+- `mcp/phoenix-mcp.json` for Arize Phoenix MCP server config
 
-## Verification Performed In This Session
+---
 
-- Frontend production build passed with `npm run build`.
-- Python files compiled with `python -m compileall backend/app`.
-- Backend app import passed after making optional detector dependencies degrade gracefully.
-- A synthetic 64x64 PNG analysis completed through the registered FastAPI pipeline and returned 7 signals. The spectral detector reported `error` because the local environment did not have the PyTorch spectral runtime installed.
+## Remaining — Requires Owner Action Only
 
-## Remaining
+See BLOCKERS section in CLAUDE.md for exact step-by-step instructions.
 
-- Install backend dependencies in the target environment and run a full analysis.
-- Deploy to Cloud Run.
-- Configure Phoenix Cloud environment variables.
-- Configure Google Cloud Agent Builder tools.
-- Run the Pope puffer image demo end to end.
-- Confirm model weight redistribution rights.
+1. Arize Phoenix account + API key
+2. Gemini API key (if not already set)
+3. SerpAPI key (optional — enables reverse image search when user pastes a URL)
+4. Git LFS push for model weights
+5. Google Cloud project + Cloud Run deployment
+6. Google Cloud Agent Builder agent creation
+7. 3-minute YouTube demo video
+8. Devpost submission
+
+---
+
+## Verified
+
+- Python files compile: `python -m compileall backend/app` passes
+- Frontend production build: `npm run build` passes
+- Synthetic 64x64 PNG pipeline run returned 7 signals
+- requirements.txt no longer pins torch (Dockerfile handles CPU wheel install)

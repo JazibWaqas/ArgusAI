@@ -58,8 +58,9 @@ class OpenSourceIntelligenceDetector(Detector):
         client = LLMClient()
 
         if llm_settings.osint_use_grounding and llm_settings.gemini_api_key:
-            reverse_matches = await client.reverse_image_search(image_bytes, user_context)
-            research = await client.grounded_osint_research_agent(image_bytes, user_context, reverse_matches)
+            # Gemini sees the image directly and uses Google Search to investigate —
+            # no separate reverse-image-search API needed.
+            research = await client.grounded_osint_research_agent(image_bytes, user_context, [])
             if research:
                 fact_check, meta = research
                 is_deepfake = fact_check.get("known_deepfake", False)
@@ -72,9 +73,8 @@ class OpenSourceIntelligenceDetector(Detector):
                 queries_used = fact_check.get("search_queries") or []
 
                 observations = [
-                    "OSINT mode: Gemini grounded multi-hop research agent.",
+                    "OSINT mode: Gemini vision + Google Search grounding.",
                     f"Research hops conducted: {hops}",
-                    f"Reverse image matches: {len(reverse_matches)}",
                 ]
                 if queries_used:
                     observations.append(f"Search queries used: {len(queries_used)}")
@@ -123,7 +123,6 @@ class OpenSourceIntelligenceDetector(Detector):
                     "earliest_web_appearance": earliest,
                     "fact_check_sources": fact_sources,
                     "timeline_contradiction": timeline,
-                    "reverse_image_matches": reverse_matches,
                     "search_queries": queries_used,
                     "provider": client.last_provider,
                     "model": client.last_model,
@@ -139,14 +138,14 @@ class OpenSourceIntelligenceDetector(Detector):
                     status=SignalStatus.OK,
                     reliability=reliability,
                     summary=summary,
-                    what_checked="A Gemini research agent searched live public sources for provenance, fact-checks, original context, and timeline contradictions.",
+                    what_checked="Gemini visually analyzes the image and uses Google Search grounding to find provenance, fact-checks, original context, and timeline contradictions.",
                     what_found=context_preview or "The research agent completed, but did not return a concise public-source synthesis.",
                     why_it_matters=why_it_matters,
                     caveat="OSINT is strongest for public figures, viral claims, and news events. Generic private images may have no searchable provenance.",
                     observations=observations,
                     metrics=metrics,
                     supports=supports,
-                    notes="Grounded multi-hop provenance research with optional reverse-image search when a public image URL is supplied.",
+                    notes="Gemini vision + Google Search grounding. Gemini sees the image and searches the web — no third-party image search API required.",
                 )
 
             grounded = await client.grounded_osint_investigation(image_bytes, user_context)

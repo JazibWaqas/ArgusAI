@@ -272,14 +272,14 @@ class LLMClient:
             return None
 
         ctx = (user_context or "").strip()
-        reverse_json = json.dumps(reverse_matches or [], indent=2)
         prompt = (
-            "You are a forensic investigative journalist. Use Google Search as a tool to determine the provenance "
-            "and authenticity of the uploaded image. Treat the user's context as a claim to investigate, not as proof.\n\n"
+            "You are a forensic investigative journalist. You can see the uploaded image directly. "
+            "Use Google Search as a tool to determine the provenance and authenticity of what you see in the image. "
+            "Treat the user's context as a claim to investigate, not as proof.\n\n"
             f"User-provided context: {ctx or 'No user claim provided.'}\n\n"
-            f"Reverse-image matches already gathered, if any:\n{reverse_json}\n\n"
-            "Conduct up to three research hops: first identify the subject or claim, then search for fact-checking or original coverage, "
-            "then verify dates and contradictions. Find named sources, dates, URLs, and whether the image is a known fabrication, verified real, or unresolved.\n\n"
+            "Step 1: Look at the image carefully. Identify who or what is depicted, any text, logos, locations, or events visible. "
+            "Step 2: Use Google Search to find when this image or the depicted event first appeared online, and whether fact-checkers have investigated it. "
+            "Step 3: Verify dates and look for contradictions between the claimed context and what sources actually say.\n\n"
             "Return ONLY one JSON object with exactly these keys:\n"
             "- known_deepfake (boolean)\n"
             "- verified_real (boolean)\n"

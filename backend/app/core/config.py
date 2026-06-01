@@ -24,6 +24,8 @@ class Settings:
         self.phoenix_dashboard_url = os.getenv("PHOENIX_DASHBOARD_URL", "")
         self.arize_health_governor = os.getenv("ARIZE_HEALTH_GOVERNOR", "1") == "1"
         self.detector_health_ttl_hours = int(os.getenv("DETECTOR_HEALTH_TTL_HOURS", "24"))
+        self.firebase_project_id = os.getenv("FIREBASE_PROJECT_ID", "")
+        self.firebase_service_account_json = os.getenv("FIREBASE_SERVICE_ACCOUNT_JSON", "")
         self.serpapi_key = os.getenv("SERPAPI_KEY")
         self.tineye_api_key = os.getenv("TINEYE_API_KEY")
         # Audio deepfake detector settings

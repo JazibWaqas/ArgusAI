@@ -1,6 +1,6 @@
 # CLAUDE.md — ArgusAI Hackathon Source of Truth
 
-Last updated: June 1, 2026.
+Last updated: June 2, 2026.
 
 This file is the master alignment document. Every implementation decision, open question, bug, UX decision, and todo lives here. Codex reads this and uses it as a senior technical supervisor handoff — not micromanagement, but full clarity so implementation can proceed without ambiguity.
 
@@ -10,7 +10,17 @@ The freshest implementation/deployment state is captured in:
 
 `ContextFiles/CurrentHandoff.md`
 
-If anything below conflicts with `ContextFiles/CurrentHandoff.md`, trust `ContextFiles/CurrentHandoff.md`. Older sections in this file still explain product strategy and rationale, but several "todo" and "pending" items were completed on June 1, 2026.
+If anything below conflicts with `ContextFiles/CurrentHandoff.md`, trust `ContextFiles/CurrentHandoff.md`. Older sections in this file still explain product strategy and rationale, but many historical "todo", "bug", and "pending" items were completed by June 2, 2026. Do not treat old backlog sections as current work unless they are repeated in `ContextFiles/CurrentHandoff.md` or `ContextFiles/ImplementationProgress.md`.
+
+Fresh takeover order:
+
+1. `ContextFiles/CurrentHandoff.md`
+2. `ContextFiles/Vision.md`
+3. `ContextFiles/Architecture.md`
+4. `ContextFiles/ImplementationProgress.md`
+5. `ContextFiles/AgentBuilderPhoenixSetup.md`
+
+Do not add detectors or redesign the UI unless explicitly requested. The project is in final hackathon/demo mode.
 
 Current live state:
 
@@ -22,10 +32,13 @@ Current live state:
 - Phoenix receives live OpenTelemetry traces from Cloud Run; logs confirmed `POST /v1/traces` with HTTP 200.
 - Image, audio, and video were all tested against the live backend and returned AI-generated verdicts on the provided AI samples.
 - Gemini 3.5 is the preferred model, but Gemini 2.5 Flash is the verified fallback for quota/high-demand/transient failures.
+- Agent Builder endpoints now include Firestore history context, detector reliability stats, recent same-media cases, and Phoenix trace IDs.
+- Verdict cards and official PDFs now surface Phoenix chain-of-custody audit links/trace IDs.
+- Admin panel now explains the Firestore persistence + Phoenix immutable trace story directly for judges.
 
 Remaining highest-leverage work:
 
-1. Configure Google Cloud Agent Builder tools for `/agent/analyze` and `/agent/chat`.
+1. Configure Google Cloud Agent Builder tools for `/agent/analyze` and `/agent/chat` in the Agent Builder console.
 2. Connect Phoenix MCP using `mcp/phoenix-mcp.json`.
 3. Run the Pope puffer image end to end and verify OSINT sources/dates.
 4. Prepare or record the calibration-governor demo moment.

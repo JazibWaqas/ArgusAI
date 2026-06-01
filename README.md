@@ -8,6 +8,18 @@ For the latest hackathon handoff, deployment state, admin password, and next act
 
 `ContextFiles/CurrentHandoff.md`
 
+## Fresh Session Reading Order
+
+If another LLM or engineer is taking over, read these in order:
+
+1. `ContextFiles/CurrentHandoff.md` - live deployment state, passwords, revisions, verification, exact remaining tasks.
+2. `ContextFiles/Vision.md` - product strategy, why Firestore plus Phoenix matters, Agent Builder story.
+3. `ContextFiles/Architecture.md` - backend/frontend/Firestore/Phoenix architecture.
+4. `ContextFiles/ImplementationProgress.md` - concise progress tracker.
+5. `ContextFiles/AgentBuilderPhoenixSetup.md` - exact Agent Builder and Phoenix MCP setup instructions.
+
+Do not start by adding detectors or redesigning the UI. The system is already built; the remaining work is configuration, demo verification, OSINT demo quality, and final submission narrative.
+
 ## Hackathon Build Status
 
 Target event: Google Cloud Rapid Agent Hackathon, Arize partner track.
@@ -20,6 +32,10 @@ Current implementation:
 - Gemini-only AI stack for semantic analysis, OSINT synthesis, grounded research, report narratives, and chat follow-ups.
 - Arize Phoenix/OpenTelemetry instrumentation for root analysis traces and detector child spans.
 - Arize reliability governor: circuit-breaker and calibration events are not passive logs. They affect detector influence and are visible in the admin panel.
+- Firestore persistence layer for accumulated analysis history, detector reliability stats, global stats, verdict feedback, and health governor state.
+- Agent Builder endpoints that use Firestore history context before responding, so the agent can discuss accumulated detector reliability and recent same-media cases.
+- Phoenix chain-of-custody links surfaced in verdict cards, signal details, admin trace rows, Agent Builder responses, and official PDFs.
+- Cloud Run Gemini rotation across 35 keys through Secret Manager.
 - OSINT research agent output: research hops, earliest appearance candidate, fact-check sources, timeline contradiction, search queries, and optional reverse-image matches when the user provides a public image URL.
 
 Current cloud state:
@@ -33,9 +49,13 @@ Current cloud state:
 - Phoenix URL: `https://argusai-phoenix-ddmxiumrdq-uc.a.run.app`.
 - Runtime region: `us-central1`.
 - Backend Cloud Run settings: `4Gi` memory, `2` CPU, `300s` timeout, concurrency `1`, `min-instances=0`, `max-instances=1`.
-- Gemini key is stored in Secret Manager as `argusai-gemini-api-key`.
+- Gemini single-key fallback is stored in Secret Manager as `argusai-gemini-api-key`.
+- Gemini multi-key rotation is stored in Secret Manager as `argusai-gemini-api-keys` and currently contains 35 unique keys.
+- Firebase project: `argusai-8d9fe`; service account secret: `argusai-firebase-service-account`.
 - Spectral weights are stored in Cloud Storage at `gs://argusai-497719-models/models/argusai_best_weights.pth`.
 - The backend health endpoint is live at `https://argusai-backend-1007754127412.us-central1.run.app/health`.
+- Backend `/stats` is live and returns Firestore-backed stats.
+- Backend `/agent/analyze` and `/agent/chat` are live and history-aware; they still need to be configured in the Agent Builder console.
 - Phoenix trace intake is confirmed through Cloud Run logs showing `POST /v1/traces` HTTP 200.
 - Admin dashboard password: `argusai2026`.
 
@@ -56,14 +76,25 @@ The winning demo framing is:
 
 The Arize integration is intentionally load-bearing. If the spectral detector fails its reference self-test, Phoenix receives the circuit-breaker trace, the reliability governor records the health event, and the verdict is based on the remaining signals. Removing Arize removes the audit trail and health governance story.
 
+Firestore and Phoenix are both intentional:
+
+- Firestore is persistent intelligence: analysis history, detector reliability, feedback, stats, and health state.
+- Phoenix is the immutable audit trail: what happened in this verdict, which detectors ran, and how the system reached the decision.
+
+Demo line:
+
+> Firestore tells us how reliable each signal has been. Phoenix proves exactly what happened in this verdict.
+
 ## API
 
 - `GET /health` - runtime status, detector list, LLM readiness, Phoenix tracing state, detector governor state.
 - `GET /arize/health` - compact status for the frontend Arize badge and admin panel.
-- `GET /arize/traces` - recent analysis traces from x-ray logs for the admin dashboard.
+- `GET /stats` - Firestore-backed global and per-detector reliability stats, with x-ray fallback.
+- `GET /arize/traces` - recent analysis traces from Firestore, with x-ray fallback for the admin dashboard.
 - `POST /sessions` - create an in-memory session.
 - `POST /sessions/{session_id}/analyze` - multipart `file`, optional `context`; returns full forensic report.
 - `POST /sessions/{session_id}/messages` - follow-up question about the last report.
+- `POST /sessions/{session_id}/feedback` - verdict feedback loop, stored in Firestore when configured.
 - `POST /analyze` - direct full analysis without a session.
 - `POST /agent/analyze` - Agent Builder-friendly analysis response with simplified schema.
 - `POST /agent/chat` - Agent Builder-friendly follow-up endpoint.
@@ -106,11 +137,13 @@ See `.env.example`.
 Important variables:
 
 - `GEMINI_API_KEY` - required for semantic vision, OSINT grounding, narrative explanation, and chat.
+- `GEMINI_API_KEYS` - optional multiline/comma-separated key list for deployed multi-key rotation.
 - `PHOENIX_API_KEY` and `PHOENIX_COLLECTOR_ENDPOINT` - enable Phoenix tracing.
 - `PHOENIX_DASHBOARD_URL` - shown in the frontend Arize badge.
 - `SERPAPI_KEY` - optional reverse-image enrichment when the user includes a public image URL in context.
 - `ARIZE_HEALTH_GOVERNOR=1` - keeps detector health events load-bearing.
 - `SPECTRAL_MODEL_PATH=argusai_fuse_best` - spectral model directory or checkpoint path.
+- `FIREBASE_PROJECT_ID`, `FIREBASE_SERVICE_ACCOUNT_JSON`, `GOOGLE_APPLICATION_CREDENTIALS` - Firestore persistence.
 
 For local self-hosted Phoenix, use:
 

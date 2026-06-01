@@ -33,6 +33,7 @@ class ForensicReport(BaseModel):
     score_breakdown: ScoreBreakdown
     evidence: EvidenceProfile
     pipeline_health: dict[str, Any] = Field(default_factory=dict)
+    phoenix_trace_id: Optional[str] = None
     generated_at: datetime
 
     @staticmethod

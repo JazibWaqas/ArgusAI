@@ -10,6 +10,7 @@ import "./styles.css";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
 const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || "argusai2026";
+const PHOENIX_BASE = "https://argusai-phoenix-ddmxiumrdq-uc.a.run.app";
 const SUPPORTED_MEDIA = {
   image: ["image/jpeg", "image/png", "image/webp", "image/gif", "image/bmp"],
   video: ["video/mp4", "video/webm", "video/quicktime", "video/x-matroska", "video/x-mkvideo"],
@@ -94,7 +95,7 @@ function getMediaCopy(mediaType = "default") {
 }
 
 /** ELA/OSINT stash large blobs in metrics; PDF endpoint does not need them and huge JSON breaks POST. */
-const METRIC_KEYS_STRIP_FOR_PDF = ["ela_image_base64", "grounding_metadata"];
+const METRIC_KEYS_STRIP_FOR_PDF = ["ela_image_base64", "grounding_metadata", "search_queries"];
 
 function stripReportForPdfRequest(report) {
   if (!report?.evidence?.signals?.length) return report;
@@ -247,6 +248,11 @@ function formatSourceDate(value) {
   return String(value);
 }
 
+function phoenixTraceUrl(traceId) {
+  if (!traceId) return "";
+  return `${PHOENIX_BASE}/projects/argusai-forensics/traces/${traceId}`;
+}
+
 function formatTime(value) {
   if (!value) return "unknown";
   const dt = new Date(value);
@@ -335,7 +341,7 @@ function getSignalDescription(signal, mediaType = "image") {
   return null;
 }
 
-function AnimatedSignalCard({ signal, index, mediaType = "image" }) {
+function AnimatedSignalCard({ signal, index, mediaType = "image", detectorStats = {}, phoenixTraceId = "" }) {
   const ref = useRef(null);
   const isInView = useInView(ref, { once: true, margin: "-40px" });
   const [showDetails, setShowDetails] = useState(false);
@@ -344,6 +350,9 @@ function AnimatedSignalCard({ signal, index, mediaType = "image" }) {
 
   const hasInfluence = typeof signal.verdict_influence_percent === "number";
   const barPct = hasInfluence ? signal.verdict_influence_percent : Math.round((signal.reliability || 0) * 100);
+  const realStats = detectorStats?.[signal.id];
+  const showRealStats = realStats && Number(realStats.total_runs || 0) >= 5;
+  const traceUrl = phoenixTraceUrl(phoenixTraceId);
 
   const statsBlock = (
     <div className={`signal-stats ${wide ? "signal-stats-osint" : ""}`}>
@@ -368,6 +377,11 @@ function AnimatedSignalCard({ signal, index, mediaType = "image" }) {
           {formatSupportLabel(signal.supports, mediaType)}
         </span>
       </div>
+      {showRealStats && (
+        <div className="signal-real-stats">
+          Based on {realStats.total_runs} analyses · {formatPercent(realStats.accuracy_rate)} accuracy
+        </div>
+      )}
     </div>
   );
 
@@ -420,6 +434,14 @@ function AnimatedSignalCard({ signal, index, mediaType = "image" }) {
                   <li key={idx}>{obs}</li>
                 ))}
               </ul>
+            </div>
+          )}
+          {traceUrl && (
+            <div className="signal-detail-row signal-detail-row--audit">
+              <span className="signal-detail-label">Audit trail</span>
+              <a className="phoenix-link" href={traceUrl} target="_blank" rel="noreferrer">
+                View in Phoenix <ChevronRight size={12} />
+              </a>
             </div>
           )}
         </motion.div>
@@ -585,7 +607,29 @@ function ScanningOverlay({ steps, currentStep }) {
   );
 }
 
-function AudioReportCard({ reportData }) {
+function FeedbackWidget({ sessionId, feedbackState, onFeedback }) {
+  if (!sessionId) return null;
+  const submitted = feedbackState?.submitted;
+  return (
+    <div className="feedback-row">
+      <span>Was this verdict accurate?</span>
+      {submitted ? (
+        <strong>Thanks — this helps calibrate future analyses.</strong>
+      ) : (
+        <div className="feedback-actions">
+          <button type="button" onClick={() => onFeedback(true)}>
+            <Check size={13} /> Yes
+          </button>
+          <button type="button" onClick={() => onFeedback(false)}>
+            <X size={13} /> No
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AudioReportCard({ reportData, sessionId, feedbackState, onFeedback, detectorStats = {} }) {
   if (!reportData) return null;
 
   const certaintyPercent = Math.round((reportData.certainty || 0) * 100);
@@ -599,6 +643,8 @@ function AudioReportCard({ reportData }) {
   const sourceColor = source === "local_wav2vec2" ? "#10b981" : "#06b6d4";
 
   const sig = reportData.signal;
+  const realStats = sig ? detectorStats?.[sig.id] : null;
+  const showRealStats = realStats && Number(realStats.total_runs || 0) >= 5;
   const confidenceLabel = reportData.confidence_label || "Guarded";
   const observations = sig?.observations || [];
   const probFake = sig?.metrics?.prob_fake ?? null;
@@ -639,8 +685,15 @@ function AudioReportCard({ reportData }) {
           >
             {sourceLabel}
           </span>
+          {reportData.phoenix_trace_id && (
+            <a className="verdict-audit-link" href={phoenixTraceUrl(reportData.phoenix_trace_id)} target="_blank" rel="noreferrer">
+              Trace {shortHash(reportData.phoenix_trace_id)} · View audit trail <ChevronRight size={12} />
+            </a>
+          )}
         </div>
       </motion.div>
+
+      <FeedbackWidget sessionId={sessionId} feedbackState={feedbackState} onFeedback={onFeedback} />
 
       {/* Waveform probability bar */}
       <motion.div
@@ -681,6 +734,11 @@ function AudioReportCard({ reportData }) {
             </div>
 
             <p className="signal-summary">{sig.summary}</p>
+            {showRealStats && (
+              <div className="signal-real-stats audio-real-stats">
+                Based on {realStats.total_runs} analyses · {formatPercent(realStats.accuracy_rate)} accuracy
+              </div>
+            )}
 
             {/* Probability bars */}
             {probFake !== null && probReal !== null && (
@@ -744,6 +802,14 @@ function AudioReportCard({ reportData }) {
                 <p className="signal-detail-text">{sig.caveat}</p>
               </div>
             )}
+            {reportData.phoenix_trace_id && (
+              <div className="signal-detail-row signal-detail-row--audit" style={{ marginTop: 8 }}>
+                <span className="signal-detail-label">Audit trail</span>
+                <a className="phoenix-link" href={phoenixTraceUrl(reportData.phoenix_trace_id)} target="_blank" rel="noreferrer">
+                  View in Phoenix <ChevronRight size={12} />
+                </a>
+              </div>
+            )}
           </div>
         </motion.div>
       )}
@@ -751,7 +817,7 @@ function AudioReportCard({ reportData }) {
   );
 }
 
-function ForensicReportCard({ reportData, showJson, onToggleJson, onDownloadPdf, pdfDownloading }) {
+function ForensicReportCard({ reportData, showJson, onToggleJson, onDownloadPdf, pdfDownloading, sessionId, feedbackState, onFeedback, detectorStats = {} }) {
   const jsonStr = useMemo(() => {
     if (!reportData || !showJson) return "";
     try {
@@ -800,9 +866,16 @@ function ForensicReportCard({ reportData, showJson, onToggleJson, onDownloadPdf,
               <span className="verdict-leaning-value">{formatVerdict(reportData.leaning)}</span>
             </div>
           )}
+          {reportData.phoenix_trace_id && (
+            <a className="verdict-audit-link" href={phoenixTraceUrl(reportData.phoenix_trace_id)} target="_blank" rel="noreferrer">
+              Trace {shortHash(reportData.phoenix_trace_id)} · View audit trail <ChevronRight size={12} />
+            </a>
+          )}
           <span className="report-ts">{new Date(reportData.generated_at).toLocaleString()}</span>
         </div>
       </motion.div>
+
+      <FeedbackWidget sessionId={sessionId} feedbackState={feedbackState} onFeedback={onFeedback} />
 
       <motion.div
         className="report-helper"
@@ -839,7 +912,14 @@ function ForensicReportCard({ reportData, showJson, onToggleJson, onDownloadPdf,
         <div className="signals-grid">
           {visibleSignals.length > 0
             ? visibleSignals.map((signal, i) => (
-                <AnimatedSignalCard key={signal.id} signal={signal} index={i} mediaType={mediaType} />
+                <AnimatedSignalCard
+                  key={signal.id}
+                  signal={signal}
+                  index={i}
+                  mediaType={mediaType}
+                  detectorStats={detectorStats}
+                  phoenixTraceId={reportData.phoenix_trace_id}
+                />
               ))
             : <p style={{ color: "var(--text-muted)" }}>No signals extracted.</p>
           }
@@ -889,7 +969,7 @@ function ForensicReportCard({ reportData, showJson, onToggleJson, onDownloadPdf,
   );
 }
 
-function AdminPanel({ open, onClose, arizeHealth, onHealthUpdate }) {
+function AdminPanel({ open, onClose, arizeHealth, onHealthUpdate, statsData, onStatsUpdate }) {
   const [password, setPassword] = useState("");
   const [authed, setAuthed] = useState(() => localStorage.getItem("argusai_admin") === "1");
   const [shake, setShake] = useState(false);
@@ -907,23 +987,26 @@ function AdminPanel({ open, onClose, arizeHealth, onHealthUpdate }) {
     setLoading(true);
     setError("");
     try {
-      const [healthRes, tracesRes] = await Promise.all([
+      const [healthRes, tracesRes, statsRes] = await Promise.all([
         fetch(`${API_BASE}/arize/health`),
         fetch(`${API_BASE}/arize/traces?limit=10`),
+        fetch(`${API_BASE}/stats`),
       ]);
       const healthJson = healthRes.ok ? await healthRes.json() : null;
       const tracesJson = tracesRes.ok ? await tracesRes.json() : { traces: [] };
+      const statsJson = statsRes.ok ? await statsRes.json() : null;
       if (healthJson) {
         setHealth(healthJson);
         onHealthUpdate?.(healthJson);
       }
+      if (statsJson) onStatsUpdate?.(statsJson);
       setTraces(Array.isArray(tracesJson.traces) ? tracesJson.traces : []);
     } catch {
       setError("Could not load Arize operator data.");
     } finally {
       setLoading(false);
     }
-  }, [authed, onHealthUpdate]);
+  }, [authed, onHealthUpdate, onStatsUpdate]);
 
   useEffect(() => {
     if (open && authed) loadAdminData();
@@ -935,8 +1018,11 @@ function AdminPanel({ open, onClose, arizeHealth, onHealthUpdate }) {
   const detectorRows = Object.entries(governor.detectors || {});
   const calibration = governor.calibration_divergence;
   const latestTrace = traces[0];
+  const globalStats = statsData?.global || {};
+  const mediaStats = globalStats.by_media_type || {};
+  const verdictStats = globalStats.by_verdict || {};
   const latestDetectors = latestTrace?.detectors ? Object.entries(latestTrace.detectors) : [];
-  const maxLatency = Math.max(0.01, ...latestDetectors.map(([, row]) => Number(row?.latency) || 0));
+  const maxLatency = Math.max(0.01, ...latestDetectors.map(([, row]) => Number(row?.latency_seconds ?? row?.latency) || 0));
 
   const submitPassword = (e) => {
     e.preventDefault();
@@ -994,6 +1080,9 @@ function AdminPanel({ open, onClose, arizeHealth, onHealthUpdate }) {
                   <RefreshCw size={14} /> {loading ? "Refreshing" : "Refresh"}
                 </button>
               </div>
+              <p className="admin-framing-copy">
+                Investigation history persisted in Firestore · each verdict's full reasoning recorded as an immutable Phoenix trace.
+              </p>
 
               {error && <div className="admin-alert error">{error}</div>}
               {calibration?.active && (
@@ -1002,6 +1091,21 @@ function AdminPanel({ open, onClose, arizeHealth, onHealthUpdate }) {
                   Spectral detector influence is reduced to {formatPercent(governor.spectral_attenuation_factor)} after repeated calibration divergence.
                 </div>
               )}
+
+              <section className="admin-stats-row">
+                <div className="admin-stat-pill">
+                  <strong>{globalStats.total_analyses || 0}</strong>
+                  <span>total analyses</span>
+                </div>
+                <div className="admin-stat-pill">
+                  <strong>{mediaStats.image || 0} · {mediaStats.video || 0} · {mediaStats.audio || 0}</strong>
+                  <span>images · videos · audio</span>
+                </div>
+                <div className="admin-stat-pill">
+                  <strong>{verdictStats.likely_ai_generated || verdictStats.ai_generated || 0} · {verdictStats.likely_authentic || verdictStats.authentic || 0} · {verdictStats.inconclusive || 0}</strong>
+                  <span>AI · authentic · inconclusive</span>
+                </div>
+              </section>
 
               <section className="admin-section">
                 <h3>Recent Investigations</h3>
@@ -1025,7 +1129,13 @@ function AdminPanel({ open, onClose, arizeHealth, onHealthUpdate }) {
                           <td>{formatVerdict(trace.verdict || "unknown")}</td>
                           <td>{formatPercent(trace.certainty)}</td>
                           <td>{Number(trace.latency_seconds || 0).toFixed(2)}s</td>
-                          <td className="mono">{shortHash(trace.sha256)}</td>
+                          <td className="mono">
+                            {trace.phoenix_trace_id ? (
+                              <a className="phoenix-link" href={phoenixTraceUrl(trace.phoenix_trace_id)} target="_blank" rel="noreferrer">
+                                {shortHash(trace.sha256 || trace.phoenix_trace_id)}
+                              </a>
+                            ) : shortHash(trace.sha256)}
+                          </td>
                         </tr>
                       )) : (
                         <tr><td colSpan={6}>No x-ray traces written yet.</td></tr>
@@ -1055,7 +1165,7 @@ function AdminPanel({ open, onClose, arizeHealth, onHealthUpdate }) {
                   <h3><BarChart3 size={14} /> Latest Latency</h3>
                   <div className="admin-bars">
                     {latestDetectors.length ? latestDetectors.slice(0, 8).map(([id, row]) => {
-                      const latency = Number(row?.latency) || 0;
+                      const latency = Number(row?.latency_seconds ?? row?.latency) || 0;
                       return (
                         <div className="admin-bar-row" key={id}>
                           <span className="mono">{id}</span>
@@ -1268,6 +1378,8 @@ export default function App() {
   const [scanStep, setScanStep]         = useState(0);
   const [pdfLoadingForId, setPdfLoadingForId] = useState(null);
   const [arizeHealth, setArizeHealth] = useState(null);
+  const [statsData, setStatsData] = useState(null);
+  const [feedbackBySession, setFeedbackBySession] = useState({});
   const [fileType, setFileType]         = useState("");
   const [selectedMediaType, setSelectedMediaType] = useState("");
   const [adminOpen, setAdminOpen] = useState(false);
@@ -1283,11 +1395,19 @@ export default function App() {
   }, [isAnalyzing]);
 
   const createFreshSession = useCallback(async () => {
-    const res = await fetch(`${API_BASE}/sessions`, { method: "POST" });
-    if (!res.ok) throw new Error("session_create_failed");
-    const data = await res.json();
-    setSessionId(data.session_id);
-    return data.session_id;
+    let coldStartTimer = null;
+    try {
+      coldStartTimer = setTimeout(() => {
+        setStatus((current) => current || "Connecting to Google Cloud Run (waking up backend container)...");
+      }, 3500);
+      const res = await fetch(`${API_BASE}/sessions`, { method: "POST" });
+      if (!res.ok) throw new Error("session_create_failed");
+      const data = await res.json();
+      setSessionId(data.session_id);
+      return data.session_id;
+    } finally {
+      if (coldStartTimer) clearTimeout(coldStartTimer);
+    }
   }, []);
 
   const ensureSession = useCallback(async () => {
@@ -1326,6 +1446,21 @@ export default function App() {
       clearInterval(id);
     };
   }, []);
+
+  const loadStats = useCallback(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/stats`);
+      if (!res.ok) return;
+      const data = await res.json();
+      setStatsData(data);
+    } catch {
+      setStatsData(null);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadStats();
+  }, [loadStats]);
 
   useEffect(() => {
     feedEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -1523,6 +1658,21 @@ export default function App() {
     }
   };
 
+  const handleFeedback = async (correct) => {
+    if (!sessionId) return;
+    setFeedbackBySession((prev) => ({ ...prev, [sessionId]: { submitted: true, value: correct } }));
+    try {
+      const res = await fetch(`${API_BASE}/sessions/${sessionId}/feedback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ verdict_correct: correct }),
+      });
+      if (res.ok) loadStats();
+    } catch {
+      /* Feedback is best-effort; the UI thank-you state can remain. */
+    }
+  };
+
   const hasReport  = messages.some((m) => m.role === "assistant" && (m.kind === "report" || m.kind === "audio_report"));
   const currentScanSteps = selectedMediaType === "audio" ? AUDIO_SCAN_STEPS : selectedMediaType === "video" ? VIDEO_SCAN_STEPS : SCAN_STEPS;
   const arizeWarn = arizeHealth?.status === "anomaly" || arizeHealth?.status === "calibration_alert";
@@ -1612,7 +1762,13 @@ export default function App() {
                   <div className="assistant-bubble"><p>{m.text}</p></div>
                 )}
                 {m.role === "assistant" && m.kind === "audio_report" && m.report && (
-                  <AudioReportCard reportData={m.report} />
+                  <AudioReportCard
+                    reportData={m.report}
+                    sessionId={sessionId}
+                    feedbackState={feedbackBySession[sessionId]}
+                    onFeedback={handleFeedback}
+                    detectorStats={statsData?.detectors || {}}
+                  />
                 )}
                 {m.role === "assistant" && m.kind === "report" && m.report && (
                   <ForensicReportCard
@@ -1621,6 +1777,10 @@ export default function App() {
                     onToggleJson={() => toggleJson(m.id)}
                     onDownloadPdf={() => handleDownloadPdf(m.id, m.report)}
                     pdfDownloading={pdfLoadingForId === m.id}
+                    sessionId={sessionId}
+                    feedbackState={feedbackBySession[sessionId]}
+                    onFeedback={handleFeedback}
+                    detectorStats={statsData?.detectors || {}}
                   />
                 )}
               </motion.div>
@@ -1768,6 +1928,8 @@ export default function App() {
         onClose={() => setAdminOpen(false)}
         arizeHealth={arizeHealth}
         onHealthUpdate={setArizeHealth}
+        statsData={statsData}
+        onStatsUpdate={setStatsData}
       />
     </div>
   );

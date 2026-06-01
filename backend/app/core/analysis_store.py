@@ -1,0 +1,443 @@
+from __future__ import annotations
+
+import json
+import logging
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any, Optional
+
+import httpx
+
+from .config import settings
+from .firebase import get_db
+
+
+log = logging.getLogger(__name__)
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _verdict_direction(verdict: Any) -> Optional[str]:
+    value = getattr(verdict, "value", verdict)
+    text = str(value or "").lower()
+    if "ai_generated" in text or text == "ai":
+        return "ai_generated"
+    if "authentic" in text or text == "real":
+        return "authentic"
+    return None
+
+
+def _support_direction(support: Any) -> Optional[str]:
+    value = getattr(support, "value", support)
+    text = str(value or "").lower()
+    if text in {"ai_generated", "authentic"}:
+        return text
+    return None
+
+
+def _report_sha(report: Any) -> Optional[str]:
+    evidence = getattr(report, "evidence", None)
+    image = getattr(evidence, "image", None)
+    sha = getattr(image, "sha256", None)
+    if sha:
+        return str(sha)
+    health = getattr(report, "pipeline_health", None) or {}
+    sha = health.get("sha256") if isinstance(health, dict) else None
+    return str(sha) if sha else None
+
+
+def _report_signals(report: Any) -> list[Any]:
+    signal = getattr(report, "signal", None)
+    if signal is not None:
+        return [signal]
+    evidence = getattr(report, "evidence", None)
+    signals = getattr(evidence, "signals", None)
+    return list(signals or [])
+
+
+def _report_latency(report: Any) -> Optional[float]:
+    health = getattr(report, "pipeline_health", None) or {}
+    if isinstance(health, dict):
+        return health.get("latency_seconds") or health.get("global_execution_time")
+    return None
+
+
+def _signal_latency(signal: Any) -> Optional[float]:
+    metrics = getattr(signal, "metrics", None) or {}
+    if isinstance(metrics, dict):
+        return metrics.get("latency_seconds") or metrics.get("time_seconds")
+    return None
+
+
+def _detector_rows(report: Any, detector_metrics: Optional[dict[str, Any]] = None) -> dict[str, dict[str, Any]]:
+    rows: dict[str, dict[str, Any]] = {}
+    for signal in _report_signals(report):
+        detector_id = str(getattr(signal, "id", "") or "")
+        if not detector_id:
+            continue
+        metric_row = (detector_metrics or {}).get(detector_id) if isinstance(detector_metrics, dict) else {}
+        metric_row = metric_row if isinstance(metric_row, dict) else {}
+        rows[detector_id] = {
+            "support": getattr(getattr(signal, "supports", None), "value", getattr(signal, "supports", None)),
+            "confidence": getattr(signal, "confidence", None),
+            "latency_seconds": metric_row.get("time_seconds") if metric_row.get("time_seconds") is not None else _signal_latency(signal),
+            "status": getattr(getattr(signal, "status", None), "value", getattr(signal, "status", None)),
+            "visible": getattr(signal, "visible", True),
+            "circuit_breaker": bool(metric_row.get("circuit_breaker")),
+        }
+    return rows
+
+
+def build_analysis_record(report: Any, detector_metrics: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+    sha = _report_sha(report)
+    verdict = getattr(getattr(report, "verdict", None), "value", getattr(report, "verdict", None))
+    return {
+        "timestamp": getattr(report, "generated_at", datetime.now(timezone.utc)).isoformat(),
+        "sha256": sha,
+        "media_type": getattr(report, "media_type", "image"),
+        "verdict": verdict,
+        "certainty": getattr(report, "certainty", None),
+        "phoenix_trace_id": getattr(report, "phoenix_trace_id", None),
+        "detectors": _detector_rows(report, detector_metrics),
+        "latency_seconds": _report_latency(report),
+        "user_feedback": None,
+        "feedback_timestamp": None,
+    }
+
+
+def _update_detector_stat(db: Any, detector_id: str, row: dict[str, Any], verdict_direction: Optional[str], delta_feedback: int = 0) -> None:
+    support = _support_direction(row.get("support"))
+    if support not in {"ai_generated", "authentic"}:
+        return
+
+    latency = row.get("latency_seconds")
+    try:
+        latency_val = float(latency) if latency is not None else 0.0
+    except Exception:
+        latency_val = 0.0
+
+    agrees = bool(verdict_direction and support == verdict_direction)
+    doc_ref = db.collection("detector_stats").document(detector_id)
+
+    try:
+        from firebase_admin import firestore
+
+        transaction = db.transaction()
+
+        @firestore.transactional
+        def update_in_transaction(txn: Any) -> None:
+            snap = doc_ref.get(transaction=txn)
+            current = snap.to_dict() if snap.exists else {}
+            total_runs = int(current.get("total_runs") or 0)
+            correct_count = int(current.get("correct_count") or 0)
+            avg_latency = float(current.get("avg_latency_seconds") or 0.0)
+
+            if delta_feedback:
+                if delta_feedback < 0 and correct_count <= 0:
+                    return
+                new_correct = max(0, correct_count + delta_feedback)
+                new_rate = (new_correct / total_runs) if total_runs else 0.0
+                txn.set(
+                    doc_ref,
+                    {
+                        "correct_count": firestore.Increment(delta_feedback),
+                        "accuracy_rate": round(new_rate, 4),
+                        "last_updated": _now_iso(),
+                    },
+                    merge=True,
+                )
+                return
+
+            new_total = total_runs + 1
+            correct_delta = 1 if agrees else 0
+            new_correct = correct_count + correct_delta
+            new_avg = ((avg_latency * total_runs) + latency_val) / new_total
+            txn.set(
+                doc_ref,
+                {
+                    "total_runs": firestore.Increment(1),
+                    "correct_count": firestore.Increment(correct_delta),
+                    "accuracy_rate": round(new_correct / new_total, 4),
+                    "avg_latency_seconds": round(new_avg, 4),
+                    "last_updated": _now_iso(),
+                },
+                merge=True,
+            )
+
+        update_in_transaction(transaction)
+    except Exception as exc:
+        log.warning("Could not update detector stat %s: %s", detector_id, exc)
+
+
+def persist_analysis(report: Any, detector_metrics: Optional[dict[str, Any]] = None) -> None:
+    db = get_db()
+    if db is None:
+        return
+
+    record = build_analysis_record(report, detector_metrics)
+    sha = record.get("sha256")
+    if not sha:
+        return
+
+    try:
+        db.collection("analyses").document(str(sha)).set(record, merge=True)
+    except Exception as exc:
+        log.warning("Could not persist analysis %s: %s", sha, exc)
+        return
+
+    verdict_direction = _verdict_direction(record.get("verdict"))
+    try:
+        from firebase_admin import firestore
+
+        media_type = str(record.get("media_type") or "image")
+        verdict = str(record.get("verdict") or "inconclusive")
+        db.collection("stats").document("global").set(
+            {
+                "total_analyses": firestore.Increment(1),
+                "by_media_type": {media_type: firestore.Increment(1)},
+                "by_verdict": {verdict: firestore.Increment(1)},
+                "last_updated": _now_iso(),
+            },
+            merge=True,
+        )
+    except Exception as exc:
+        log.warning("Could not update global stats: %s", exc)
+
+    for detector_id, row in (record.get("detectors") or {}).items():
+        _update_detector_stat(db, detector_id, row, verdict_direction)
+
+
+def get_stats() -> Optional[dict[str, Any]]:
+    db = get_db()
+    if db is None:
+        return None
+    try:
+        global_doc = db.collection("stats").document("global").get()
+        global_stats = global_doc.to_dict() if global_doc.exists else {}
+        by_media_type = (global_stats or {}).get("by_media_type") or {}
+        by_verdict = (global_stats or {}).get("by_verdict") or {}
+        for key, value in (global_stats or {}).items():
+            if str(key).startswith("by_media_type."):
+                by_media_type[str(key).split(".", 1)[1]] = value
+            if str(key).startswith("by_verdict."):
+                by_verdict[str(key).split(".", 1)[1]] = value
+        detectors: dict[str, Any] = {}
+        for doc in db.collection("detector_stats").stream():
+            data = doc.to_dict() or {}
+            detectors[doc.id] = {
+                "total_runs": int(data.get("total_runs") or 0),
+                "correct_count": int(data.get("correct_count") or 0),
+                "accuracy_rate": float(data.get("accuracy_rate") or 0.0),
+                "avg_latency_seconds": float(data.get("avg_latency_seconds") or 0.0),
+                "last_updated": data.get("last_updated"),
+            }
+        return {
+            "global": {
+                "total_analyses": int((global_stats or {}).get("total_analyses") or 0),
+                "by_media_type": {"image": 0, "video": 0, "audio": 0, **by_media_type},
+                "by_verdict": by_verdict,
+                "last_updated": (global_stats or {}).get("last_updated"),
+            },
+            "detectors": detectors,
+            "source": "firestore",
+        }
+    except Exception as exc:
+        log.warning("Could not read Firestore stats: %s", exc)
+        return None
+
+
+def trace_rows_from_firestore(limit: int = 10) -> Optional[list[dict[str, Any]]]:
+    db = get_db()
+    if db is None:
+        return None
+    try:
+        query = db.collection("analyses").order_by("timestamp", direction="DESCENDING").limit(max(1, min(limit, 50)))
+        rows = []
+        for doc in query.stream():
+            data = doc.to_dict() or {}
+            detectors = data.get("detectors") if isinstance(data.get("detectors"), dict) else {}
+            rows.append(
+                {
+                    "timestamp": data.get("timestamp"),
+                    "sha256": data.get("sha256") or doc.id,
+                    "media_type": data.get("media_type"),
+                    "verdict": data.get("verdict"),
+                    "certainty": data.get("certainty"),
+                    "latency_seconds": data.get("latency_seconds"),
+                    "phoenix_trace_id": data.get("phoenix_trace_id"),
+                    "detectors": detectors,
+                    "circuit_breaker_fired": any(bool((row or {}).get("circuit_breaker")) for row in detectors.values()),
+                    "calibration_divergence": False,
+                }
+            )
+        return rows
+    except Exception as exc:
+        log.warning("Could not query Firestore traces: %s", exc)
+        return None
+
+
+def build_history_context(report: Any, *, limit: int = 25) -> dict[str, Any]:
+    stats = get_stats() or fallback_stats_from_xray()
+    global_stats = stats.get("global") or {}
+    detector_stats = stats.get("detectors") or {}
+    media_type = str(getattr(report, "media_type", "image") or "image")
+
+    reliability: dict[str, Any] = {}
+    for signal in _report_signals(report):
+        detector_id = str(getattr(signal, "id", "") or "")
+        if not detector_id:
+            continue
+        row = detector_stats.get(detector_id) or {}
+        total = int(row.get("total_runs") or 0)
+        reliability[detector_id] = {
+            "signal_name": getattr(signal, "name", detector_id),
+            "current_support": getattr(getattr(signal, "supports", None), "value", getattr(signal, "supports", None)),
+            "current_confidence": getattr(signal, "confidence", None),
+            "total_runs": total,
+            "accuracy_rate": float(row.get("accuracy_rate") or 0.0),
+            "avg_latency_seconds": float(row.get("avg_latency_seconds") or 0.0),
+            "enough_history": total >= 5,
+        }
+
+    rows = trace_rows_from_firestore(limit) or []
+    same_media = [row for row in rows if (row.get("media_type") or "image") == media_type]
+    by_media = global_stats.get("by_media_type") or {}
+    same_media_count = int(by_media.get(media_type) or len(same_media) or 0)
+
+    reliable_lines = []
+    for detector_id, row in reliability.items():
+        if row["enough_history"]:
+            reliable_lines.append(
+                f"{row['signal_name']} has matched final verdict direction in "
+                f"{round(row['accuracy_rate'] * 100)}% of {row['total_runs']} eligible runs"
+            )
+    summary = (
+        f"Firestore has persisted {int(global_stats.get('total_analyses') or 0)} total analyses, "
+        f"including {same_media_count} {media_type} investigations."
+    )
+    if reliable_lines:
+        summary += " " + "; ".join(reliable_lines[:4]) + "."
+
+    return {
+        "source": stats.get("source") or "unavailable",
+        "summary": summary,
+        "total_analyses": int(global_stats.get("total_analyses") or 0),
+        "same_media_type_analyses": same_media_count,
+        "by_media_type": by_media,
+        "by_verdict": global_stats.get("by_verdict") or {},
+        "detector_reliability": reliability,
+        "recent_same_media_cases": [
+            {
+                "timestamp": row.get("timestamp"),
+                "sha256": row.get("sha256"),
+                "verdict": row.get("verdict"),
+                "certainty": row.get("certainty"),
+                "phoenix_trace_id": row.get("phoenix_trace_id"),
+            }
+            for row in same_media[:5]
+        ],
+    }
+
+
+def fallback_stats_from_xray() -> dict[str, Any]:
+    log_dir = Path("logs/xray")
+    global_stats = {
+        "total_analyses": 0,
+        "by_media_type": {"image": 0, "video": 0, "audio": 0},
+        "by_verdict": {},
+    }
+    detectors: dict[str, dict[str, Any]] = {}
+    if not log_dir.exists():
+        return {"global": global_stats, "detectors": detectors, "source": "xray"}
+
+    for path in log_dir.glob("*.json"):
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        global_stats["total_analyses"] += 1
+        media = data.get("media_type") or ("audio" if path.name.startswith("audio_") else "image")
+        global_stats["by_media_type"][media] = global_stats["by_media_type"].get(media, 0) + 1
+        verdict = data.get("final_verdict") or data.get("verdict") or "unknown"
+        global_stats["by_verdict"][verdict] = global_stats["by_verdict"].get(verdict, 0) + 1
+
+        raw = data.get("detector_metrics") if isinstance(data.get("detector_metrics"), dict) else {}
+        signal = data.get("signal")
+        if isinstance(signal, dict):
+            raw[signal.get("id") or "audio_deepfake"] = {
+                "support": signal.get("supports"),
+                "time_seconds": (signal.get("metrics") or {}).get("latency_seconds"),
+            }
+        verdict_direction = _verdict_direction(verdict)
+        for detector_id, row in raw.items():
+            if not isinstance(row, dict):
+                continue
+            support = _support_direction(row.get("support"))
+            if support not in {"ai_generated", "authentic"}:
+                continue
+            item = detectors.setdefault(detector_id, {"total_runs": 0, "correct_count": 0, "_latency_sum": 0.0})
+            item["total_runs"] += 1
+            item["correct_count"] += 1 if support == verdict_direction else 0
+            try:
+                item["_latency_sum"] += float(row.get("time_seconds") or 0.0)
+            except Exception:
+                pass
+
+    for item in detectors.values():
+        total = item.get("total_runs") or 0
+        item["accuracy_rate"] = round((item.get("correct_count") or 0) / total, 4) if total else 0.0
+        item["avg_latency_seconds"] = round((item.pop("_latency_sum", 0.0)) / total, 4) if total else 0.0
+    return {"global": global_stats, "detectors": detectors, "source": "xray"}
+
+
+def apply_feedback(report: Any, verdict_correct: bool) -> dict[str, Any]:
+    db = get_db()
+    sha = _report_sha(report)
+    if not sha:
+        return {"ok": False, "error": "Report hash unavailable."}
+    if db is None:
+        return {"ok": False, "error": "Firebase unavailable."}
+
+    feedback = "correct" if verdict_correct else "incorrect"
+    verdict_direction = _verdict_direction(getattr(report, "verdict", None))
+    detectors = _detector_rows(report)
+    try:
+        doc_ref = db.collection("analyses").document(sha)
+        current = doc_ref.get()
+        existing = (current.to_dict() or {}).get("user_feedback") if current.exists else None
+        doc_ref.set({"user_feedback": feedback, "feedback_timestamp": _now_iso()}, merge=True)
+        if existing == feedback:
+            return {"ok": True, "feedback": feedback, "unchanged": True}
+
+        if feedback == "incorrect":
+            for detector_id, row in detectors.items():
+                if _support_direction(row.get("support")) == verdict_direction:
+                    _update_detector_stat(db, detector_id, row, verdict_direction, delta_feedback=-1)
+        elif existing == "incorrect":
+            for detector_id, row in detectors.items():
+                if _support_direction(row.get("support")) == verdict_direction:
+                    _update_detector_stat(db, detector_id, row, verdict_direction, delta_feedback=1)
+    except Exception as exc:
+        log.warning("Could not apply feedback for %s: %s", sha, exc)
+        return {"ok": False, "error": "Could not persist feedback."}
+
+    return {"ok": True, "feedback": feedback}
+
+
+async def annotate_phoenix_feedback(trace_id: Optional[str], verdict_correct: bool) -> None:
+    if not trace_id or not settings.phoenix_dashboard_url:
+        return
+    url = f"{settings.phoenix_dashboard_url.rstrip('/')}/api/v1/evaluations"
+    payload = {
+        "label": "correct" if verdict_correct else "incorrect",
+        "score": 1.0 if verdict_correct else 0.0,
+        "trace_id": trace_id,
+        "name": "user_verdict_feedback",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=8) as client:
+            await client.post(url, json=payload)
+    except Exception:
+        return

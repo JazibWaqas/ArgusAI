@@ -4,13 +4,11 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
-from ..models.report import ForensicReport
-
 
 @dataclass
 class SessionData:
     messages: List[Dict[str, Any]] = field(default_factory=list)
-    last_report: Optional[ForensicReport] = None
+    last_report: Optional[Any] = None
 
 
 class SessionStore:
@@ -35,7 +33,7 @@ class SessionStore:
         s.messages.append(row)
         return True
 
-    def set_report(self, session_id: str, report: ForensicReport) -> bool:
+    def set_report(self, session_id: str, report: Any) -> bool:
         s = self.get(session_id)
         if not s:
             return False

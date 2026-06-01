@@ -19,12 +19,19 @@ Current implemented hackathon additions:
 - Audio analysis endpoint now uses `AudioAnalysisPipeline`.
 - Gemini semantic fallback for audio, video, and image when primary detector/model is unavailable or weak.
 - Gemini fallback model behavior: primary `gemini-3.5-flash`, fallback `gemini-2.5-flash`.
+- Cloud Run Gemini rotation is active through Secret Manager `argusai-gemini-api-keys` with 35 unique keys.
 - Video temporal coherence signal and graceful embedded audio-track signal.
 - Gemini-grounded OSINT research agent and optional public-URL reverse-image enrichment in `backend/app/core/llm_client.py`.
 - Upgraded OSINT detector output in `backend/app/detectors/osint.py`.
 - Agent Builder endpoints in `backend/app/main.py`: `/agent/analyze` and `/agent/chat`.
 - Arize health endpoint in `backend/app/main.py`: `/arize/health`.
 - Arize trace feed in `backend/app/main.py`: `/arize/traces`.
+- Firestore intelligence layer in `backend/app/core/firebase.py` and `backend/app/core/analysis_store.py`.
+- Firestore-backed `/stats`, Firestore-backed `/arize/traces`, and `/sessions/{id}/feedback`.
+- Firestore is active on Cloud Run with Firebase project `argusai-8d9fe`.
+- Agent Builder endpoints now query Firestore history context before responding, including total analyses, same-media counts, detector reliability, recent same-media cases, and `phoenix_trace_id`.
+- Verdict cards and official PDFs surface Phoenix chain-of-custody links/trace IDs.
+- Admin dashboard includes a concise Firestore/Phoenix framing line for judges.
 - Arize badge, OSINT research UI, dynamic media UX, and password-gated admin dashboard in `frontend/src/App.jsx`.
 - `.env.example` documents required env vars.
 - `mcp/phoenix-mcp.json` is the official Phoenix MCP server template.

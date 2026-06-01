@@ -10,7 +10,9 @@ import time
 from pathlib import Path
 from typing import Optional
 
+from ..core.analysis_store import persist_analysis
 from ..core.llm_client import LLMClient
+from ..core.observability import set_span_attribute, span_trace_id, start_span
 from ..detectors.audio import analyze_audio
 from ..models.evidence import EvidenceSignal, SignalStatus, SignalSupport
 from ..models.audio_report import AudioForensicReport
@@ -30,74 +32,90 @@ class AudioAnalysisPipeline:
         self, audio_bytes: bytes, user_context: Optional[str] = None
     ) -> AudioForensicReport:
         global_start = time.perf_counter()
-
-        signal = await analyze_audio(audio_bytes)
-        gemini_signal = await self._gemini_audio_signal(audio_bytes, user_context)
-        if self._should_use_gemini(signal, gemini_signal):
-            signal = gemini_signal
-
-        duration = round(time.perf_counter() - global_start, 3)
         sha = _hash_bytes(audio_bytes)
 
-        # Simple verdict from signal
-        verdict = signal.supports.value  # "authentic" | "ai_generated" | "unknown"
-        certainty = signal.confidence or 0.5
-        confidence_label = (signal.metrics or {}).get("confidence_label", "Guarded")
-        inference_source = (signal.metrics or {}).get("inference_source", "unknown")
+        with start_span(
+            "argusai.audio_analysis",
+            {"media.type": "audio", "audio.sha256": sha},
+        ) as root_span:
+            trace_id = span_trace_id(root_span)
 
-        if verdict == "ai_generated":
-            explanation = (
-                f"Our audio analysis indicates this recording is likely AI-generated. "
-                f"{signal.summary} "
-                f"{'Context provided: ' + user_context if user_context else ''}"
-            ).strip()
-        elif verdict == "authentic":
-            explanation = (
-                f"Our audio analysis indicates this recording contains authentic human speech. "
-                f"{signal.summary} "
-                f"{'Context provided: ' + user_context if user_context else ''}"
-            ).strip()
-        else:
-            explanation = (
-                f"Our audio analysis was inconclusive. {signal.summary}"
-            ).strip()
+            signal = await analyze_audio(audio_bytes)
+            gemini_signal = await self._gemini_audio_signal(audio_bytes, user_context)
+            if self._should_use_gemini(signal, gemini_signal):
+                signal = gemini_signal
 
-        report = AudioForensicReport(
-            media_type="audio",
-            verdict=verdict,
-            certainty=round(certainty, 4),
-            confidence_label=confidence_label,
-            explanation=explanation,
-            signal=signal,
-            inference_source=inference_source,
-            pipeline_health={"latency_seconds": duration, "sha256": sha},
-            generated_at=AudioForensicReport.now(),
-        )
+            duration = round(time.perf_counter() - global_start, 3)
 
-        # Write xray log
-        try:
-            log_dir = Path("logs/xray")
-            log_dir.mkdir(parents=True, exist_ok=True)
-            log_file = log_dir / f"audio_xray_{sha[:8]}_{int(time.time())}.json"
-            with open(log_file, "w") as f:
-                json.dump(
-                    {
-                        "timestamp": report.generated_at.isoformat(),
-                        "sha256": sha,
-                        "media_type": "audio",
-                        "verdict": verdict,
-                        "certainty": certainty,
-                        "inference_source": inference_source,
-                        "latency_seconds": duration,
-                        "signal": signal.model_dump(mode="json"),
-                    },
-                    f,
-                    indent=2,
-                )
-        except Exception:
-            pass
+            # Simple verdict from signal
+            verdict = signal.supports.value  # "authentic" | "ai_generated" | "unknown"
+            certainty = signal.confidence or 0.5
+            confidence_label = (signal.metrics or {}).get("confidence_label", "Guarded")
+            inference_source = (signal.metrics or {}).get("inference_source", "unknown")
 
-        return report
+            if verdict == "ai_generated":
+                explanation = (
+                    f"Our audio analysis indicates this recording is likely AI-generated. "
+                    f"{signal.summary} "
+                    f"{'Context provided: ' + user_context if user_context else ''}"
+                ).strip()
+            elif verdict == "authentic":
+                explanation = (
+                    f"Our audio analysis indicates this recording contains authentic human speech. "
+                    f"{signal.summary} "
+                    f"{'Context provided: ' + user_context if user_context else ''}"
+                ).strip()
+            else:
+                explanation = (
+                    f"Our audio analysis was inconclusive. {signal.summary}"
+                ).strip()
+
+            set_span_attribute(root_span, "verdict", verdict)
+            set_span_attribute(root_span, "certainty", round(certainty, 4))
+            set_span_attribute(root_span, "detector.audio_deepfake.signal_support", signal.supports.value)
+            set_span_attribute(root_span, "detector.audio_deepfake.confidence", signal.confidence)
+            set_span_attribute(root_span, "pipeline.latency_seconds", duration)
+
+            report = AudioForensicReport(
+                media_type="audio",
+                verdict=verdict,
+                certainty=round(certainty, 4),
+                confidence_label=confidence_label,
+                explanation=explanation,
+                signal=signal,
+                inference_source=inference_source,
+                pipeline_health={"latency_seconds": duration, "sha256": sha},
+                phoenix_trace_id=trace_id,
+                generated_at=AudioForensicReport.now(),
+            )
+
+            # Write xray log
+            try:
+                log_dir = Path("logs/xray")
+                log_dir.mkdir(parents=True, exist_ok=True)
+                log_file = log_dir / f"audio_xray_{sha[:8]}_{int(time.time())}.json"
+                with open(log_file, "w") as f:
+                    json.dump(
+                        {
+                            "timestamp": report.generated_at.isoformat(),
+                            "sha256": sha,
+                            "media_type": "audio",
+                            "verdict": verdict,
+                            "certainty": certainty,
+                            "inference_source": inference_source,
+                            "latency_seconds": duration,
+                            "phoenix_trace_id": trace_id,
+                            "signal": signal.model_dump(mode="json"),
+                        },
+                        f,
+                        indent=2,
+                    )
+            except Exception:
+                pass
+
+            persist_analysis(report, {"audio_deepfake": {"time_seconds": duration}})
+
+            return report
 
     def _should_use_gemini(self, detector_signal: EvidenceSignal, gemini_signal: Optional[EvidenceSignal]) -> bool:
         if gemini_signal is None or gemini_signal.status != SignalStatus.OK:

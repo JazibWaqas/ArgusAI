@@ -1,68 +1,109 @@
 # ArgusAI Evidence Schema
 
-**✅ IMPLEMENTED** - This schema is fully implemented in `backend/app/models/evidence.py` using Pydantic models.
+Last updated: June 2, 2026.
 
-This schema defines the structured evidence produced by detectors and consumed by the reasoning layer.
+This file summarizes the current report/evidence shapes for a fresh engineering session. The source of truth is the Pydantic code in `backend/app/models/`.
+
+## Core Report Types
+
+### ForensicReport
+
+Implementation: `backend/app/models/report.py`
+
+Used for image and video reports.
+
+Important fields:
+
+```python
+class ForensicReport(BaseModel):
+    media_type: str
+    verdict: Verdict
+    certainty: float
+    confidence_label: str
+    leaning: Optional[Verdict]
+    short_summary: str
+    explanation: str
+    score_breakdown: ScoreBreakdown
+    evidence: EvidenceProfile
+    pipeline_health: dict[str, Any]
+    phoenix_trace_id: Optional[str]
+    generated_at: datetime
+```
+
+Key additions:
+
+- `media_type` is `image`, `video`, or `audio` depending on route/report shape.
+- `phoenix_trace_id` links the report to Phoenix audit trail.
+- `pipeline_health` carries model/governor state.
+
+### AudioForensicReport
+
+Implementation: `backend/app/models/audio_report.py`
+
+Used for standalone audio reports.
+
+Important fields include:
+
+- `media_type`
+- `verdict`
+- `certainty`
+- `confidence_label`
+- `short_summary` / `explanation`
+- primary audio `signal`
+- optional `phoenix_trace_id`
+- `pipeline_health`
+- `generated_at`
+
+The frontend has a separate `AudioReportCard` because this schema is intentionally smaller than the image/video evidence profile.
 
 ## EvidenceSignal
 
-**Implementation:** `backend/app/models/evidence.py`
+Implementation: `backend/app/models/evidence.py`
 
 ```python
 class EvidenceSignal(BaseModel):
-    id: str = Field(..., description="Stable identifier for the signal.")
+    id: str
     name: str
     category: str
     status: SignalStatus
-    reliability: float = Field(..., ge=0.0, le=1.0)
+    reliability: float
     summary: str
-    what_checked: Optional[str] = None
-    what_found: Optional[str] = None
-    why_it_matters: Optional[str] = None
-    caveat: Optional[str] = None
-    observations: List[str] = Field(default_factory=list)
-    metrics: Dict[str, Any] = Field(default_factory=dict)
-    confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
-    supports: SignalSupport = SignalSupport.UNKNOWN
-    notes: Optional[str] = None
-    verdict_influence_percent: Optional[int] = None  # 0–100, set by pipeline after reasoning
+    what_checked: Optional[str]
+    what_found: Optional[str]
+    why_it_matters: Optional[str]
+    caveat: Optional[str]
+    observations: List[str]
+    metrics: Dict[str, Any]
+    confidence: Optional[float]
+    supports: SignalSupport
+    notes: Optional[str]
+    verdict_influence_percent: Optional[int]
+    visible: bool
 ```
 
-**Field Descriptions:**
-- `id`: Stable identifier for the detector (string).
-- `name`: Human-readable signal name (string).
-- `category`: Signal category (string).
-- `status`: One of `ok`, `warning`, `unavailable`, `error` (SignalStatus enum).
-- `reliability`: Estimated reliability between `0.0` and `1.0` (validated).
-- `summary`: Short summary of what the signal observed.
-- `what_checked`: Description of the forensic methodology used.
-- `what_found`: Specific finding in the current image.
-- `why_it_matters`: Reasoning for how this finding impacts authenticity.
-- `caveat`: Potential limitations or common false positives for this signal.
-- `observations`: List of specific technical observations (strings).
-- `metrics`: Structured numeric or categorical measurements (object).
-- `confidence`: Optional detector confidence between `0.0` and `1.0` (validated).
-- `supports`: One of `authentic`, `ai_generated`, `inconclusive`, `unknown` (SignalSupport enum).
-- `notes`: Optional contextual notes or caveats.
+Important behavior:
+
+- `visible=false` means the frontend should hide the card.
+- Hidden signals should not influence reasoning.
+- `verdict_influence_percent` is assigned after reasoning.
+- `metrics` may contain heavy fields like `ela_image_base64`; these are stripped before PDF payload rendering.
 
 ## EvidenceProfile
 
-**Implementation:** `backend/app/models/evidence.py`
+Implementation: `backend/app/models/evidence.py`
 
 ```python
 class EvidenceProfile(BaseModel):
     image: ImageInfo
     signals: List[EvidenceSignal]
-    warnings: List[str] = Field(default_factory=list)
+    warnings: List[str]
 ```
 
-- `image`: Image metadata (ImageInfo object).
-- `signals`: List of `EvidenceSignal` objects.
-- `warnings`: System-level warnings (list of strings).
+For video, `image` refers to representative/extracted-frame metadata rather than a literal uploaded still image. Keep UI language media-aware.
 
 ## ImageInfo
 
-**Implementation:** `backend/app/models/evidence.py`
+Implementation: `backend/app/models/evidence.py`
 
 ```python
 class ImageInfo(BaseModel):
@@ -70,52 +111,137 @@ class ImageInfo(BaseModel):
     height: int
     mode: str
     sha256: str
-    format: Optional[str] = None
+    format: Optional[str]
 ```
 
-- `width`: Image width in pixels.
-- `height`: Image height in pixels.
-- `mode`: Image color mode (e.g., "RGB").
-- `sha256`: SHA-256 hash of the image bytes.
-- `format`: Optional image format (e.g., "JPEG", "PNG").
+`sha256` is important because Firestore stores analyses under `/analyses/{sha256}`.
 
 ## Enums
 
-**SignalStatus Enum:**
-- `OK = "ok"`
-- `WARNING = "warning"`
-- `UNAVAILABLE = "unavailable"`
-- `ERROR = "error"`
+Signal statuses:
 
-**SignalSupport Enum:**
-- `AUTHENTIC = "authentic"`
-- `AI_GENERATED = "ai_generated"`
-- `INCONCLUSIVE = "inconclusive"`
-- `UNKNOWN = "unknown"`
+- `ok`
+- `warning`
+- `unavailable`
+- `error`
 
-## Example EvidenceSignal
+Signal support:
+
+- `authentic`
+- `ai_generated`
+- `inconclusive`
+- `unknown`
+
+Verdicts:
+
+- `likely_authentic`
+- `likely_ai_generated`
+- `inconclusive`
+
+Audio may expose equivalent audio-specific labels in frontend copy while keeping backend values structured.
+
+## Firestore Analysis Record
+
+Implementation: `backend/app/core/analysis_store.py`
+
+Stored under:
+
+```text
+/analyses/{sha256}
+```
+
+Shape:
 
 ```json
 {
-  "id": "metadata_analysis",
-  "name": "Metadata & Provenance",
-  "category": "metadata",
-  "status": "ok",
-  "reliability": 0.35,
-  "summary": "Metadata review completed.",
-  "observations": [
-    "Camera make: Canon",
-    "Camera model: EOS R5"
-  ],
-  "metrics": {
-    "exif_count": 24
+  "timestamp": "ISO string",
+  "sha256": "content hash",
+  "media_type": "image | video | audio",
+  "verdict": "likely_ai_generated | likely_authentic | inconclusive",
+  "certainty": 0.795,
+  "phoenix_trace_id": "trace id or null",
+  "detectors": {
+    "spectral_artifacts": {
+      "support": "ai_generated",
+      "confidence": 0.61,
+      "latency_seconds": 1.23,
+      "status": "ok",
+      "visible": true,
+      "circuit_breaker": false
+    }
   },
-  "confidence": null,
-  "supports": "authentic",
-  "notes": "Missing metadata alone does not imply AI generation."
+  "latency_seconds": 12.34,
+  "user_feedback": null,
+  "feedback_timestamp": null
 }
 ```
 
-## Current Usage
+## Stats Shape
 
-All 7 detectors return `EvidenceSignal` objects that are aggregated into an `EvidenceProfile` by the analysis pipeline. The reasoning engine then processes this structured evidence to generate verdicts and explanations.
+Endpoint:
+
+```text
+GET /stats
+```
+
+Returns Firestore-backed stats when available:
+
+```json
+{
+  "global": {
+    "total_analyses": 52,
+    "by_media_type": {
+      "image": 34,
+      "video": 12,
+      "audio": 6
+    },
+    "by_verdict": {
+      "likely_ai_generated": 31,
+      "likely_authentic": 14,
+      "inconclusive": 7
+    }
+  },
+  "detectors": {
+    "spectral_artifacts": {
+      "total_runs": 46,
+      "correct_count": 40,
+      "accuracy_rate": 0.87,
+      "avg_latency_seconds": 8.2
+    }
+  },
+  "source": "firestore"
+}
+```
+
+If Firebase is unavailable, `/stats` falls back to local x-ray logs.
+
+## Agent Builder History Context
+
+Implementation: `build_history_context()` in `backend/app/core/analysis_store.py`.
+
+Injected into `/agent/analyze` responses and `/agent/chat` evidence payloads.
+
+Includes:
+
+- `source`
+- `summary`
+- `total_analyses`
+- `same_media_type_analyses`
+- `by_media_type`
+- `by_verdict`
+- `detector_reliability`
+- `recent_same_media_cases`
+
+This is how the Agent Builder layer can talk about accumulated system reliability instead of only the current upload.
+
+## PDF / Chain of Custody
+
+Official PDFs now include:
+
+- report generation timestamp
+- reference/session ID when available
+- forensic trace ID
+- Phoenix audit URL when available
+- footer: `ArgusAI chain of custody | Trace: ... | Generated: ...`
+
+This supports the journalist/court demo narrative.

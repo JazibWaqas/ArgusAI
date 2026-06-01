@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 from typing import Dict, List, Optional
 
 from dotenv import load_dotenv
@@ -32,13 +33,34 @@ def _gemini_keys_from_dotenv(path: str = ".env") -> List[str]:
     return out
 
 
+def _split_gemini_keys(value: Optional[str]) -> List[str]:
+    if not value:
+        return []
+    keys: List[str] = []
+    for part in re.split(r"[\r\n,;]+", value):
+        val = part.strip().strip('"').strip("'")
+        if val:
+            keys.append(val)
+    return keys
+
+
+def _dedupe_keys(keys: List[str]) -> List[str]:
+    seen = set()
+    out: List[str] = []
+    for key in keys:
+        if key not in seen:
+            seen.add(key)
+            out.append(key)
+    return out
+
+
 class LLMSettings:
     def __init__(self) -> None:
         keys = _gemini_keys_from_dotenv()
+        keys.extend(_split_gemini_keys(os.getenv("GEMINI_API_KEYS")))
         single = os.getenv("GEMINI_API_KEY")
-        if not keys and single and single.strip():
-            keys = [single.strip().strip('"').strip("'")]
-        self.gemini_api_keys = [k for k in keys if k]
+        keys.extend(_split_gemini_keys(single))
+        self.gemini_api_keys = _dedupe_keys([k for k in keys if k])
         self.gemini_api_key = self.gemini_api_keys[0] if self.gemini_api_keys else None
         self.gemini_model = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
         _vision = (os.getenv("GEMINI_VISION_MODEL") or "").strip()

@@ -1,6 +1,6 @@
 # Agent Builder and Phoenix MCP Setup
 
-Last updated: June 1, 2026.
+Last updated: June 2, 2026.
 
 Read `ContextFiles/CurrentHandoff.md` first for the complete deployed state.
 
@@ -37,10 +37,14 @@ Returns:
 - `certainty`
 - `confidence_label`
 - `short_summary`
+- `phoenix_trace_id`
+- `history_context`
 - `top_signals`
 - `osint_summary`
 - `model_health`
 - `arize_health`
+
+Important: this endpoint now queries Firestore before responding. `history_context` includes total persisted analyses, same-media analysis counts, detector reliability for the current report's signals, recent same-media cases, and Phoenix trace IDs. This is what lets Agent Builder answer from ArgusAI's accumulated forensic history instead of acting like a generic Gemini wrapper.
 
 Use description:
 
@@ -68,7 +72,13 @@ JSON body:
 Use description:
 
 ```text
-Ask a follow-up question about the previous ArgusAI analysis. Use this after analyze_media returns a session_id.
+Ask a follow-up question about the previous ArgusAI analysis. Use this after analyze_media returns a session_id. The answer uses the current forensic evidence plus Firestore history context such as accumulated detector reliability and recent same-media cases.
+```
+
+Recommended Agent Builder instruction:
+
+```text
+You are ArgusAI, a forensic investigation agent. Do not describe the product as a simple classifier. Use analyze_media for media authenticity questions. Use ask_forensic_followup for follow-up questions after analysis. Emphasize evidence trail, OSINT provenance, detector reliability, Firestore history, and Phoenix auditability. If history_context is present, use it to explain accumulated reliability, but do not overclaim legal certainty.
 ```
 
 ## Phoenix MCP
@@ -124,8 +134,17 @@ ARIZE_HEALTH_GOVERNOR=1
 Verified:
 
 - `GET /arize/health` shows tracing configured/enabled.
-- `GET /arize/traces?limit=10` returns recent image/audio/video traces.
+- `GET /arize/traces?limit=10` returns Firestore-backed recent image/audio/video traces.
 - Phoenix Cloud Run logs show repeated `POST /v1/traces` HTTP 200.
+
+Phoenix trace IDs are surfaced in:
+
+- frontend verdict card
+- expanded signal details
+- admin trace table
+- official PDF footer
+- Firestore analysis records
+- Agent Builder responses
 
 ## Local Self-Hosted Phoenix Fallback
 
@@ -160,5 +179,4 @@ For the 3-minute video, spend only 10-20 seconds on Agent Builder:
 2. Run one quick call or show the successful configuration.
 3. Return to the ArgusAI frontend/admin panel.
 
-The main Arize proof is Phoenix-backed detector health and the admin trace view, not the Agent Builder configuration screen.
-
+The main Arize proof is Phoenix-backed detector health, chain-of-custody links, and the admin trace view, not the Agent Builder configuration screen.

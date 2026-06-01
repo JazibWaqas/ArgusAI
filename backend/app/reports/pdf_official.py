@@ -39,6 +39,21 @@ _VERDICT_DISPLAY = {
 }
 
 
+def _trace_url(trace_id: Optional[str]) -> Optional[str]:
+    if not trace_id:
+        return None
+    try:
+        from ..core.config import settings
+
+        base = (settings.phoenix_dashboard_url or "").rstrip("/")
+        project = settings.phoenix_project_name or "argusai-forensics"
+        if base:
+            return f"{base}/projects/{project}/traces/{trace_id}"
+    except Exception:
+        return None
+    return None
+
+
 def _safe_snippet(text: Optional[str], limit: int = 2000) -> str:
     if not text:
         return ""
@@ -232,6 +247,11 @@ def build_official_forensic_pdf(
     story.append(Paragraph(_para_xml(f"Report generated: {ts}"), meta))
     if reference_id:
         story.append(Paragraph(_para_xml(f"Reference: {reference_id}"), meta))
+    if report.phoenix_trace_id:
+        trace_url = _trace_url(report.phoenix_trace_id)
+        story.append(Paragraph(_para_xml(f"Forensic trace ID: {report.phoenix_trace_id}"), meta))
+        if trace_url:
+            story.append(Paragraph(_para_xml(f"Phoenix audit trail: {trace_url}"), meta))
     story.append(Spacer(1, 0.15 * inch))
 
     img = report.evidence.image
@@ -321,7 +341,17 @@ def build_official_forensic_pdf(
     )
     story.append(Paragraph(_para_xml(limitations), body))
 
-    doc.build(story)
+    trace_id = report.phoenix_trace_id or "unavailable"
+    footer_text = f"ArgusAI chain of custody | Trace: {trace_id} | Generated: {ts}"
+
+    def draw_footer(canvas, _doc) -> None:
+        canvas.saveState()
+        canvas.setFont("Times-Roman", 8)
+        canvas.setFillColor(colors.HexColor("#555555"))
+        canvas.drawString(0.75 * inch, 0.42 * inch, footer_text[:155])
+        canvas.restoreState()
+
+    doc.build(story, onFirstPage=draw_footer, onLaterPages=draw_footer)
     pdf_bytes = buffer.getvalue()
     buffer.close()
     return pdf_bytes

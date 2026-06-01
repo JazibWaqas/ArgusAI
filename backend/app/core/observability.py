@@ -76,6 +76,17 @@ def set_span_attribute(span: Any, key: str, value: Any) -> None:
         return
 
 
+def span_trace_id(span: Any) -> Optional[str]:
+    try:
+        context = span.get_span_context()
+        trace_id = getattr(context, "trace_id", 0)
+        if trace_id:
+            return f"{int(trace_id):032x}"
+    except Exception:
+        return None
+    return None
+
+
 def tracing_health() -> dict[str, Any]:
     _init_tracer()
     configured = bool(settings.phoenix_api_key or settings.phoenix_collector_endpoint)

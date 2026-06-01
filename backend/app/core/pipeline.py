@@ -13,9 +13,10 @@ import os
 from pathlib import Path
 
 from ..detectors.registry import registry
+from ..core.analysis_store import persist_analysis
 from ..core.health_governor import DetectorHealthGovernor
 from ..core.llm import llm_settings
-from ..core.observability import set_span_attribute, start_span, tracing_health
+from ..core.observability import set_span_attribute, span_trace_id, start_span, tracing_health
 from ..models.evidence import EvidenceProfile, ImageInfo
 from ..models.evidence import EvidenceSignal, SignalStatus, SignalSupport
 from ..models.report import ForensicReport
@@ -138,6 +139,7 @@ class AnalysisPipeline:
                 "pipeline.detector_count": len(registry.all()),
             },
         ) as root_span:
+            trace_id = span_trace_id(root_span)
             context: Dict[str, Any] = {
                 "image_info": image_info,
                 "image_bytes": image_bytes,
@@ -389,6 +391,7 @@ class AnalysisPipeline:
                 score_breakdown=reasoning_outcome.score_breakdown,
                 evidence=evidence,
                 pipeline_health=pipeline_health,
+                phoenix_trace_id=trace_id,
                 generated_at=ForensicReport.now(),
             )
 
@@ -418,6 +421,7 @@ class AnalysisPipeline:
                 "score_breakdown": report.score_breakdown.model_dump(),
                 "reasoning_summary": reasoning_outcome.summary_payload,
                 "pipeline_health": pipeline_health,
+                "phoenix_trace_id": trace_id,
                 "llm_health": llm_settings.health_snapshot(),
             }
 
@@ -430,6 +434,8 @@ class AnalysisPipeline:
                     json.dump(xray_log, f, indent=4)
             except Exception:
                 pass
+
+            persist_analysis(report, xray_metrics)
 
             return report
 

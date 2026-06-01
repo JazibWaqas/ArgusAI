@@ -6,6 +6,7 @@ from pathlib import Path
 from typing import Any, Optional
 
 from .config import settings
+from .firebase import get_db
 
 
 HEALTH_LOG_PATH = Path("logs/arize/detector_health.json")
@@ -41,6 +42,16 @@ class DetectorHealthGovernor:
         self.state: dict[str, Any] = self._load()
 
     def _load(self) -> dict[str, Any]:
+        db = get_db()
+        if db is not None:
+            try:
+                snap = db.collection("health_governor").document("state").get()
+                if snap.exists:
+                    data = snap.to_dict()
+                    if isinstance(data, dict):
+                        return data
+            except Exception:
+                pass
         try:
             data = json.loads(self.path.read_text(encoding="utf-8"))
             if isinstance(data, dict):
@@ -54,7 +65,13 @@ class DetectorHealthGovernor:
             self.path.parent.mkdir(parents=True, exist_ok=True)
             self.path.write_text(json.dumps(self.state, indent=2), encoding="utf-8")
         except Exception:
-            return
+            pass
+        db = get_db()
+        if db is not None:
+            try:
+                db.collection("health_governor").document("state").set(self.state, merge=True)
+            except Exception:
+                pass
 
     def is_enabled(self) -> bool:
         return settings.arize_health_governor

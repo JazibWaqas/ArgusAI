@@ -1,8 +1,20 @@
 # ArgusAI Current Handoff
 
-Last updated: June 1, 2026.
+Last updated: June 2, 2026.
 
 This is the current source of truth for the next LLM/session. Read this before making new implementation decisions.
+
+## Fresh Session Instructions
+
+If Opus/Codex/another LLM is taking over, do this first:
+
+1. Read this file completely.
+2. Read `ContextFiles/Vision.md` for the why.
+3. Read `ContextFiles/Architecture.md` for how the system is wired.
+4. Read `ContextFiles/AgentBuilderPhoenixSetup.md` before touching Agent Builder or MCP.
+5. Run validation commands before any deploy.
+
+Do not add new detectors, redesign the UI, or change the core product framing unless the user explicitly asks. The highest-value remaining work is demo readiness and external console configuration.
 
 ## Winning Frame
 
@@ -15,6 +27,10 @@ The product should be described as:
 The Arize partner-track angle is load-bearing observability:
 
 > Phoenix watches detector behavior. Detector health and calibration events affect verdict influence, and the admin panel shows that reliability layer.
+
+The Firestore + Phoenix story:
+
+> Firestore persists running intelligence: history, detector reliability, feedback, and stats. Phoenix records immutable audit trails for individual verdicts.
 
 Do not add more detectors or redesign the UI unless explicitly asked. The remaining work is demo readiness, Agent Builder/MCP setup, and final polish.
 
@@ -46,12 +62,15 @@ The deployed frontend bundle is verified to use the deployed backend URL, not `l
 - Artifact Registry repo: `cloud-run-source-deploy`
 - Spectral weights: `gs://argusai-497719-models/models/argusai_best_weights.pth`
 - Gemini API key secret: `argusai-gemini-api-key`
+- Gemini multi-key secret: `argusai-gemini-api-keys` (35 unique keys, one per line)
+- Firebase project: `argusai-8d9fe`
+- Firebase service account secret: `argusai-firebase-service-account`
 
 Cloud Run services:
 
 ```text
-argusai-backend   latest verified revision: argusai-backend-00011-wfl
-argusai-frontend  latest verified revision: argusai-frontend-00002-hd9
+argusai-backend   latest verified revision: argusai-backend-00016-j7t
+argusai-frontend  latest verified revision: argusai-frontend-00004-4h6
 argusai-phoenix   latest verified revision: argusai-phoenix-00001-dlc
 ```
 
@@ -89,22 +108,19 @@ PHOENIX_COLLECTOR_ENDPOINT=https://argusai-phoenix-ddmxiumrdq-uc.a.run.app/v1/tr
 PHOENIX_DASHBOARD_URL=https://argusai-phoenix-ddmxiumrdq-uc.a.run.app
 PHOENIX_PROJECT_NAME=argusai-forensics
 GEMINI_API_KEY=Secret Manager argusai-gemini-api-key:latest
+GEMINI_API_KEYS=Secret Manager argusai-gemini-api-keys:latest
+FIREBASE_PROJECT_ID=argusai-8d9fe
+FIREBASE_SERVICE_ACCOUNT_JSON=Secret Manager argusai-firebase-service-account:latest
 ```
 
-Why fallback is `gemini-2.5-flash`: `gemini-3.5-flash` exists for the key but hit quota/high-demand errors during live testing. The code now falls back to `gemini-2.5-flash` for HTTP 429/503/transient failures and generic request exceptions.
+Why fallback is `gemini-2.5-flash`: `gemini-3.5-flash` exists for the key but hit quota/high-demand errors during live testing. The code now rotates across 35 deployed Gemini keys and falls back to `gemini-2.5-flash` for HTTP 429/503/transient failures and generic request exceptions.
 
 ## Deploy Commands
 
 Backend deploy command used:
 
 ```powershell
-& "C:\Program Files (x86)\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd" run deploy argusai-backend --source . --region us-central1 --platform managed --allow-unauthenticated --memory 4Gi --cpu 2 --timeout 300 --concurrency 1 --max-instances 3 --update-env-vars "SPECTRAL_MODEL_PATH=/tmp/argusai_best_weights.pth,SPECTRAL_MODEL_GCS_URI=gs://argusai-497719-models/models/argusai_best_weights.pth,SPECTRAL_AI_INDEX=1,SPECTRAL_INPUT_SIZE=224,SPECTRAL_NORMALIZE=1,OSINT_USE_GROUNDING=1,LLM_EXPLANATION_PROVIDER=gemini,LLM_EXPLANATION_MAX_TOKENS=900,MAX_UPLOAD_MB=20,ARIZE_HEALTH_GOVERNOR=1,GEMINI_MODEL=gemini-3.5-flash,GEMINI_VISION_MODEL=gemini-3.5-flash,GEMINI_GROUNDING_MODEL=gemini-3.5-flash,GEMINI_FALLBACK_MODEL=gemini-2.5-flash,PHOENIX_COLLECTOR_ENDPOINT=https://argusai-phoenix-ddmxiumrdq-uc.a.run.app/v1/traces,PHOENIX_DASHBOARD_URL=https://argusai-phoenix-ddmxiumrdq-uc.a.run.app,PHOENIX_PROJECT_NAME=argusai-forensics" --set-secrets "GEMINI_API_KEY=argusai-gemini-api-key:latest"
-```
-
-After deploy, pin backend to one instance:
-
-```powershell
-& "C:\Program Files (x86)\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd" run services update argusai-backend --region us-central1 --max-instances 1
+& "C:\Program Files (x86)\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd" run deploy argusai-backend --source . --region us-central1 --platform managed --allow-unauthenticated --memory 4Gi --cpu 2 --timeout 300 --concurrency 1 --max-instances 1 --update-env-vars "SPECTRAL_MODEL_PATH=/tmp/argusai_best_weights.pth,SPECTRAL_MODEL_GCS_URI=gs://argusai-497719-models/models/argusai_best_weights.pth,SPECTRAL_AI_INDEX=1,SPECTRAL_INPUT_SIZE=224,SPECTRAL_NORMALIZE=1,OSINT_USE_GROUNDING=1,LLM_EXPLANATION_PROVIDER=gemini,LLM_EXPLANATION_MAX_TOKENS=900,MAX_UPLOAD_MB=20,ARIZE_HEALTH_GOVERNOR=1,GEMINI_MODEL=gemini-3.5-flash,GEMINI_VISION_MODEL=gemini-3.5-flash,GEMINI_GROUNDING_MODEL=gemini-3.5-flash,GEMINI_FALLBACK_MODEL=gemini-2.5-flash,PHOENIX_COLLECTOR_ENDPOINT=https://argusai-phoenix-ddmxiumrdq-uc.a.run.app/v1/traces,PHOENIX_DASHBOARD_URL=https://argusai-phoenix-ddmxiumrdq-uc.a.run.app,PHOENIX_PROJECT_NAME=argusai-forensics,FIREBASE_PROJECT_ID=argusai-8d9fe" --set-secrets "GEMINI_API_KEY=argusai-gemini-api-key:latest,GEMINI_API_KEYS=argusai-gemini-api-keys:latest,FIREBASE_SERVICE_ACCOUNT_JSON=argusai-firebase-service-account:latest"
 ```
 
 Phoenix deploy command used:
@@ -143,8 +159,17 @@ Backend:
 - `DetectorHealthGovernor` tracks spectral-vs-semantic calibration divergence.
 - Calibration divergence can attenuate spectral influence.
 - `/arize/health` returns tracing and governor state.
-- `/arize/traces` reads local x-ray logs and returns recent analysis summaries for the admin panel.
-- Agent Builder endpoints exist: `/agent/analyze` and `/agent/chat`.
+- `/arize/traces` reads Firestore first and falls back to local x-ray logs for recent analysis summaries in the admin panel.
+- Firestore persistence layer added in `backend/app/core/firebase.py` and `backend/app/core/analysis_store.py`.
+- Every image/video/audio report now persists to Firestore on Cloud Run.
+- `/stats` endpoint added; reads Firestore stats and falls back to x-ray logs when Firebase is unavailable.
+- `/arize/traces` now prefers Firestore analysis documents and falls back to x-ray logs.
+- `/sessions/{session_id}/feedback` endpoint added for user verdict feedback.
+- Health governor state now tries Firestore first and falls back to `logs/arize/detector_health.json`.
+- Reports now include `phoenix_trace_id` when an OpenTelemetry span is active.
+- Agent Builder endpoints exist and are history-aware: `/agent/analyze` and `/agent/chat`.
+- Agent Builder endpoints now include Firestore history context: total persisted analyses, same-media counts, current detector reliability stats, recent same-media cases, and `phoenix_trace_id`.
+- `/agent/chat` injects Firestore history context before Gemini answers, so the agent can discuss accumulated reliability rather than acting like a generic Gemini wrapper.
 
 Frontend:
 
@@ -159,12 +184,21 @@ Frontend:
 - Admin dashboard exists behind password `argusai2026`.
 - Admin dashboard pulls `/arize/health` and `/arize/traces`.
 - Admin dashboard shows recent investigations, detector health, latency, and calibration events.
+- Admin dashboard also pulls `/stats` and shows global analysis counts.
+- Signal cards can show empirical reliability once a detector has at least 5 recorded runs.
+- Verdict feedback widget posts user confirmation to `/sessions/{session_id}/feedback`.
+- Trace rows and expanded signal cards can link to the Phoenix trace when `phoenix_trace_id` exists.
+- Verdict cards now show an inline forensic trace chip with `View audit trail` linking to Phoenix.
+- Official PDF reports include `Forensic trace ID`, Phoenix audit URL, and a chain-of-custody footer with trace ID and generation timestamp.
+- Admin dashboard includes explanatory framing copy: investigation history is persisted in Firestore and each verdict's full reasoning is recorded as a Phoenix trace.
 
 Cloud/Arize:
 
 - Backend deployed to Cloud Run.
 - Frontend deployed to Cloud Run.
 - Phoenix deployed to Cloud Run using `arizephoenix/phoenix:latest`.
+- Firestore is active on Cloud Run. `/stats` returns `source: firestore`.
+- Cloud Run `/health` reports `gemini_key_count: 35`.
 - Backend points to Phoenix collector at `https://argusai-phoenix-ddmxiumrdq-uc.a.run.app/v1/traces`.
 - Phoenix logs confirm repeated live `POST /v1/traces HTTP/1.1" 200 OK`.
 - Admin trace feed confirms image/audio/video analysis summaries are being recorded.
@@ -172,8 +206,37 @@ Cloud/Arize:
 Config/docs:
 
 - `.env.example` includes deployed Phoenix and backend hints.
+- `.env.example` includes Firebase env vars: `FIREBASE_PROJECT_ID`, `FIREBASE_SERVICE_ACCOUNT_JSON`, `GOOGLE_APPLICATION_CREDENTIALS`.
 - `mcp/phoenix-mcp.json` now uses `PHOENIX_DASHBOARD_URL` for `--baseUrl`, not the OTEL `/v1/traces` collector endpoint.
 - `frontend/Dockerfile` and `frontend/.gcloudignore` were added for Cloud Run frontend deployment.
+
+## Firebase Status
+
+Firestore integration is implemented and active on Cloud Run.
+
+Configured resources:
+
+```text
+Firebase project: argusai-8d9fe
+Cloud Run env: FIREBASE_PROJECT_ID=argusai-8d9fe
+Secret Manager: argusai-firebase-service-account
+Runtime service account access: granted roles/secretmanager.secretAccessor on the secret
+```
+
+Local dev uses `GOOGLE_APPLICATION_CREDENTIALS=C:\Users\OMNIBOOK\Documents\GitHub\ArgusAI\firebase-key.json` and `FIREBASE_PROJECT_ID=argusai-8d9fe`. `firebase-key.json` is ignored by git and must never be committed.
+
+If Firebase is not configured, the app still works and falls back to local x-ray logs for `/stats` and `/arize/traces`.
+
+Verified on June 2, 2026:
+
+```text
+GET /stats -> source: firestore
+GET /health -> gemini_key_count: 35
+POST /analyze -> returned phoenix_trace_id and persisted an analysis to Firestore
+GET /arize/traces?limit=3 -> source: firestore, returned the persisted analysis
+Backend deployed revision -> argusai-backend-00016-j7t
+Frontend deployed revision -> argusai-frontend-00004-4h6
+```
 
 ## Live Verification Results
 
@@ -230,7 +293,7 @@ Trace feed:
 GET https://argusai-backend-1007754127412.us-central1.run.app/arize/traces?limit=10
 ```
 
-Returned recent entries for video and audio with media type, verdict, certainty, latency, detector status, detector support, `visible`, `circuit_breaker_fired`, and `calibration_divergence`.
+Returned Firestore-backed entries with media type, verdict, certainty, `phoenix_trace_id`, detector status, detector support, `visible`, `circuit_breaker_fired`, and `calibration_divergence`.
 
 Phoenix collector proof:
 
@@ -260,6 +323,7 @@ Useful health checks:
 
 ```powershell
 Invoke-RestMethod -Uri "https://argusai-backend-1007754127412.us-central1.run.app/health" | ConvertTo-Json -Depth 8
+Invoke-RestMethod -Uri "https://argusai-backend-1007754127412.us-central1.run.app/stats" | ConvertTo-Json -Depth 8
 Invoke-RestMethod -Uri "https://argusai-backend-1007754127412.us-central1.run.app/arize/health" | ConvertTo-Json -Depth 10
 Invoke-RestMethod -Uri "https://argusai-backend-1007754127412.us-central1.run.app/arize/traces?limit=10" | ConvertTo-Json -Depth 8
 ```
@@ -342,4 +406,3 @@ These need user/browser interaction or product judgment.
 5. Run and record Pope puffer OSINT.
 6. Prepare one clean calibration-governor demo artifact or decide to show the detector health/admin traces without forcing divergence.
 7. Write final Devpost copy.
-

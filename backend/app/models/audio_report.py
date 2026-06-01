@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from pydantic import BaseModel
 
@@ -32,6 +32,8 @@ class AudioForensicReport(BaseModel):
 
     pipeline_health: Dict[str, Any]
     """Latency and other diagnostic metadata."""
+
+    phoenix_trace_id: Optional[str] = None
 
     generated_at: datetime
 

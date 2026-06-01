@@ -1,184 +1,124 @@
-# ArgusAI
-### Explainable Forensic Verification for AI-Generated Images
+# ArgusAI Vision
 
----
+Last updated: June 2, 2026.
 
-## Implementation Status
+Read `ContextFiles/CurrentHandoff.md` first for live URLs, deployed revisions, secrets, and exact next actions. This file explains the product logic and why the architecture was shaped this way.
 
-**✅ Fully Realized Vision** - ArgusAI has transitioned from concept to a production-ready forensic system:
+## One-Line Product Definition
 
-- **Multi-signal parallel pipeline** with 7 independent, state-of-the-art detectors.
-- **Six-Lens Spectral Fusion** for resilient frequency and texture artifact detection.
-- **Grounded OSINT** for real-time web verification and debunking integration.
-- **Evidence-based reasoning** with human-interpretable narrative generation.
-- **Session-scoped Chat** for interactive exploration of forensic evidence.
-- **Official Forensic PDF** support for documented investigation export.
-- **Full Transparency** via X-ray execution logging and reliability weighting.
+ArgusAI is a multi-modal forensic investigation platform for image, video, and audio authenticity.
 
-The system currently operates exactly as envisioned - gathering multiple independent signals and producing reasoned forensic reports rather than simple classification scores.
+It is not a classifier. It is an evidence trail.
 
----
+Core phrase to preserve in copy, demo narration, Agent Builder prompts, and Devpost:
 
-## Project Vision
+> Forensic investigation platform, not classifier. Evidence trail, not score.
 
-ArgusAI is an explainable forensic system designed to analyze images and determine whether they are likely authentic or AI-generated. Unlike typical AI detectors that output a single probability score, ArgusAI produces a transparent forensic report explaining *why* the system believes an image is real, fake, or inconclusive.
+## Who It Is For
 
-The project exists to address a growing crisis of trust in visual media. As generative models rapidly improve, the distinction between real and synthetic imagery becomes harder for humans to identify. This creates serious risks for journalism, evidence verification, and public trust.
+ArgusAI is designed for people who need to verify media before acting on it:
 
-ArgusAI aims to counter this by building a system that behaves more like a digital forensic analyst than a classifier.
+- journalists and newsroom researchers
+- courts and legal teams
+- fact-checkers
+- content moderation and trust/safety teams
+- public-interest investigators
 
-Instead of guessing, the system gathers multiple forms of evidence and produces a reasoned explanation.
+The product should feel like professional forensic tooling. Avoid toy classifier language like "AI score" or "fake percentage" as the main framing.
 
----
+## The Problem
 
-## Core Philosophy
+Generative media is now good enough that humans can be fooled by images, videos, and cloned voices. At the same time, real media can be falsely accused of being AI-generated.
 
-ArgusAI is built around several principles.
+Both errors matter:
 
-### Evidence over probability
-The system does not output a simple "AI likelihood score".  
-Instead it gathers multiple independent signals and explains them.
+- false trust can spread misinformation or fabricated evidence
+- false accusation can damage real documentation
 
-### Transparency
-Every decision should be traceable to specific signals and observations.
+ArgusAI reduces those risks by showing multiple independent forms of evidence, where they agree, where they conflict, and how much trust each signal deserves.
 
-### Honest uncertainty
-If the system cannot confidently determine authenticity, it must say **inconclusive** rather than guessing.
+## What Makes ArgusAI Different
 
-### Human-like reasoning
-The final explanation should resemble the reasoning process of a digital forensic analyst or investigator.
+Most AI detectors present one confidence number. ArgusAI separates the work into four layers:
 
-### Modular signals
-Detection methods evolve rapidly. ArgusAI is designed so new signals can be added without redesigning the system.
+1. Evidence extraction: detectors inspect pixels, metadata, audio, temporal consistency, and public provenance.
+2. Evidence reasoning: only applicable and healthy signals influence the verdict.
+3. Persistent intelligence: Firestore accumulates analysis history, detector reliability, feedback, and health state.
+4. Auditability: Phoenix records the trace of each verdict so a user can inspect what happened and when.
 
-### Ethical AI
-The system must avoid overclaiming certainty and must clearly communicate limitations.
+The demo story:
 
----
+> Every verdict is backed by two layers. Firestore tells you how reliable each signal has been across past investigations. Phoenix gives you the immutable audit trail for this specific decision.
 
-## What ArgusAI Is Not
+## Arize/Phoenix Strategy
 
-ArgusAI is **not**:
+The Arize partner-track integration is meant to be load-bearing, not decorative.
 
-- a black-box classifier
-- a single neural network deciding authenticity
-- a "percent fake" generator
-- a tool that forces answers even when evidence conflicts
+Phoenix does three important jobs:
 
-Instead it is a **multi-signal forensic reasoning system**.
+- records root analysis traces and detector child spans
+- exposes circuit-breaker and calibration behavior when detectors become unreliable
+- provides the chain-of-custody audit trail linked from the verdict card, signal details, admin panel, and PDF
 
----
+The health governor uses detector behavior to affect verdict influence. If a detector is unhealthy or repeatedly divergent, it can be attenuated or held out. That is the winning angle: observability changes the product outcome.
 
-## Core Problem
+## Firestore Strategy
 
-Modern image generation models can produce photorealistic imagery that is extremely difficult for humans to identify as synthetic. At the same time, real images can be falsely accused of being AI generated.
+Firestore is the persistent intelligence layer.
 
-Both scenarios are harmful.
+It stores:
 
-ArgusAI attempts to reduce both risks by:
+- `/analyses/{sha256}` records with verdict, media type, detector outputs, feedback, and `phoenix_trace_id`
+- global analysis counts by media type and verdict
+- detector reliability stats and average latency
+- health governor state
+- user feedback confirming or disputing verdicts
 
-- analyzing fundamental inconsistencies
-- aggregating multiple signals
-- communicating uncertainty transparently
+This matters because Cloud Run container filesystems are ephemeral. Local `logs/xray/*.json` still exist as fallback, but Firestore is what makes history survive restarts and deployments.
 
----
+## Agent Builder Strategy
 
-## Target Domain
+The Agent Builder endpoints are not generic Gemini wrappers anymore.
 
-ArgusAI focuses primarily on:
+- `/agent/analyze` runs ArgusAI and returns a compact tool-friendly report.
+- `/agent/chat` answers follow-up questions about the prior report.
+- Both now include Firestore history context, detector reliability stats, same-media analysis counts, recent same-media cases, and Phoenix trace IDs.
 
-**Photorealistic images**
+This lets the agent say things like:
 
-This includes:
+> We have persisted 47 prior investigations. For this media type, spectral artifacts has matched final verdict direction in 87% of eligible runs.
 
-- photographs
-- portraits
-- news imagery
-- real-world scenes
+That is the requirement-meeting story: Gemini plus Agent Builder acts on a real forensic system with memory and partner observability.
 
-Illustrations, stylized art, and cartoons are not the primary focus.
+## Current Media Scope
 
----
+ArgusAI now supports:
 
-## System Behavior
+- image: full seven-signal investigation
+- video: frame extraction, semantic video review, temporal coherence, OSINT, frame-based spectral/ELA, optional embedded audio track
+- audio: voice authenticity signal, Gemini semantic listening, OSINT context
 
-Given an image, ArgusAI will produce a structured forensic report.
-
-Possible outcomes:
-
-- Likely authentic
-- Likely AI-generated
-- Inconclusive
-
-The output includes:
-
-- evidence signals
-- reasoning narrative
-- reliability indicators
-- identified inconsistencies
-- explanation of uncertainty when applicable
-
----
-
-## Signals
-
-The system gathers evidence from multiple sources.
-
-Examples include:
-
-- spectral artifacts
-- metadata and provenance
-- lighting and shadow physics
-- noise patterns and sensor characteristics
-- anatomical anomalies
-- structural inconsistencies
-
-Each signal is treated as evidence rather than a final verdict.
-
----
-
-## Evidence-Driven Reasoning
-
-ArgusAI separates **evidence extraction** from **reasoning**.
-
-Detectors identify signals.  
-A reasoning system explains what those signals imply.
-
-This separation allows the system to remain explainable and adaptable.
-
----
+The UI and backend must stay media-aware. Do not show image-only noise/lighting signals for audio. Do not describe audio/video as photographs. Use `media_type` and each signal's `visible` field.
 
 ## Ethical Design
 
-The system must explicitly handle uncertainty.
+ArgusAI must be honest about uncertainty.
 
-When evidence conflicts, the correct response is:
+When evidence conflicts or is weak, the right answer is:
 
-**Inconclusive**
+> Inconclusive.
 
-This prevents the system from generating misleading certainty.
+Do not overclaim. Do not imply legal certainty. The product is a structured aid to human judgment, not a replacement for it.
 
-The goal is not to always produce answers, but to produce trustworthy analysis.
+## Demo North Star
 
----
+For the final hackathon recording, show:
 
-## Long-Term Direction
+1. Upload a strong synthetic or famous debunked media sample.
+2. Show the evidence trail, not just the verdict.
+3. Open OSINT/provenance details.
+4. Show the verdict card's Phoenix audit link.
+5. Open the admin panel and explain: "Firestore persists investigation history; Phoenix records the immutable trace for every verdict."
+6. Show Agent Builder using `/agent/analyze` and `/agent/chat`.
 
-The architecture is intentionally designed so it can extend beyond images.
-
-Future capabilities may include:
-
-- video authenticity analysis
-- temporal consistency detection
-- cross-source verification
-- open-source intelligence checks
-- fact-checking integration
-- misinformation detection pipelines
-
----
-
-## Ultimate Goal
-
-ArgusAI aims to restore trust in digital media by providing transparent, evidence-based authenticity analysis.
-
-The system should behave less like an AI classifier and more like a **digital forensic investigator**.
+Skip new detector work unless a bug blocks the demo. The system is strong enough; the remaining challenge is configuration, narrative, and clean recording.

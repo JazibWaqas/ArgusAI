@@ -12,6 +12,14 @@ from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from .chat.store import store as session_store
+from .core.analysis_store import (
+    annotate_phoenix_feedback,
+    apply_feedback,
+    build_history_context,
+    fallback_stats_from_xray,
+    get_stats,
+    trace_rows_from_firestore,
+)
 from .core.config import settings
 from .core.llm import llm_settings
 from .core.llm_client import LLMClient
@@ -56,6 +64,10 @@ class AgentChatRequest(BaseModel):
     session_id: str
     message: str = Field(..., min_length=1, max_length=8000)
 
+
+class FeedbackRequest(BaseModel):
+    verdict_correct: bool
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -79,6 +91,18 @@ _register_detectors()
 
 def _sanitize_report_dict_for_pdf(body: dict[str, Any]) -> None:
     """Drop huge metric blobs (ELA image, OSINT grounding) so PDF POST/re-parse stays small and stable."""
+    def scrub(value: Any) -> Any:
+        if isinstance(value, dict):
+            for key in ("ela_image_base64", "grounding_metadata", "search_queries"):
+                value.pop(key, None)
+            for child in list(value.values()):
+                scrub(child)
+        elif isinstance(value, list):
+            for child in value:
+                scrub(child)
+        return value
+
+    scrub(body)
     ev = body.get("evidence")
     if not isinstance(ev, dict):
         return
@@ -136,9 +160,13 @@ async def arize_health() -> dict:
 
 @app.get("/arize/traces")
 async def arize_traces(limit: int = 10) -> dict:
+    firestore_rows = trace_rows_from_firestore(limit)
+    if firestore_rows:
+        return {"traces": firestore_rows, "source": "firestore"}
+
     log_dir = Path("logs/xray")
     if not log_dir.exists():
-        return {"traces": []}
+        return {"traces": [], "source": "none"}
 
     traces: list[dict[str, Any]] = []
     for path in sorted(log_dir.glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True)[: max(1, min(limit, 50))]:
@@ -180,13 +208,22 @@ async def arize_traces(limit: int = 10) -> dict:
                 "verdict": data.get("final_verdict") or data.get("verdict"),
                 "certainty": data.get("certainty"),
                 "latency_seconds": data.get("global_execution_time") or data.get("latency_seconds"),
+                "phoenix_trace_id": data.get("phoenix_trace_id"),
                 "detectors": detectors,
                 "circuit_breaker_fired": any(bool((row or {}).get("circuit_breaker")) for row in raw_detectors.values()) if isinstance(raw_detectors, dict) else False,
                 "calibration_divergence": bool((calibration or {}).get("active")),
             }
         )
 
-    return {"traces": traces}
+    return {"traces": traces, "source": "xray"}
+
+
+@app.get("/stats")
+async def stats() -> dict:
+    firestore_stats = get_stats()
+    if firestore_stats:
+        return firestore_stats
+    return fallback_stats_from_xray()
 
 
 def _too_large(contents: bytes) -> bool:
@@ -302,6 +339,20 @@ async def session_followup(session_id: str, body: ChatMessageRequest):
     return {"reply": reply, "session_id": session_id}
 
 
+@app.post("/sessions/{session_id}/feedback")
+async def session_feedback(session_id: str, body: FeedbackRequest):
+    data = session_store.get(session_id)
+    if not data or not data.last_report:
+        return JSONResponse(status_code=404, content={"error": "Unknown session or no prior analysis."})
+
+    result = apply_feedback(data.last_report, body.verdict_correct)
+    if not result.get("ok"):
+        return JSONResponse(status_code=503, content={"error": result.get("error") or "Feedback persistence unavailable."})
+
+    await annotate_phoenix_feedback(getattr(data.last_report, "phoenix_trace_id", None), body.verdict_correct)
+    return {"status": "ok", "feedback": result.get("feedback"), "session_id": session_id}
+
+
 @app.post("/analyze")
 async def analyze_image(
     file: UploadFile = File(...),
@@ -319,6 +370,7 @@ async def analyze_image(
 
 
 def _agent_report_summary(report: ForensicReport) -> dict[str, Any]:
+    history_context = build_history_context(report)
     signals = sorted(
         report.evidence.signals,
         key=lambda sig: (sig.verdict_influence_percent or 0, sig.reliability),
@@ -332,6 +384,7 @@ def _agent_report_summary(report: ForensicReport) -> dict[str, Any]:
             "supports": sig.supports.value,
             "summary": sig.summary,
             "verdict_influence_percent": sig.verdict_influence_percent,
+            "historical_reliability": history_context.get("detector_reliability", {}).get(sig.id),
         }
         for sig in signals[:3]
     ]
@@ -341,6 +394,8 @@ def _agent_report_summary(report: ForensicReport) -> dict[str, Any]:
         "certainty": report.certainty,
         "confidence_label": report.confidence_label,
         "short_summary": report.short_summary,
+        "phoenix_trace_id": report.phoenix_trace_id,
+        "history_context": history_context,
         "top_signals": top_signals,
         "osint_summary": {
             "summary": osint.summary if osint else None,
@@ -374,10 +429,14 @@ async def agent_chat(body: AgentChatRequest):
     if not data or not data.last_report:
         return JSONResponse(status_code=404, content={"error": "Unknown session or no prior analysis."})
     client = LLMClient()
+    report_payload = data.last_report.model_dump(mode="json")
+    evidence_payload = report_payload.get("evidence") or {}
+    evidence_payload["history_context"] = build_history_context(data.last_report)
+    evidence_payload["phoenix_trace_id"] = getattr(data.last_report, "phoenix_trace_id", None)
     reply = await client.followup_answer(
         body.message,
         data.last_report.verdict.value,
-        data.last_report.evidence.model_dump(),
+        evidence_payload,
     )
     return {"reply": reply or "I could not answer from the available forensic evidence.", "session_id": body.session_id}
 

@@ -97,6 +97,7 @@ argusai_fuse_best/
 argusai_latest.pth
 argusai_best_weights.pth
 spectral_eval_out/
+firebase-key.json
 
 # Node/Vite Frontend
 frontend/node_modules/

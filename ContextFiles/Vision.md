@@ -39,16 +39,33 @@ ArgusAI reduces those risks by showing multiple independent forms of evidence, w
 
 ## What Makes ArgusAI Different
 
-Most AI detectors present one confidence number. ArgusAI separates the work into four layers:
+Most AI detectors present one confidence number. ArgusAI separates the work into five layers:
 
 1. Evidence extraction: detectors inspect pixels, metadata, audio, temporal consistency, and public provenance.
 2. Evidence reasoning: only applicable and healthy signals influence the verdict.
 3. Persistent intelligence: Firestore accumulates analysis history, detector reliability, feedback, and health state.
 4. Auditability: Phoenix records the trace of each verdict so a user can inspect what happened and when.
+5. Self-calibration: human-confirmed outcomes feed back into how much each detector is trusted (see below). This is the launch-worthy differentiator.
 
 The demo story:
 
 > Every verdict is backed by two layers. Firestore tells you how reliable each signal has been across past investigations. Phoenix gives you the immutable audit trail for this specific decision.
+
+## Self-Calibration: The Closed Loop (added June 2, 2026)
+
+This is the core "why this wins" idea, clarified directly by the project owner: ArgusAI should be a genuinely reliable system that *measurably improves itself* from real use — not a static classifier. The data we capture is the right level to adjust signal weightings and, over time, improve the signals themselves.
+
+The loop, implemented and causal:
+
+1. Every analysis → Phoenix trace (audit) + Firestore record (data).
+2. The user confirms the verdict (Yes/No widget on the report) → human ground truth.
+3. Per-detector **confirmed accuracy** is tracked in Firestore (`detector_stats.confirmed_total / confirmed_correct / confirmed_accuracy`). This is distinct from the older `accuracy_rate`, which is *self-agreement* (how often a detector sided with the system's own verdict) and is therefore circular — confirmed accuracy vs. human truth is the number that actually means something.
+4. `get_learned_weights()` converts confirmed accuracy into a per-detector weight multiplier, gated (needs `LEARNED_WEIGHT_MIN_CONFIRMATIONS`, env-tunable, default 8), bounded 0.5x–1.5x, with 0.6 confirmed accuracy mapping to 1.0x (no change).
+5. The verdict engine (`backend/app/reasoning/engine.py` `_score_signal`) multiplies each detector's `base_weight` by that learned multiplier. So observability is **causal to the output** — the exact Arize partner-track thesis, made real rather than decorative.
+
+Why gated/bounded: the demo must stay stable. Until a detector earns enough confirmations its multiplier is exactly 1.0, so behaviour does not drift; then it visibly adapts. The Arize Reliability Console surfaces this as a "Self-calibration active" banner plus per-detector applied-weight pills (↑1.30× / ↓0.50×).
+
+Framing the owner emphasized: judges will not deeply audit which layer is Firestore vs Phoenix. What matters is that the Arize/observability story is genuinely meaningful and useful, and that the self-improvement is real — not theatre. Build for "launch-worthy product," not just "demo."
 
 ## Arize/Phoenix Strategy
 
@@ -69,12 +86,14 @@ Firestore is the persistent intelligence layer.
 It stores:
 
 - `/analyses/{sha256}` records with verdict, media type, detector outputs, feedback, and `phoenix_trace_id`
-- global analysis counts by media type and verdict
-- detector reliability stats and average latency
+- global analysis counts by media type and verdict (`stats/global`)
+- `stats/feedback`: global human-confirmed accuracy counters (`confirmed_correct`, `confirmed_incorrect`, `total_feedback`) — powers the console's "real-world accuracy" hero stat
+- `detector_stats/{id}`: reliability stats and average latency, plus the confirmed-accuracy counters that drive self-calibration
 - health governor state
-- user feedback confirming or disputing verdicts
 
 This matters because Cloud Run container filesystems are ephemeral. Local `logs/xray/*.json` still exist as fallback, but Firestore is what makes history survive restarts and deployments.
+
+Local Firebase connects via Application Default Credentials (or `GOOGLE_APPLICATION_CREDENTIALS` / `firebase-key.json`). Known gotcha: `get_db()` must not permanently cache a failed init — a transient cold-start failure used to disable Firebase for the whole process (feedback returned 503, `/stats` silently fell back to `source: xray`). It now caches only a successful client and retries.
 
 ## Agent Builder Strategy
 

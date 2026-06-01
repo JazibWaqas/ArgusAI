@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import logging
 import os
-from functools import lru_cache
 from typing import Any, Optional
 
 from .config import settings
@@ -11,15 +10,23 @@ from .config import settings
 
 log = logging.getLogger(__name__)
 
+# Cache only a *successful* client. A failed init must not poison the whole
+# process: lru_cache would have permanently cached None on a transient cold-start
+# failure, silently disabling Firebase until restart.
+_client_cache: Optional[Any] = None
 
-@lru_cache(maxsize=1)
+
 def get_db() -> Optional[Any]:
     """
     Return a Firestore client when Firebase is configured.
 
     Firebase is an additive persistence layer. If credentials are missing or
-    invalid, callers should silently fall back to local x-ray logs.
+    invalid, callers should silently fall back to local x-ray logs. Initialization
+    is retried on each call until it succeeds, then the client is cached.
     """
+    global _client_cache
+    if _client_cache is not None:
+        return _client_cache
     try:
         import firebase_admin
         from firebase_admin import credentials, firestore
@@ -43,7 +50,9 @@ def get_db() -> Optional[Any]:
             else:
                 firebase_admin.initialize_app(options={"projectId": project_id} if project_id else None)
 
-        return firestore.client()
+        _client_cache = firestore.client()
+        log.info("[firebase] Firestore client initialized.")
+        return _client_cache
     except Exception as exc:
         log.warning("Firebase/Firestore is not configured: %s", exc)
         return None

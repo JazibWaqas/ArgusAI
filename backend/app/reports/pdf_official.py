@@ -33,8 +33,8 @@ _KEY_FINDING_MAX_CHARS = 520
 _CONTROL_CHAR_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f]")
 
 _VERDICT_DISPLAY = {
-    Verdict.LIKELY_AUTHENTIC: "Likely authentic (camera-captured)",
-    Verdict.LIKELY_AI_GENERATED: "Likely AI Generated",
+    Verdict.LIKELY_AUTHENTIC: "Likely authentic",
+    Verdict.LIKELY_AI_GENERATED: "Likely AI-generated",
     Verdict.INCONCLUSIVE: "Inconclusive",
 }
 
@@ -43,15 +43,30 @@ def _trace_url(trace_id: Optional[str]) -> Optional[str]:
     if not trace_id:
         return None
     try:
+        from ..core.observability import phoenix_project_id, phoenix_ui_base
+
+        base = (phoenix_ui_base() or "").rstrip("/")
+        if not base:
+            return None
         from ..core.config import settings
 
-        base = (settings.phoenix_dashboard_url or "").rstrip("/")
-        project = settings.phoenix_project_name or "argusai-forensics"
-        if base:
-            return f"{base}/projects/{project}/traces/{trace_id}"
+        project = phoenix_project_id() or settings.phoenix_project_name or "default"
+        return f"{base}/projects/{project}/traces/{trace_id}"
     except Exception:
         return None
-    return None
+
+
+_MEDIA_NOUN = {"image": "image", "video": "video", "audio": "recording"}
+_MEDIA_TITLE = {
+    "image": "Image Authenticity Assessment",
+    "video": "Video Authenticity Assessment",
+    "audio": "Audio Authenticity Assessment",
+}
+
+
+def _media_type(report: ForensicReport) -> str:
+    mt = (getattr(report, "media_type", None) or "image").lower()
+    return mt if mt in _MEDIA_NOUN else "image"
 
 
 def _safe_snippet(text: Optional[str], limit: int = 2000) -> str:
@@ -234,9 +249,11 @@ def build_official_forensic_pdf(
     )
 
     story: list = []
+    media_type = _media_type(report)
+    media_noun = _MEDIA_NOUN[media_type]
 
-    story.append(Paragraph("Forensic Image Authenticity Assessment", title_style))
-    story.append(Paragraph("ArgusAI — Automated forensic screening", sub_style))
+    story.append(Paragraph(f"Forensic {_MEDIA_TITLE[media_type]}", title_style))
+    story.append(Paragraph("ArgusAI — Multi-modal forensic investigation", sub_style))
 
     gen = report.generated_at
     if gen.tzinfo is not None:
@@ -256,17 +273,15 @@ def build_official_forensic_pdf(
 
     img = report.evidence.image
     story.append(Paragraph("1. Subject record", h_style))
-    story.append(
-        Paragraph(
-            _para_xml(
-                f"Image dimensions: {img.width} × {img.height} pixels. "
-                f"Mode: {img.mode}. "
-                f"Format: {img.format or 'unknown'}. "
-                f"SHA-256: {img.sha256}."
-            ),
-            body,
-        )
+    dimension_label = "Frame dimensions" if media_type == "video" else "Dimensions"
+    record_line = (
+        f"{dimension_label}: {img.width} × {img.height} pixels. "
+        f"Mode: {img.mode}. Format: {img.format or 'unknown'}. "
+        f"SHA-256: {img.sha256}."
     )
+    if media_type == "video":
+        record_line = "Analysis performed on representative frames extracted from the submitted footage. " + record_line
+    story.append(Paragraph(_para_xml(record_line), body))
 
     story.append(Paragraph("2. Conclusion (authenticity)", h_style))
     verdict_line = (
@@ -333,11 +348,11 @@ def build_official_forensic_pdf(
 
     story.append(Paragraph("7. Limitations", h_style))
     limitations = (
-        "This assessment is produced by automated forensic detectors and heuristics. "
-        "It is not legal or scientific certification of origin. "
-        "Results depend on image quality, compression, and which detectors succeeded. "
-        "Adversarial editing or uncommon generators may not be represented in training data. "
-        "Use this report as one input to human judgment, not as a sole determinant."
+        "This assessment is produced by automated forensic detectors and is not a legal or "
+        "scientific certification of origin. Results depend on the quality and compression of the "
+        f"submitted {media_noun} and on which detectors completed successfully. Adversarial editing "
+        "or generators outside the detectors' reference data may not be represented. Treat this "
+        "report as one input to human judgment, not a sole determinant."
     )
     story.append(Paragraph(_para_xml(limitations), body))
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
@@ -27,6 +28,31 @@ def _verdict_direction(verdict: Any) -> Optional[str]:
     if "authentic" in text or text == "real":
         return "authentic"
     return None
+
+
+def _opposite(direction: Optional[str]) -> Optional[str]:
+    if direction == "ai_generated":
+        return "authentic"
+    if direction == "authentic":
+        return "ai_generated"
+    return None
+
+
+# Self-calibration: a detector's verdict weight is nudged by how often it has
+# matched human-confirmed ground truth — but only after enough confirmations,
+# and within safe bounds, so behaviour stays stable until the data earns a change.
+# The confirmation threshold is env-tunable (lower it to demo calibration faster).
+LEARNED_WEIGHT_MIN_CONFIRMATIONS = int(os.getenv("LEARNED_WEIGHT_MIN_CONFIRMATIONS", "8"))
+LEARNED_WEIGHT_FLOOR = 0.5
+LEARNED_WEIGHT_CEIL = 1.5
+LEARNED_WEIGHT_BASELINE = 0.6  # confirmed accuracy that maps to a 1.0x multiplier
+
+
+def _learned_multiplier(confirmed_accuracy: float, confirmed_total: int) -> float:
+    if confirmed_total < LEARNED_WEIGHT_MIN_CONFIRMATIONS:
+        return 1.0
+    raw = confirmed_accuracy / LEARNED_WEIGHT_BASELINE if LEARNED_WEIGHT_BASELINE else 1.0
+    return round(max(LEARNED_WEIGHT_FLOOR, min(LEARNED_WEIGHT_CEIL, raw)), 3)
 
 
 def _support_direction(support: Any) -> Optional[str]:
@@ -171,6 +197,54 @@ def _update_detector_stat(db: Any, detector_id: str, row: dict[str, Any], verdic
         log.warning("Could not update detector stat %s: %s", detector_id, exc)
 
 
+def _record_confirmed(
+    db: Any,
+    detector_id: str,
+    support: Optional[str],
+    truth_now: Optional[str],
+    truth_prev: Optional[str],
+    first_time: bool,
+) -> None:
+    """Update a detector's human-confirmed accuracy counters.
+
+    ``support`` is what the detector concluded; ``truth_now`` is the human-confirmed
+    correct direction. On a first rating we add one confirmation; on a flip we only
+    move the correctness delta (the confirmation was already counted).
+    """
+    if support not in {"ai_generated", "authentic"}:
+        return
+    correct_now = 1 if support == truth_now else 0
+    correct_prev = 1 if (not first_time and support == truth_prev) else 0
+    doc_ref = db.collection("detector_stats").document(detector_id)
+    try:
+        from firebase_admin import firestore
+
+        transaction = db.transaction()
+
+        @firestore.transactional
+        def update(txn: Any) -> None:
+            snap = doc_ref.get(transaction=txn)
+            current = snap.to_dict() if snap.exists else {}
+            confirmed_total = int(current.get("confirmed_total") or 0) + (1 if first_time else 0)
+            confirmed_correct = int(current.get("confirmed_correct") or 0) + (correct_now - correct_prev)
+            confirmed_total = max(0, confirmed_total)
+            confirmed_correct = max(0, min(confirmed_total, confirmed_correct))
+            txn.set(
+                doc_ref,
+                {
+                    "confirmed_total": confirmed_total,
+                    "confirmed_correct": confirmed_correct,
+                    "confirmed_accuracy": round(confirmed_correct / confirmed_total, 4) if confirmed_total else 0.0,
+                    "last_updated": _now_iso(),
+                },
+                merge=True,
+            )
+
+        update(transaction)
+    except Exception as exc:
+        log.warning("Could not record confirmed stat %s: %s", detector_id, exc)
+
+
 def persist_analysis(report: Any, detector_metrics: Optional[dict[str, Any]] = None) -> None:
     db = get_db()
     if db is None:
@@ -224,15 +298,39 @@ def get_stats() -> Optional[dict[str, Any]]:
             if str(key).startswith("by_verdict."):
                 by_verdict[str(key).split(".", 1)[1]] = value
         detectors: dict[str, Any] = {}
+        learned_weights: dict[str, Any] = {}
         for doc in db.collection("detector_stats").stream():
             data = doc.to_dict() or {}
+            confirmed_total = int(data.get("confirmed_total") or 0)
+            confirmed_correct = int(data.get("confirmed_correct") or 0)
+            confirmed_accuracy = float(data.get("confirmed_accuracy") or 0.0)
+            multiplier = _learned_multiplier(confirmed_accuracy, confirmed_total)
             detectors[doc.id] = {
                 "total_runs": int(data.get("total_runs") or 0),
                 "correct_count": int(data.get("correct_count") or 0),
                 "accuracy_rate": float(data.get("accuracy_rate") or 0.0),
+                "confirmed_total": confirmed_total,
+                "confirmed_correct": confirmed_correct,
+                "confirmed_accuracy": confirmed_accuracy,
+                "weight_multiplier": multiplier,
                 "avg_latency_seconds": float(data.get("avg_latency_seconds") or 0.0),
                 "last_updated": data.get("last_updated"),
             }
+            if multiplier != 1.0:
+                learned_weights[doc.id] = multiplier
+
+        feedback_doc = db.collection("stats").document("feedback").get()
+        feedback_raw = feedback_doc.to_dict() if feedback_doc.exists else {}
+        confirmed_correct = int((feedback_raw or {}).get("confirmed_correct") or 0)
+        confirmed_incorrect = int((feedback_raw or {}).get("confirmed_incorrect") or 0)
+        total_feedback = int((feedback_raw or {}).get("total_feedback") or (confirmed_correct + confirmed_incorrect))
+        feedback = {
+            "confirmed_correct": confirmed_correct,
+            "confirmed_incorrect": confirmed_incorrect,
+            "total_feedback": total_feedback,
+            "accuracy_rate": round(confirmed_correct / total_feedback, 4) if total_feedback else None,
+        }
+
         return {
             "global": {
                 "total_analyses": int((global_stats or {}).get("total_analyses") or 0),
@@ -241,11 +339,37 @@ def get_stats() -> Optional[dict[str, Any]]:
                 "last_updated": (global_stats or {}).get("last_updated"),
             },
             "detectors": detectors,
+            "feedback": feedback,
+            "learned_weights": learned_weights,
             "source": "firestore",
         }
     except Exception as exc:
         log.warning("Could not read Firestore stats: %s", exc)
         return None
+
+
+_learned_weights_cache: dict[str, Any] = {"ts": 0.0, "value": {}}
+_LEARNED_WEIGHTS_TTL_SECONDS = 60.0
+
+
+def get_learned_weights() -> dict[str, float]:
+    """Per-detector verdict-weight multipliers learned from confirmed accuracy.
+
+    Cached briefly so the verdict engine does not hit Firestore on every analysis.
+    Returns an empty dict (no adjustment) when Firebase is unavailable or no
+    detector has earned a change yet.
+    """
+    import time
+
+    now = time.time()
+    if now - float(_learned_weights_cache["ts"]) < _LEARNED_WEIGHTS_TTL_SECONDS:
+        return _learned_weights_cache["value"]
+
+    stats = get_stats()
+    weights = (stats or {}).get("learned_weights") or {}
+    _learned_weights_cache["ts"] = now
+    _learned_weights_cache["value"] = weights
+    return weights
 
 
 def trace_rows_from_firestore(limit: int = 10) -> Optional[list[dict[str, Any]]]:
@@ -349,8 +473,9 @@ def fallback_stats_from_xray() -> dict[str, Any]:
         "by_verdict": {},
     }
     detectors: dict[str, dict[str, Any]] = {}
+    empty_feedback = {"confirmed_correct": 0, "confirmed_incorrect": 0, "total_feedback": 0, "accuracy_rate": None}
     if not log_dir.exists():
-        return {"global": global_stats, "detectors": detectors, "source": "xray"}
+        return {"global": global_stats, "detectors": detectors, "feedback": empty_feedback, "source": "xray"}
 
     for path in log_dir.glob("*.json"):
         try:
@@ -389,7 +514,7 @@ def fallback_stats_from_xray() -> dict[str, Any]:
         total = item.get("total_runs") or 0
         item["accuracy_rate"] = round((item.get("correct_count") or 0) / total, 4) if total else 0.0
         item["avg_latency_seconds"] = round((item.pop("_latency_sum", 0.0)) / total, 4) if total else 0.0
-    return {"global": global_stats, "detectors": detectors, "source": "xray"}
+    return {"global": global_stats, "detectors": detectors, "feedback": empty_feedback, "source": "xray"}
 
 
 def apply_feedback(report: Any, verdict_correct: bool) -> dict[str, Any]:
@@ -404,6 +529,8 @@ def apply_feedback(report: Any, verdict_correct: bool) -> dict[str, Any]:
     verdict_direction = _verdict_direction(getattr(report, "verdict", None))
     detectors = _detector_rows(report)
     try:
+        from firebase_admin import firestore
+
         doc_ref = db.collection("analyses").document(sha)
         current = doc_ref.get()
         existing = (current.to_dict() or {}).get("user_feedback") if current.exists else None
@@ -411,14 +538,24 @@ def apply_feedback(report: Any, verdict_correct: bool) -> dict[str, Any]:
         if existing == feedback:
             return {"ok": True, "feedback": feedback, "unchanged": True}
 
-        if feedback == "incorrect":
-            for detector_id, row in detectors.items():
-                if _support_direction(row.get("support")) == verdict_direction:
-                    _update_detector_stat(db, detector_id, row, verdict_direction, delta_feedback=-1)
-        elif existing == "incorrect":
-            for detector_id, row in detectors.items():
-                if _support_direction(row.get("support")) == verdict_direction:
-                    _update_detector_stat(db, detector_id, row, verdict_direction, delta_feedback=1)
+        # Global real-world accuracy counters (human-confirmed ground truth).
+        global_delta: dict[str, Any] = {"last_updated": _now_iso()}
+        if existing is None:
+            global_delta["total_feedback"] = firestore.Increment(1)
+            global_delta["confirmed_correct" if verdict_correct else "confirmed_incorrect"] = firestore.Increment(1)
+        else:
+            # Flipping an existing rating: move the count between buckets.
+            global_delta["confirmed_correct"] = firestore.Increment(1 if verdict_correct else -1)
+            global_delta["confirmed_incorrect"] = firestore.Increment(-1 if verdict_correct else 1)
+        db.collection("stats").document("feedback").set(global_delta, merge=True)
+
+        # Confirmed-accuracy loop: compare each detector's call to the human-confirmed
+        # truth. truth = verdict direction when correct, the opposite when incorrect.
+        truth_now = verdict_direction if verdict_correct else _opposite(verdict_direction)
+        truth_prev = None if existing is None else (verdict_direction if existing == "correct" else _opposite(verdict_direction))
+        first_time = existing is None
+        for detector_id, row in detectors.items():
+            _record_confirmed(db, detector_id, _support_direction(row.get("support")), truth_now, truth_prev, first_time)
     except Exception as exc:
         log.warning("Could not apply feedback for %s: %s", sha, exc)
         return {"ok": False, "error": "Could not persist feedback."}

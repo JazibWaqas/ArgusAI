@@ -23,7 +23,7 @@ from .core.analysis_store import (
 from .core.config import settings
 from .core.llm import llm_settings
 from .core.llm_client import LLMClient
-from .core.observability import tracing_health
+from .core.observability import phoenix_link_info, tracing_health
 from .core.pipeline import AnalysisPipeline
 from .core.audio_pipeline import AudioAnalysisPipeline
 
@@ -153,6 +153,7 @@ async def arize_health() -> dict:
         "status": governor.get("status", "ok"),
         "label": label,
         "dashboard_url": settings.phoenix_dashboard_url,
+        "phoenix_link": phoenix_link_info(),
         "tracing": trace,
         "detector_governor": governor,
     }

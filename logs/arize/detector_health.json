@@ -3,10 +3,10 @@
   "events": [],
   "calibration_streak": 0,
   "last_calibration_observation": {
-    "spectral_support": "ai_generated",
-    "semantic_support": "ai_generated",
+    "spectral_support": "authentic",
+    "semantic_support": "inconclusive",
     "disagreed": false,
-    "recorded_at": "2026-06-01T22:13:35.978444+00:00",
+    "recorded_at": "2026-06-01T22:37:06.069561+00:00",
     "streak": 0
   }
 }

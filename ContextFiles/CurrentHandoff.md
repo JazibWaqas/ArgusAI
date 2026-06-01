@@ -32,7 +32,22 @@ The Firestore + Phoenix story:
 
 > Firestore persists running intelligence: history, detector reliability, feedback, and stats. Phoenix records immutable audit trails for individual verdicts.
 
-Do not add more detectors or redesign the UI unless explicitly asked. The remaining work is demo readiness, Agent Builder/MCP setup, and final polish.
+The headline differentiator (added June 2, 2026) — self-calibration:
+
+> Users confirm verdicts. ArgusAI tracks each detector's accuracy against that human-confirmed ground truth and automatically re-weights how much each detector influences the verdict. Observability is causal to the output, and the system measurably improves itself from use. See `ContextFiles/Vision.md` → "Self-Calibration: The Closed Loop".
+
+Do not add more detectors unless explicitly asked. The Arize Reliability Console (admin panel) was deliberately redesigned by the owner on June 2 into an intelligence surface (trust leaderboard, real-world accuracy, applied weights) — do not revert it to a flat list. UX polish and slop-removal are active, owner-requested work; the broader "do not redesign the UI" rule still holds for the main investigation flow unless asked.
+
+## Owner Framings (clarified directly — honor these, do not re-litigate)
+
+These were stated by the project owner across working sessions. A fresh session should treat them as settled direction:
+
+1. **Goal is best hackathon product, not just best product.** Make high-leverage decisions. It is fine not to have covered every edge case because the demo is controlled, but everything shown must look genuinely impressive AND be genuinely meaningful — it has to stand out against other strong submissions.
+2. **Arize must be genuinely useful, not decorative.** The whole point is answering "what is Arize actually doing and why is it useful." The self-calibration loop is the answer. Judges will NOT deeply audit the codebase or which layer is Firestore vs Phoenix — so do not over-engineer perfect causal attribution, but the observability/self-improvement story must be real and visibly useful, not theatre.
+3. **Demo is recorded locally on the owner's laptop.** Local (localhost backend + frontend + Docker Phoenix) must be flawless; hosted Cloud Run is a bonus, not required for the recording. Local ≠ cloud (ephemeral filesystem, cold starts, Secret Manager vs `.env`) — verify locally for the demo.
+4. **Product purpose:** a genuinely reliable system to expose AI-generated media (images first; audio/video added but secondary) and explain to the user what is or isn't AI, so people can keep trusting media despite AI advances. Audience: journalists, courts, social media users, fact-checkers.
+5. **No AI-slop.** No useless phrasing, no filler, no emoji decoration, nothing unnecessary on screen. Everything purposeful, clean, useful. The PDF was explicitly called out as slop and cleaned up.
+6. **Repo hygiene:** do not clutter the repo or create new markdown files. Update existing docs (this file, `Vision.md`). Implementation workflow: the owner has Codex for heavy implementation; Claude/Opus acts as technical product manager — clear intent and reasoning, protect the framing, review the work. (In recent sessions Claude also implemented directly when asked.)
 
 ## Live URLs
 
@@ -209,6 +224,26 @@ Config/docs:
 - `.env.example` includes Firebase env vars: `FIREBASE_PROJECT_ID`, `FIREBASE_SERVICE_ACCOUNT_JSON`, `GOOGLE_APPLICATION_CREDENTIALS`.
 - `mcp/phoenix-mcp.json` now uses `PHOENIX_DASHBOARD_URL` for `--baseUrl`, not the OTEL `/v1/traces` collector endpoint.
 - `frontend/Dockerfile` and `frontend/.gcloudignore` were added for Cloud Run frontend deployment.
+
+## Self-Calibration + Fixes (June 2, 2026 — latest session)
+
+This session turned the feedback loop into a real, causal self-improving system and fixed several silent failures. All changes verified by `python -m compileall` / `vite build` (both pass). Backend must be restarted to pick up the Firebase fix.
+
+Backend:
+
+- **Fixed silent Firebase outage:** `get_db()` in `firebase.py` was `@lru_cache`-wrapped, so one transient cold-start failure cached `None` permanently for the whole process — feedback returned 503 and nothing persisted (`/stats` silently fell back to `source: xray`). Now caches only a successful client and retries each call. Symptom to watch: `POST /feedback` → 503, real-world accuracy stuck at "awaiting confirmations".
+- **Confirmed-accuracy loop:** `analysis_store.py` now tracks per-detector `confirmed_total / confirmed_correct / confirmed_accuracy` (human ground truth) separately from the circular `accuracy_rate` (self-agreement). Feedback updates these via `_record_confirmed` (handles first rating and rating flips). Global `stats/feedback` counters added for real-world accuracy.
+- **Learned weights:** `get_learned_weights()` (60s TTL cache) → per-detector multiplier from confirmed accuracy; gated by `LEARNED_WEIGHT_MIN_CONFIRMATIONS` (env, default 8), bounded 0.5x–1.5x, baseline 0.6 = 1.0x.
+- **Causal wiring:** `reasoning/engine.py` `_score_signal` multiplies `base_weight` by the learned multiplier. `/stats` now returns `feedback`, per-detector confirmed fields, `weight_multiplier`, and a `learned_weights` block.
+- **Phoenix deep-link fix:** `observability.py` added `phoenix_ui_base()` (derives UI origin from the collector endpoint so links point where traces actually go — local or cloud) and `phoenix_project_id()` (resolves the internal base64 project ID, which Phoenix URLs require — the name `argusai-forensics` in the path 404'd). Exposed as `phoenix_link` in `/arize/health`. PDF `_trace_url` reuses these.
+
+Frontend (`App.jsx`, `styles.css`):
+
+- **Arize Reliability Console redesigned** from a flat list into an intelligence surface: real-world accuracy hero stat, **Detector Trust Leaderboard** (confirmed accuracy + verdict-match context + applied-weight pills ↑/↓ + trust tiers Trusted/Watch/Low/Calibrating), self-calibration banner, Detector Health + Calibration Events. Removed the misleading single-run latency bars (detectors showing 0.00s looked broken).
+- Deep-links now resolve from `/arize/health` `phoenix_link` (base + project ID) instead of the hardcoded broken cloud URL + project name.
+- Slop removed: emoji source labels (🖥/☁), "naked classifier output" jargon, false "results in under 30 seconds" claim (analyses take 90–180s) replaced with the auditability angle.
+
+PDF (`reports/pdf_official.py`): media-type-aware title and language (no more hardcoded "Image"/"camera-captured" on video/audio), video reports note frame-based analysis, fixed chain-of-custody trace link, tightened limitations.
 
 ## Firebase Status
 
@@ -396,6 +431,9 @@ These need user/browser interaction or product judgment.
 - Audio reports have a different schema (`AudioForensicReport`) than image/video reports. Frontend handles this.
 - The deployed video test had no usable embedded audio track, so `audio_track` was `unavailable`; that is graceful behavior, not a failure.
 - A Node Playwright browser check was attempted through the Node REPL, but Playwright was not installed there. HTTP bundle checks passed.
+- **OSINT is prompt-activated by design.** `osint_verification` shows `unavailable` when no context prompt is given — this is intended, not a bug. With a context prompt it works (e.g., the PSL/Lahore Qalanders image run found Hamariweb, March 18 2023, 32% influence).
+- **OPEN ISSUE — latency.** A full analysis takes ~90–180s. Detectors are fast (~20s, dominated by semantic/Gemini); the bottleneck is the reasoning/LLM-explanation phase (observed ~78s, varies). Root cause not yet confirmed — strongly suspected to be Gemini calls erroring and cycling through the 35 keys / 2.5 fallback with timeouts. To diagnose, capture backend console output *during* a Run Investigation (not just `/arize/health` polling) and inspect the reasoning-phase Gemini timing/retries.
+- Self-calibration is demo-safe by design: a detector's weight stays exactly 1.0x until it has `LEARNED_WEIGHT_MIN_CONFIRMATIONS` confirmations. To demo the loop quickly without confirming 8 analyses, set `LEARNED_WEIGHT_MIN_CONFIRMATIONS=3` in `.env`.
 
 ## Best Next Tasks
 

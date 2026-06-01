@@ -87,6 +87,65 @@ def span_trace_id(span: Any) -> Optional[str]:
     return None
 
 
+def phoenix_ui_base() -> str:
+    """
+    The browser-reachable Phoenix UI origin.
+
+    Prefer an explicit dashboard URL, but fall back to deriving it from the
+    collector endpoint (strip the trailing ``/v1/traces``). This guarantees the
+    UI base points at the same Phoenix instance that actually received traces —
+    so deep-links work whether we are pointed at local Docker or Cloud Run.
+    """
+    dashboard = (settings.phoenix_dashboard_url or "").strip().rstrip("/")
+    collector = (settings.phoenix_collector_endpoint or "").strip()
+    collector_base = ""
+    if collector:
+        collector_base = collector.split("/v1/traces")[0].rstrip("/")
+    # If both are set but disagree on host, trust the collector (traces live there).
+    if dashboard and collector_base:
+        return collector_base if collector_base != dashboard else dashboard
+    return dashboard or collector_base
+
+
+_project_id_cache: Optional[str] = None
+
+
+def phoenix_project_id() -> Optional[str]:
+    """Resolve the internal Phoenix project ID for the configured project name.
+
+    Phoenix deep-links use the project's internal (base64) ID in the path, not
+    its name. We resolve it once via the REST API and cache it.
+    """
+    global _project_id_cache
+    if _project_id_cache:
+        return _project_id_cache
+    base = phoenix_ui_base()
+    if not base:
+        return None
+    target = settings.phoenix_project_name or "default"
+    try:
+        import httpx
+
+        resp = httpx.get(f"{base}/v1/projects", timeout=6, headers={"accept": "application/json"})
+        resp.raise_for_status()
+        for row in (resp.json() or {}).get("data", []):
+            if row.get("name") == target:
+                _project_id_cache = str(row.get("id"))
+                return _project_id_cache
+    except Exception:
+        return None
+    return None
+
+
+def phoenix_link_info() -> dict[str, Any]:
+    """Everything the frontend needs to build a working trace deep-link."""
+    return {
+        "base": phoenix_ui_base(),
+        "project_id": phoenix_project_id(),
+        "project_name": settings.phoenix_project_name,
+    }
+
+
 def tracing_health() -> dict[str, Any]:
     _init_tracer()
     configured = bool(settings.phoenix_api_key or settings.phoenix_collector_endpoint)

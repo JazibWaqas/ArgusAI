@@ -4,13 +4,27 @@ import {
   ShieldCheck, AlertOctagon, HelpCircle, Search, Camera, Eye,
   ScanSearch, Activity, Target, Database, ChevronDown, ChevronRight,
   Fingerprint, Sparkles, Send, X, Image as ImageIcon, Copy, Check,
-  Zap, Globe, Layers, Cpu, FileDown, Lock, RefreshCw, BarChart3
+  Zap, Globe, Layers, Cpu, FileDown, Lock, RefreshCw
 } from "lucide-react";
 import "./styles.css";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
 const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || "argusai2026";
-const PHOENIX_BASE = "https://argusai-phoenix-ddmxiumrdq-uc.a.run.app";
+const PHOENIX_FALLBACK_BASE = "https://argusai-phoenix-ddmxiumrdq-uc.a.run.app";
+
+// Resolved at runtime from /arize/health so deep-links point at whichever
+// Phoenix actually received the traces (local Docker or Cloud Run) and use the
+// project's internal ID, which is what Phoenix URLs require.
+let phoenixLinkInfo = { base: "", projectId: "", projectName: "argusai-forensics" };
+function setPhoenixLinkInfo(info) {
+  if (info && typeof info === "object") {
+    phoenixLinkInfo = {
+      base: info.base || "",
+      projectId: info.project_id || "",
+      projectName: info.project_name || "argusai-forensics",
+    };
+  }
+}
 const SUPPORTED_MEDIA = {
   image: ["image/jpeg", "image/png", "image/webp", "image/gif", "image/bmp"],
   video: ["video/mp4", "video/webm", "video/quicktime", "video/x-matroska", "video/x-mkvideo"],
@@ -250,7 +264,10 @@ function formatSourceDate(value) {
 
 function phoenixTraceUrl(traceId) {
   if (!traceId) return "";
-  return `${PHOENIX_BASE}/projects/argusai-forensics/traces/${traceId}`;
+  const base = (phoenixLinkInfo.base || PHOENIX_FALLBACK_BASE).replace(/\/$/, "");
+  // Phoenix deep-links require the project's internal ID, not its name.
+  const project = phoenixLinkInfo.projectId || phoenixLinkInfo.projectName;
+  return `${base}/projects/${project}/traces/${traceId}`;
 }
 
 function formatTime(value) {
@@ -269,6 +286,67 @@ function formatPercent(value) {
 function shortHash(value) {
   if (!value) return "unknown";
   return String(value).slice(0, 10);
+}
+
+const DETECTOR_LABELS = {
+  spectral_artifacts: "Spectral Artifacts",
+  metadata_analysis: "Metadata & Provenance",
+  noise_pattern_analysis: "Sensor Noise",
+  lighting_consistency: "Lighting Physics",
+  semantic_inconsistencies: "Semantic & Physical",
+  error_level_analysis: "Error Level Analysis",
+  osint_verification: "OSINT / Web Provenance",
+  temporal_coherence: "Temporal Coherence",
+  audio_track: "Embedded Audio",
+  audio_deepfake: "Voice Authenticity",
+};
+
+function detectorLabel(id) {
+  return DETECTOR_LABELS[id] || String(id || "").replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+const CONFIRMED_TRUST_MIN = 8; // confirmations before a detector earns a real trust tier
+
+// Trust tier from human-confirmed accuracy. Until a detector has enough confirmed
+// outcomes it stays "Calibrating" — we don't pretend to know its accuracy yet.
+function detectorTrust(confirmedAccuracy, confirmedTotal) {
+  if (!confirmedTotal || confirmedTotal < CONFIRMED_TRUST_MIN) {
+    return { tier: "calibrating", label: "Calibrating", color: "#64748b" };
+  }
+  if (confirmedAccuracy >= 0.8) return { tier: "trusted", label: "Trusted", color: "#34d399" };
+  if (confirmedAccuracy >= 0.6) return { tier: "watch", label: "Watch", color: "#fbbf24" };
+  return { tier: "low", label: "Low signal", color: "#f87171" };
+}
+
+// Build a ranked leaderboard from the Firestore detector stats. Confirmed accuracy
+// (vs human ground truth) is the headline; verdict-match rate is shown as context.
+function buildLeaderboard(detectorStats = {}) {
+  return Object.entries(detectorStats)
+    .map(([id, row]) => {
+      const confirmedTotal = Number(row?.confirmed_total || 0);
+      const confirmedAccuracy = Number(row?.confirmed_accuracy || 0);
+      const ready = confirmedTotal >= CONFIRMED_TRUST_MIN;
+      return {
+        id,
+        label: detectorLabel(id),
+        totalRuns: Number(row?.total_runs || 0),
+        matchRate: Number(row?.accuracy_rate || 0),
+        confirmedTotal,
+        confirmedAccuracy,
+        weightMultiplier: Number(row?.weight_multiplier || 1),
+        avgLatency: Number(row?.avg_latency_seconds || 0),
+        ready,
+        // Bar reflects confirmed accuracy once earned, otherwise verdict-match as a placeholder.
+        barValue: ready ? confirmedAccuracy : Number(row?.accuracy_rate || 0),
+        trust: detectorTrust(confirmedAccuracy, confirmedTotal),
+      };
+    })
+    .filter((d) => d.totalRuns > 0)
+    .sort((a, b) => {
+      if (a.ready !== b.ready) return b.ready - a.ready;
+      if (b.barValue !== a.barValue) return b.barValue - a.barValue;
+      return b.totalRuns - a.totalRuns;
+    });
 }
 
 const formatStatusLabel = (status) => {
@@ -639,7 +717,7 @@ function AudioReportCard({ reportData, sessionId, feedbackState, onFeedback, det
   const verdictClass = isAI ? "verdict-ai" : isAuth ? "verdict-authentic" : "verdict-inconclusive";
 
   const source = reportData.inference_source || "unknown";
-  const sourceLabel = source === "local_wav2vec2" ? "🖥 Local wav2vec2" : source === "hf_space" ? "☁ HuggingFace Space" : source;
+  const sourceLabel = source === "local_wav2vec2" ? "Local wav2vec2 model" : source === "hf_space" ? "Hosted voice model" : source;
   const sourceColor = source === "local_wav2vec2" ? "#10b981" : "#06b6d4";
 
   const sig = reportData.signal;
@@ -702,7 +780,7 @@ function AudioReportCard({ reportData, sessionId, feedbackState, onFeedback, det
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.15, duration: 0.4 }}
       >
-        Audio authenticity analysis via dedicated voice models and Gemini semantic listening when model confidence is weak.
+        Voice authenticity from a dedicated deepfake model, with Gemini listening when the call is borderline.
       </motion.div>
 
       {/* Signal card */}
@@ -883,7 +961,7 @@ function ForensicReportCard({ reportData, showJson, onToggleJson, onDownloadPdf,
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.18, duration: 0.4 }}
       >
-        {modelHealth || "All detector health gates operational"}. The verdict is based on media-specific evidence agreement, not a naked classifier output.
+        This verdict reflects how strongly independent forensic signals agree — not a single classifier score.{modelHealth ? ` ${modelHealth}.` : ""}
       </motion.div>
 
       <motion.div
@@ -996,6 +1074,7 @@ function AdminPanel({ open, onClose, arizeHealth, onHealthUpdate, statsData, onS
       const tracesJson = tracesRes.ok ? await tracesRes.json() : { traces: [] };
       const statsJson = statsRes.ok ? await statsRes.json() : null;
       if (healthJson) {
+        if (healthJson.phoenix_link) setPhoenixLinkInfo(healthJson.phoenix_link);
         setHealth(healthJson);
         onHealthUpdate?.(healthJson);
       }
@@ -1017,12 +1096,15 @@ function AdminPanel({ open, onClose, arizeHealth, onHealthUpdate, statsData, onS
   const governor = health?.detector_governor || {};
   const detectorRows = Object.entries(governor.detectors || {});
   const calibration = governor.calibration_divergence;
-  const latestTrace = traces[0];
   const globalStats = statsData?.global || {};
   const mediaStats = globalStats.by_media_type || {};
   const verdictStats = globalStats.by_verdict || {};
-  const latestDetectors = latestTrace?.detectors ? Object.entries(latestTrace.detectors) : [];
-  const maxLatency = Math.max(0.01, ...latestDetectors.map(([, row]) => Number(row?.latency_seconds ?? row?.latency) || 0));
+  const feedback = statsData?.feedback || {};
+  const realWorldAccuracy = feedback.total_feedback ? feedback.accuracy_rate : null;
+  const leaderboard = buildLeaderboard(statsData?.detectors || {});
+  const aiCount = verdictStats.likely_ai_generated || verdictStats.ai_generated || 0;
+  const authCount = verdictStats.likely_authentic || verdictStats.authentic || 0;
+  const incCount = verdictStats.inconclusive || 0;
 
   const submitPassword = (e) => {
     e.preventDefault();
@@ -1093,6 +1175,15 @@ function AdminPanel({ open, onClose, arizeHealth, onHealthUpdate, statsData, onS
               )}
 
               <section className="admin-stats-row">
+                <div className="admin-stat-pill admin-stat-hero">
+                  <strong>{realWorldAccuracy != null ? formatPercent(realWorldAccuracy) : "—"}</strong>
+                  <span>
+                    real-world accuracy
+                    {feedback.total_feedback
+                      ? ` · ${feedback.confirmed_correct}/${feedback.total_feedback} human-confirmed`
+                      : " · awaiting confirmations"}
+                  </span>
+                </div>
                 <div className="admin-stat-pill">
                   <strong>{globalStats.total_analyses || 0}</strong>
                   <span>total analyses</span>
@@ -1102,8 +1193,66 @@ function AdminPanel({ open, onClose, arizeHealth, onHealthUpdate, statsData, onS
                   <span>images · videos · audio</span>
                 </div>
                 <div className="admin-stat-pill">
-                  <strong>{verdictStats.likely_ai_generated || verdictStats.ai_generated || 0} · {verdictStats.likely_authentic || verdictStats.authentic || 0} · {verdictStats.inconclusive || 0}</strong>
+                  <strong>{aiCount} · {authCount} · {incCount}</strong>
                   <span>AI · authentic · inconclusive</span>
+                </div>
+              </section>
+
+              <section className="admin-section">
+                <h3><Target size={14} /> Detector Trust Leaderboard</h3>
+                <p className="admin-section-sub">
+                  Ranked by how often each detector matched <strong>human-confirmed</strong> ground truth. Detectors earn a trust tier after {CONFIRMED_TRUST_MIN} confirmations — and the verdict engine then scales their influence up or down automatically. Observability feeding the decision, not just logging it.
+                </p>
+                {Object.keys(statsData?.learned_weights || {}).length > 0 && (
+                  <div className="admin-alert calib">
+                    <Activity size={15} />
+                    Self-calibration active — ArgusAI has re-weighted {Object.keys(statsData.learned_weights).length} detector{Object.keys(statsData.learned_weights).length > 1 ? "s" : ""} from confirmed outcomes.
+                  </div>
+                )}
+                <div className="admin-leaderboard">
+                  {leaderboard.length ? leaderboard.map((d, i) => {
+                    const wPct = Math.round(d.weightMultiplier * 100);
+                    const wUp = d.weightMultiplier > 1.001;
+                    const wDown = d.weightMultiplier < 0.999;
+                    return (
+                      <div className="lb-row" key={d.id}>
+                        <div className="lb-rank">{i + 1}</div>
+                        <div className="lb-main">
+                          <div className="lb-head">
+                            <span className="lb-name mono">{d.label}</span>
+                            <div className="lb-tags">
+                              {(wUp || wDown) && (
+                                <span className="lb-weight" style={{ color: wUp ? "#34d399" : "#f87171", borderColor: `${wUp ? "#34d399" : "#f87171"}55` }}>
+                                  {wUp ? "↑" : "↓"} {d.weightMultiplier.toFixed(2)}× weight
+                                </span>
+                              )}
+                              <span
+                                className="lb-trust"
+                                style={{ color: d.trust.color, borderColor: `${d.trust.color}55`, background: `${d.trust.color}14` }}
+                              >
+                                {d.trust.label}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="lb-bar-track">
+                            <div className="lb-bar-fill" style={{ width: `${Math.max(2, Math.round(d.barValue * 100))}%`, background: d.trust.color }} />
+                          </div>
+                          <div className="lb-meta">
+                            <span>
+                              {d.ready
+                                ? `${formatPercent(d.confirmedAccuracy)} confirmed accuracy · ${d.confirmedTotal} reviewed`
+                                : d.confirmedTotal > 0
+                                  ? `${d.confirmedTotal}/${CONFIRMED_TRUST_MIN} confirmations · ${formatPercent(d.matchRate)} verdict match`
+                                  : `Awaiting confirmations · ${formatPercent(d.matchRate)} verdict match`}
+                            </span>
+                            <span>{d.totalRuns} runs · {d.avgLatency.toFixed(2)}s avg</span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  }) : (
+                    <div className="admin-empty">Run a few analyses to build the reliability leaderboard.</div>
+                  )}
                 </div>
               </section>
 
@@ -1147,12 +1296,12 @@ function AdminPanel({ open, onClose, arizeHealth, onHealthUpdate, statsData, onS
 
               <section className="admin-grid">
                 <div className="admin-section">
-                  <h3>Detector Health</h3>
+                  <h3><Activity size={14} /> Detector Health Gates</h3>
                   <div className="admin-health-grid">
                     {detectorRows.length ? detectorRows.map(([id, row]) => (
                       <div key={id} className={`admin-detector ${row.active ? "active" : ""}`}>
-                        <span className="mono">{id}</span>
-                        <strong>{row.active ? "Adjusted" : "Recovered"}</strong>
+                        <span className="mono">{detectorLabel(id)}</span>
+                        <strong>{row.active ? "Weight reduced" : "Recovered"}</strong>
                         <small>{row.reason || "nominal"}</small>
                       </div>
                     )) : (
@@ -1162,37 +1311,17 @@ function AdminPanel({ open, onClose, arizeHealth, onHealthUpdate, statsData, onS
                 </div>
 
                 <div className="admin-section">
-                  <h3><BarChart3 size={14} /> Latest Latency</h3>
-                  <div className="admin-bars">
-                    {latestDetectors.length ? latestDetectors.slice(0, 8).map(([id, row]) => {
-                      const latency = Number(row?.latency_seconds ?? row?.latency) || 0;
-                      return (
-                        <div className="admin-bar-row" key={id}>
-                          <span className="mono">{id}</span>
-                          <div className="admin-bar-track">
-                            <div className="admin-bar-fill" style={{ width: `${Math.max(4, (latency / maxLatency) * 100)}%` }} />
-                          </div>
-                          <strong>{latency.toFixed(2)}s</strong>
-                        </div>
-                      );
-                    }) : (
-                      <div className="admin-empty">Run an investigation to populate latency bars.</div>
+                  <h3><AlertOctagon size={14} /> Calibration Events</h3>
+                  <div className="admin-events">
+                    {(governor.recent_events || []).length ? governor.recent_events.slice().reverse().map((event, idx) => (
+                      <div className={`admin-event ${event.reason === "calibration_divergence" ? "warn" : ""}`} key={`${event.recorded_at || idx}-${idx}`}>
+                        <span className="mono">{event.reason || "detector_event"}</span>
+                        <p>{detectorLabel(event.detector_id) || "detector"} · {formatTime(event.recorded_at)}{event.active_until ? ` · active until ${formatTime(event.active_until)}` : ""}</p>
+                      </div>
+                    )) : (
+                      <div className="admin-empty">No calibration or circuit-breaker events recorded.</div>
                     )}
                   </div>
-                </div>
-              </section>
-
-              <section className="admin-section">
-                <h3>Calibration Events</h3>
-                <div className="admin-events">
-                  {(governor.recent_events || []).length ? governor.recent_events.slice().reverse().map((event, idx) => (
-                    <div className={`admin-event ${event.reason === "calibration_divergence" ? "warn" : ""}`} key={`${event.recorded_at || idx}-${idx}`}>
-                      <span className="mono">{event.reason || "detector_event"}</span>
-                      <p>{event.detector_id || "detector"} · {formatTime(event.recorded_at)}{event.active_until ? ` · active until ${formatTime(event.active_until)}` : ""}</p>
-                    </div>
-                  )) : (
-                    <div className="admin-empty">No calibration or circuit-breaker events recorded.</div>
-                  )}
                 </div>
               </section>
             </div>
@@ -1351,10 +1480,10 @@ function LandingPage({ fileInputRef, previewUrl, fileType, selectedMediaType, ha
           </div>
         </div>
         <div className="lp-diff-card">
-          <div className="lp-diff-icon" style={{background:"rgba(0,229,255,0.08)",borderColor:"rgba(0,229,255,0.2)",color:"#00e5ff"}}><Zap size={18}/></div>
+          <div className="lp-diff-icon" style={{background:"rgba(0,229,255,0.08)",borderColor:"rgba(0,229,255,0.2)",color:"#00e5ff"}}><Activity size={18}/></div>
           <div>
-            <h4>Results in under 30 seconds</h4>
-            <p>Image, video, and audio each use the checks that fit. You get a forensic report with a clear evidence trail instead of a generic score.</p>
+            <h4>Every verdict is auditable</h4>
+            <p>Each analysis is recorded as a traceable forensic record — what each detector found, when, and how the verdict was reached. Defensible enough for a newsroom or a court.</p>
           </div>
         </div>
       </section>
@@ -1434,6 +1563,7 @@ export default function App() {
         const res = await fetch(`${API_BASE}/arize/health`);
         if (!res.ok) return;
         const data = await res.json();
+        if (data?.phoenix_link) setPhoenixLinkInfo(data.phoenix_link);
         if (!cancelled) setArizeHealth(data);
       } catch {
         if (!cancelled) setArizeHealth(null);

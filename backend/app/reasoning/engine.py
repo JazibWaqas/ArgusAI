@@ -53,7 +53,13 @@ class ReasoningEngine:
     async def reason(self, evidence: EvidenceProfile) -> ReasoningOutcome:
         media_type = getattr(evidence, "media_type", "image") or "image"
         visible_signals = [signal for signal in evidence.signals if getattr(signal, "visible", True)]
-        scored_signals = [self._score_signal(signal) for signal in visible_signals]
+        try:
+            from ..core.analysis_store import get_learned_weights
+
+            learned_weights = get_learned_weights()
+        except Exception:
+            learned_weights = {}
+        scored_signals = [self._score_signal(signal, learned_weights) for signal in visible_signals]
 
         authentic_score = sum(item.contribution for item in scored_signals if item.bucket == "authentic")
         ai_score = sum(item.contribution for item in scored_signals if item.bucket == "ai_generated")
@@ -132,10 +138,13 @@ class ReasoningEngine:
             signal_contributions={s.signal.id: round(s.contribution, 4) for s in scored_signals},
         )
 
-    def _score_signal(self, signal: EvidenceSignal) -> ScoredSignal:
+    def _score_signal(self, signal: EvidenceSignal, learned_weights: Optional[Dict[str, float]] = None) -> ScoredSignal:
         importance = SIGNAL_IMPORTANCE.get(signal.id, 0.6)
         status_factor = STATUS_FACTOR.get(signal.status, 0.0)
-        base_weight = signal.reliability * importance * status_factor
+        # Self-calibration: scale a detector's influence by how often it has matched
+        # human-confirmed ground truth (1.0x until it has earned a change).
+        learned_multiplier = (learned_weights or {}).get(signal.id, 1.0)
+        base_weight = signal.reliability * importance * status_factor * learned_multiplier
 
         if signal.supports == SignalSupport.AUTHENTIC:
             support_confidence = self._directional_confidence(signal)

@@ -1,0 +1,40 @@
+{
+  "sha256": "aa15cc5f923ae15144ecaf337bece73245974af54360b888591300278d846f8c",
+  "media_type": "audio",
+  "verdict": "authentic",
+  "certainty": 0.5,
+  "inference_source": "hf_space",
+  "latency_seconds": 50.796,
+  "signal": {
+    "id": "audio_deepfake",
+    "name": "Audio Authenticity",
+    "category": "audio",
+    "status": "ok",
+    "reliability": 0.82,
+    "summary": "This audio appears to be authentic human speech. Confidence: 50%. Inference via hf space.",
+    "what_checked": "A fine-tuned Wav2Vec2-XLSR transformer (160M params) was used to classify whether this audio was recorded from a real human voice or synthesised by a text-to-speech / voice cloning system (ElevenLabs, Amazon Polly, Kokoro, etc.).",
+    "what_found": "The model classified this audio as a authentic human voice with 50% certainty. Probability real: 50% | Probability fake: 50%.",
+    "why_it_matters": "AI voice cloning is increasingly used to fabricate statements by public figures. This check catches spectral artifacts in the audio that TTS models leave behind.",
+    "caveat": "The model was fine-tuned on 6 TTS engines. Novel cloning systems not in its training set may evade detection. Short clips (<2.5 s) or heavily compressed audio may reduce accuracy.",
+    "observations": [
+      "Probability of AI-generated speech: 50%",
+      "Probability of real human speech: 50%",
+      "Confidence level: Guarded",
+      "Inference source: \u2601 HuggingFace Space",
+      "Inference latency: 30.45s"
+    ],
+    "metrics": {
+      "prob_real": 0.5,
+      "prob_fake": 0.5,
+      "inference_source": "hf_space",
+      "source_label": "\u2601 HuggingFace Space",
+      "confidence_label": "Guarded",
+      "latency_seconds": 30.448
+    },
+    "confidence": 0.5,
+    "supports": "authentic",
+    "notes": null,
+    "visible": true,
+    "verdict_influence_percent": null
+  }
+}

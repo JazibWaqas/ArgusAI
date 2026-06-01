@@ -1,0 +1,101 @@
+{
+    "timestamp": "2026-06-01T13:02:30.177282+00:00",
+    "image_hash": "ecba4180daeaaf7315fb4579dc1dd9b5b8b0932ce4593a246370fae243375ca5",
+    "media_type": "video",
+    "image_info": {
+        "width": 0,
+        "height": 0,
+        "mode": "video",
+        "sha256": "ecba4180daeaaf7315fb4579dc1dd9b5b8b0932ce4593a246370fae243375ca5",
+        "format": "VIDEO"
+    },
+    "global_execution_time": 72.2475,
+    "reasoning_execution_time": 71.9958,
+    "detector_metrics": {
+        "temporal_coherence": {
+            "status": "unavailable",
+            "support": "unknown",
+            "time_seconds": 0.0,
+            "reliability": 0.0,
+            "confidence": null,
+            "summary": "Temporal coherence could not be assessed because the video semantic review was unavailable.",
+            "visible": true
+        },
+        "audio_track": {
+            "status": "unavailable",
+            "support": "unknown",
+            "time_seconds": 0.0011,
+            "reliability": 0.0,
+            "confidence": null,
+            "summary": "No usable audio track was found in this video.",
+            "visible": true
+        }
+    },
+    "final_verdict": "inconclusive",
+    "certainty": 0.0,
+    "warnings": [
+        "Temporal Coherence: Temporal coherence could not be assessed because the video semantic review was unavailable.",
+        "Audio Track: No usable audio track was found in this video."
+    ],
+    "score_breakdown": {
+        "authentic": 0.0,
+        "ai_generated": 0.0,
+        "inconclusive": 0.0,
+        "total_considered": 0.0
+    },
+    "reasoning_summary": {
+        "verdict": "inconclusive",
+        "certainty": 0.0,
+        "certainty_percent": 0,
+        "confidence_label": "low",
+        "leaning": null,
+        "media_type": "video",
+        "short_summary": "The checks came back split and we cannot confidently say either way at 0% certainty. The most weight came from multiple checks, which could not produce a clear direction on their own.",
+        "scores": {
+            "authentic": 0,
+            "ai_generated": 0,
+            "inconclusive": 0,
+            "total_considered": 0
+        },
+        "signal_coverage": {
+            "usable_signal_count": 0,
+            "blocked_signal_count": 2,
+            "total_signal_count": 2
+        },
+        "top_authentic_signals": [],
+        "top_ai_signals": [],
+        "top_inconclusive_signals": []
+    },
+    "pipeline_health": {
+        "arize": {
+            "configured": true,
+            "enabled": true,
+            "project_name": "argusai-forensics",
+            "collector_endpoint": "http://localhost:6006/v1/traces",
+            "dashboard_url": "http://localhost:6006",
+            "error": null
+        },
+        "detector_governor": {
+            "enabled": true,
+            "status": "ok",
+            "active_anomaly_count": 0,
+            "detectors": {},
+            "calibration_divergence": null,
+            "spectral_attenuation_factor": 1.0,
+            "last_calibration_observation": null,
+            "recent_events": []
+        },
+        "model_health_label": "All detector health gates operational"
+    },
+    "llm_health": {
+        "gemini_key_count": 35,
+        "gemini_available": true,
+        "gemini_model": "gemini-3.5-flash",
+        "gemini_vision_model": "gemini-3.5-flash",
+        "gemini_grounding_model": "gemini-3.5-flash",
+        "gemini_fallback_model": "gemini-3.5-flash",
+        "osint_use_grounding": true,
+        "explanation_provider": "gemini",
+        "provider_ready": "gemini"
+    }
+}

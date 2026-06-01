@@ -1,0 +1,39 @@
+{
+  "timestamp": "2026-06-01T13:29:53.794019+00:00",
+  "sha256": "aa15cc5f923ae15144ecaf337bece73245974af54360b888591300278d846f8c",
+  "media_type": "audio",
+  "verdict": "ai_generated",
+  "certainty": 0.95,
+  "inference_source": "gemini_semantic",
+  "latency_seconds": 64.705,
+  "signal": {
+    "id": "audio_deepfake",
+    "name": "Gemini Audio Authenticity",
+    "category": "audio",
+    "status": "ok",
+    "reliability": 0.78,
+    "summary": "The audio is a highly polished song that exhibits classic characteristics of AI music generation, such as those from Suno or Udio. The vocals have a synthetic, metallic sheen with no natural breathing patterns, and the overall production has the distinct spectral signature of AI-synthesized music.",
+    "what_checked": "Gemini listened for synthetic speech, cloned-voice artifacts, unnatural cadence, missing breathing, and generated-audio production patterns.",
+    "what_found": "The audio is a highly polished song that exhibits classic characteristics of AI music generation, such as those from Suno or Udio. The vocals have a synthetic, metallic sheen with no natural breathing patterns, and the overall production has the distinct spectral signature of AI-synthesized music.",
+    "why_it_matters": "When the dedicated wav2vec2 detector is missing or uncertain, Gemini gives the product a direct semantic audio review instead of stopping at an inconclusive model score.",
+    "caveat": "Gemini is an expert semantic judge, not a calibrated audio classifier. Treat this as one evidence signal in the trail.",
+    "observations": [
+      "The vocals exhibit a distinct metallic and synthetic texture, characteristic of AI music generators like Suno or Udio.",
+      "There is a complete lack of natural breathing or physiological cues from the singer throughout the track.",
+      "The vocal processing has a phasey, overly-tuned quality that sounds artificial rather than a natural human performance with studio effects."
+    ],
+    "metrics": {
+      "confidence_raw": 0.95,
+      "confidence_label": "High",
+      "inference_source": "gemini_semantic",
+      "provider": "gemini",
+      "model": "gemini-3.5-flash",
+      "fallback_used": false
+    },
+    "confidence": 0.95,
+    "supports": "ai_generated",
+    "notes": "Gemini semantic audio fallback.",
+    "visible": true,
+    "verdict_influence_percent": null
+  }
+}

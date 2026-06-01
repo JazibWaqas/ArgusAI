@@ -1,0 +1,31 @@
+{
+  "sha256": "aa15cc5f923ae15144ecaf337bece73245974af54360b888591300278d846f8c",
+  "media_type": "audio",
+  "verdict": "unknown",
+  "certainty": 0.5,
+  "inference_source": "unknown",
+  "latency_seconds": 0.0,
+  "signal": {
+    "id": "audio_deepfake",
+    "name": "Audio Authenticity",
+    "category": "audio",
+    "status": "unavailable",
+    "reliability": 0.0,
+    "summary": "Audio detector unavailable.",
+    "what_checked": null,
+    "what_found": null,
+    "why_it_matters": null,
+    "caveat": null,
+    "observations": [
+      "Neither local wav2vec2 model nor gradio_client is available. Run: python -m backend.scripts.download_audio_model  OR  pip install gradio_client"
+    ],
+    "metrics": {
+      "unavailable_reason": "Neither local wav2vec2 model nor gradio_client is available. Run: python -m backend.scripts.download_audio_model  OR  pip install gradio_client"
+    },
+    "confidence": null,
+    "supports": "unknown",
+    "notes": null,
+    "visible": true,
+    "verdict_influence_percent": null
+  }
+}

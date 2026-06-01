@@ -1,0 +1,232 @@
+{
+    "timestamp": "2026-06-01T13:08:49.373323+00:00",
+    "image_hash": "ecba4180daeaaf7315fb4579dc1dd9b5b8b0932ce4593a246370fae243375ca5",
+    "media_type": "video",
+    "image_info": {
+        "width": 720,
+        "height": 1280,
+        "mode": "RGB",
+        "sha256": "ecba4180daeaaf7315fb4579dc1dd9b5b8b0932ce4593a246370fae243375ca5",
+        "format": "VIDEO"
+    },
+    "global_execution_time": 152.1519,
+    "reasoning_execution_time": 36.0149,
+    "detector_metrics": {
+        "spectral_artifacts": {
+            "status": "error",
+            "support": "unknown",
+            "time_seconds": 0.0011,
+            "reliability": 0.0,
+            "confidence": null,
+            "summary": "This check failed because the spectral model could not be loaded.",
+            "top_observation": "PyTorch spectral runtime is unavailable: No module named 'torch'",
+            "visible": true
+        },
+        "metadata_analysis": {
+            "status": "warning",
+            "support": "unknown",
+            "time_seconds": 0.0003,
+            "reliability": 0.3,
+            "confidence": null,
+            "summary": "The file does not contain any usable metadata.",
+            "top_observation": "The file contains no EXIF metadata, so provenance clues are limited.",
+            "visible": true
+        },
+        "noise_pattern_analysis": {
+            "status": "unavailable",
+            "support": "unknown",
+            "time_seconds": 0.0,
+            "reliability": 0.0,
+            "confidence": null,
+            "summary": "Thermal Noise & Sensor Consistency is calibrated for still images and is hidden for video reports.",
+            "visible": false
+        },
+        "lighting_consistency": {
+            "status": "unavailable",
+            "support": "unknown",
+            "time_seconds": 0.0,
+            "reliability": 0.0,
+            "confidence": null,
+            "summary": "Lighting Physics & Contrast Geometry is calibrated for still images and is hidden for video reports.",
+            "visible": false
+        },
+        "error_level_analysis": {
+            "status": "ok",
+            "support": "unknown",
+            "time_seconds": 0.9155,
+            "reliability": 0.25,
+            "confidence": null,
+            "summary": "The ELA map shows moderate, fairly uniform compression residuals (mean: 1.14, quadrant spread: 0.62). No editing seams or compositing artifacts were detected.",
+            "top_observation": "Image: 720x1280px | JPEG recompressed at quality 90",
+            "visible": true
+        },
+        "semantic_inconsistencies": {
+            "status": "ok",
+            "support": "authentic",
+            "time_seconds": 12.1341,
+            "reliability": 0.3,
+            "confidence": 0.1,
+            "summary": "The audio contains no spoken words, consisting only of an acoustic guitar intro followed by a dramatic human gasp. The gasp sounds entirely natural and free of synthetic artifacts, indicating it is an authentic human recording.",
+            "top_observation": "No obvious semantic anomalies reported.",
+            "visible": true
+        },
+        "osint_verification": {
+            "status": "warning",
+            "support": "unknown",
+            "time_seconds": 103.5963,
+            "reliability": 0.1,
+            "confidence": null,
+            "summary": "The image looks too generic for meaningful web verification.",
+            "top_observation": "Zero specific public figures or geopolitical events recognized by OSINT protocol.",
+            "visible": true
+        },
+        "temporal_coherence": {
+            "status": "ok",
+            "support": "authentic",
+            "time_seconds": 0.0,
+            "reliability": 0.75,
+            "confidence": 0.1,
+            "summary": "The audio contains no spoken words, consisting only of an acoustic guitar intro followed by a dramatic human gasp. The gasp sounds entirely natural and free of synthetic artifacts, indicating it is an authentic human recording.",
+            "visible": true
+        },
+        "audio_track": {
+            "status": "ok",
+            "support": "authentic",
+            "time_seconds": 8.5423,
+            "reliability": 0.82,
+            "confidence": 0.5,
+            "summary": "Embedded video audio: This audio appears to be authentic human speech. Confidence: 50%. Inference via hf space.",
+            "visible": true
+        }
+    },
+    "final_verdict": "likely_authentic",
+    "certainty": 0.924,
+    "warnings": [
+        "Spectral Artifacts: This check failed because the spectral model could not be loaded.",
+        "Metadata & Provenance: The file does not contain any usable metadata.",
+        "Live Web Fact-Checking (OSINT): The image looks too generic for meaningful web verification."
+    ],
+    "score_breakdown": {
+        "authentic": 1.175,
+        "ai_generated": 0.0,
+        "inconclusive": 0.119,
+        "total_considered": 1.293
+    },
+    "reasoning_summary": {
+        "verdict": "likely_authentic",
+        "certainty": 0.924,
+        "certainty_percent": 92,
+        "confidence_label": "high",
+        "leaning": "likely_authentic",
+        "media_type": "video",
+        "short_summary": "This looks like real footage. Our confidence is 92%. The strongest reason: Temporal Coherence found that the video review did not find the usual temporal tells: motion stays coherent, details remain stable, and scene geometry holds across frames.",
+        "scores": {
+            "authentic": 1.175,
+            "ai_generated": 0,
+            "inconclusive": 0.119,
+            "total_considered": 1.293
+        },
+        "signal_coverage": {
+            "usable_signal_count": 6,
+            "blocked_signal_count": 1,
+            "total_signal_count": 7
+        },
+        "top_authentic_signals": [
+            {
+                "name": "Temporal Coherence",
+                "summary": "The audio contains no spoken words, consisting only of an acoustic guitar intro followed by a dramatic human gasp. The gasp sounds entirely natural and free of synthetic artifacts, indicating it is an authentic human recording.",
+                "what_found": "The video review did not find the usual temporal tells: motion stays coherent, details remain stable, and scene geometry holds across frames.",
+                "why_it_matters": "AI video generators often fail across time even when individual frames look convincing.",
+                "caveat": "Low bitrate, motion blur, and heavy compression can resemble temporal artifacts, so this signal is weighed with the rest of the evidence.",
+                "support": "authentic",
+                "contribution": 0.532
+            },
+            {
+                "name": "Audio Track",
+                "summary": "Embedded video audio: This audio appears to be authentic human speech. Confidence: 50%. Inference via hf space.",
+                "what_found": "The model classified this audio as a authentic human voice with 50% certainty. Probability real: 50% | Probability fake: 50%.",
+                "why_it_matters": "AI voice cloning is increasingly used to fabricate statements by public figures. This check catches spectral artifacts in the audio that TTS models leave behind.",
+                "caveat": "The model was fine-tuned on 6 TTS engines. Novel cloning systems not in its training set may evade detection. Short clips (<2.5 s) or heavily compressed audio may reduce accuracy.",
+                "support": "authentic",
+                "contribution": 0.416
+            },
+            {
+                "name": "Semantic & Physical Consistency",
+                "summary": "The audio contains no spoken words, consisting only of an acoustic guitar intro followed by a dramatic human gasp. The gasp sounds entirely natural and free of synthetic artifacts, indicating it is an authentic human recording.",
+                "what_found": "The video review did not find the usual temporal tells: motion stays coherent, details remain stable, and scene geometry holds across frames.",
+                "why_it_matters": "AI video generators often slip across time. Stable footage is meaningful support for a real recording, not just an absence of evidence.",
+                "caveat": "This detector is useful, but it can still be wrong and should be treated as one part of the full picture.",
+                "support": "authentic",
+                "contribution": 0.227
+            }
+        ],
+        "top_ai_signals": [],
+        "top_inconclusive_signals": [
+            {
+                "name": "Metadata & Provenance",
+                "summary": "The file does not contain any usable metadata.",
+                "what_found": "This image has no EXIF metadata at all, so we cannot see what device or software created it.",
+                "why_it_matters": "Missing metadata removes a useful source of provenance, but it does not automatically mean the image is AI-generated.",
+                "caveat": "Many social media platforms strip metadata during upload, so this signal is weak on its own.",
+                "support": "unknown",
+                "contribution": 0.067
+            },
+            {
+                "name": "Error Level Analysis (ELA)",
+                "summary": "The ELA map shows moderate, fairly uniform compression residuals (mean: 1.14, quadrant spread: 0.62). No editing seams or compositing artifacts were detected.",
+                "what_found": "Re-saving at quality 90 produced a mean residual of 1.14 with a quadrant spread of only 0.62. The compression stress is consistent across all four quadrants, and only 0.00% of pixels show elevated residuals. This uniform profile suggests the image has a consistent compression history - no obvious signs of region-level editing or compositing.",
+                "why_it_matters": "A uniform ELA profile removes one red flag - there are no obvious editing seams. However, ELA does not tell us whether the image is AI-generated, only that it has not been obviously composited. The other detectors handle the AI vs. real question.",
+                "caveat": "ELA detects editing and compression inconsistency, not AI generation. Social media uploads, repeated saves, and WhatsApp forwarding all degrade this test. It's treated as a weak supporting check.",
+                "support": "unknown",
+                "contribution": 0.031
+            },
+            {
+                "name": "Live Web Fact-Checking (OSINT)",
+                "summary": "The image looks too generic for meaningful web verification.",
+                "what_found": "The scene does not appear specific enough for a useful web fact-check.",
+                "why_it_matters": "OSINT only helps when there is a public event or claim to verify. Generic scenes usually cannot be confirmed this way.",
+                "caveat": "A skipped OSINT check does not say anything negative about the image. It only means there was no clear public context to search.",
+                "support": "unknown",
+                "contribution": 0.021
+            }
+        ]
+    },
+    "pipeline_health": {
+        "arize": {
+            "configured": true,
+            "enabled": true,
+            "project_name": "argusai-forensics",
+            "collector_endpoint": "http://localhost:6006/v1/traces",
+            "dashboard_url": "http://localhost:6006",
+            "error": null
+        },
+        "detector_governor": {
+            "enabled": true,
+            "status": "ok",
+            "active_anomaly_count": 0,
+            "detectors": {},
+            "calibration_divergence": null,
+            "spectral_attenuation_factor": 1.0,
+            "last_calibration_observation": {
+                "spectral_support": "unknown",
+                "semantic_support": "authentic",
+                "disagreed": false,
+                "recorded_at": "2026-06-01T13:08:13.355437+00:00",
+                "streak": 0
+            },
+            "recent_events": []
+        },
+        "model_health_label": "All detector health gates operational"
+    },
+    "llm_health": {
+        "gemini_key_count": 35,
+        "gemini_available": true,
+        "gemini_model": "gemini-3.5-flash",
+        "gemini_vision_model": "gemini-3.5-flash",
+        "gemini_grounding_model": "gemini-3.5-flash",
+        "gemini_fallback_model": "gemini-3.5-flash",
+        "osint_use_grounding": true,
+        "explanation_provider": "gemini",
+        "provider_ready": "gemini"
+    }
+}

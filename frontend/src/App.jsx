@@ -41,6 +41,18 @@ const SCAN_STEPS = [
   "Generating forensic report...",
 ];
 
+const AUDIO_SCAN_STEPS = [
+  "Extracting spectral frequencies (Wav2Vec2)...",
+  "Reading container format metadata...",
+  "Analyzing background noise floors...",
+  "Measuring acoustic room reverberation...",
+  "Evaluating spoken semantic cadence...",
+  "Probing error level quantization...",
+  "Performing live OSINT search...",
+  "Aggregating evidence signals...",
+  "Generating forensic report...",
+];
+
 const CAROUSEL_IMAGES = [
   "/carousel/1.jpg",
   "/carousel/2.jpg",
@@ -58,6 +70,7 @@ const SIGNAL_THEME = {
   forensic:  { color: "#f59e0b", glow: "rgba(245,158,11,0.25)",  label: "Forensic" },
   noise:     { color: "#10b981", glow: "rgba(16,185,129,0.25)",  label: "Noise"    },
   lighting:  { color: "#f97316", glow: "rgba(249,115,22,0.25)",  label: "Lighting" },
+  audio:     { color: "#06b6d4", glow: "rgba(6,182,212,0.25)",   label: "Audio"    },
   default:   { color: "#00e6ff", glow: "rgba(0,230,255,0.25)",   label: "Signal"   },
 };
 
@@ -77,6 +90,7 @@ const SignalIcon = ({ category, size = 14 }) => {
   if (c.includes("forensic")) return <ScanSearch size={size} />;
   if (c.includes("noise"))    return <Activity size={size} />;
   if (c.includes("lighting")) return <Sparkles size={size} />;
+  if (c.includes("audio"))    return <Zap size={size} />;
   return <Database size={size} />;
 };
 
@@ -422,6 +436,172 @@ function ScanningOverlay({ steps, currentStep }) {
   );
 }
 
+function AudioReportCard({ reportData }) {
+  if (!reportData) return null;
+
+  const certaintyPercent = Math.round((reportData.certainty || 0) * 100);
+  const isAI = (reportData.verdict || "").toLowerCase().includes("ai_generated");
+  const isAuth = (reportData.verdict || "").toLowerCase().includes("authentic");
+  const verdictLabel = isAI ? "AI-Generated Voice" : isAuth ? "Authentic Voice" : "Inconclusive";
+  const verdictClass = isAI ? "verdict-ai" : isAuth ? "verdict-authentic" : "verdict-inconclusive";
+
+  const source = reportData.inference_source || "unknown";
+  const sourceLabel = source === "local_wav2vec2" ? "🖥 Local wav2vec2" : source === "hf_space" ? "☁ HuggingFace Space" : source;
+  const sourceColor = source === "local_wav2vec2" ? "#10b981" : "#06b6d4";
+
+  const sig = reportData.signal;
+  const confidenceLabel = reportData.confidence_label || "Guarded";
+  const observations = sig?.observations || [];
+  const probFake = sig?.metrics?.prob_fake ?? null;
+  const probReal = sig?.metrics?.prob_real ?? null;
+
+  return (
+    <motion.div
+      className="forensic-report-card"
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ type: "spring", stiffness: 300, damping: 24 }}
+    >
+      {/* Verdict banner */}
+      <motion.div
+        className={`verdict-banner ${verdictClass}`}
+        initial={{ opacity: 0, scale: 0.97 }}
+        animate={{ opacity: 1, scale: 1 }}
+        transition={{ type: "spring", stiffness: 300, damping: 20 }}
+      >
+        <Zap size={28} />
+        <div className="verdict-text-wrap">
+          <span className="verdict-label">Audio Verdict</span>
+          <span className="verdict-value">{verdictLabel}</span>
+          {reportData.explanation && (
+            <p className="verdict-summary">{reportData.explanation}</p>
+          )}
+        </div>
+        <div className="verdict-meta">
+          <div className="verdict-confidence">
+            <span className="verdict-confidence-label">Certainty</span>
+            <span className="verdict-confidence-value">{certaintyPercent}%</span>
+            <span className="verdict-confidence-tag">{confidenceLabel}</span>
+          </div>
+          {/* Inference source badge */}
+          <span
+            className="arize-badge"
+            style={{ color: sourceColor, borderColor: `${sourceColor}40`, background: `${sourceColor}12`, marginTop: 8 }}
+          >
+            {sourceLabel}
+          </span>
+        </div>
+      </motion.div>
+
+      {/* Waveform probability bar */}
+      <motion.div
+        className="report-helper"
+        initial={{ opacity: 0, y: 12 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ delay: 0.15, duration: 0.4 }}
+      >
+        Audio deepfake analysis via two-tier pipeline (local wav2vec2 + HF Space fallback).
+      </motion.div>
+
+      {/* Signal card */}
+      {sig && (
+        <motion.div
+          className="signals-section"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          transition={{ delay: 0.35 }}
+        >
+          <h3 className="signals-section-title">
+            <Activity size={14} /> Audio Evidence
+          </h3>
+
+          <div className="signal-card" style={{ "--signal-color": "#06b6d4", "--signal-glow": "rgba(6,182,212,0.25)" }}>
+            <div className="signal-card-header">
+              <div className="signal-icon-wrap" style={{ color: "#06b6d4", background: "rgba(6,182,212,0.12)" }}>
+                <Zap size={14} />
+              </div>
+              <div className="signal-title-group">
+                <span className="signal-name">{sig.name || "Audio Authenticity"}</span>
+                <span className="signal-category-badge" style={{ color: "#06b6d4", background: "rgba(6,182,212,0.12)" }}>
+                  Audio
+                </span>
+              </div>
+              <span className={`status-badge ${sig.status === "ok" ? "status-pass" : sig.status === "error" ? "status-error" : "status-info"}`}>
+                {sig.status === "ok" ? "Completed" : sig.status === "error" ? "Error" : sig.status}
+              </span>
+            </div>
+
+            <p className="signal-summary">{sig.summary}</p>
+
+            {/* Probability bars */}
+            {probFake !== null && probReal !== null && (
+              <div className="signal-stats" style={{ marginTop: 12 }}>
+                <div className="stat-item">
+                  <span className="stat-label">AI-generated probability</span>
+                  <div className="reliability-bar-wrap">
+                    <span className="stat-value" style={{ color: isAI ? "#f87171" : "inherit" }}>
+                      {Math.round(probFake * 100)}%
+                    </span>
+                    <div className="reliability-bar">
+                      <motion.div
+                        className="reliability-fill"
+                        style={{ background: isAI ? "#f87171" : "#06b6d4" }}
+                        initial={{ width: 0 }}
+                        animate={{ width: `${Math.round(probFake * 100)}%` }}
+                        transition={{ duration: 0.9, ease: "easeOut" }}
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div className="stat-item">
+                  <span className="stat-label">Real human probability</span>
+                  <div className="reliability-bar-wrap">
+                    <span className="stat-value" style={{ color: isAuth ? "#34d399" : "inherit" }}>
+                      {Math.round(probReal * 100)}%
+                    </span>
+                    <div className="reliability-bar">
+                      <motion.div
+                        className="reliability-fill"
+                        style={{ background: isAuth ? "#34d399" : "#06b6d4" }}
+                        initial={{ width: 0 }}
+                        animate={{ width: `${Math.round(probReal * 100)}%` }}
+                        transition={{ duration: 0.9, delay: 0.1, ease: "easeOut" }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Observations */}
+            {observations.length > 0 && (
+              <ul className="signal-observations" style={{ marginTop: 12 }}>
+                {observations.map((obs, i) => (
+                  <li key={i} className="signal-obs-item">{obs}</li>
+                ))}
+              </ul>
+            )}
+
+            {/* What checked / why it matters */}
+            {sig.what_checked && (
+              <div className="signal-detail-row signal-detail-row--purpose" style={{ marginTop: 12 }}>
+                <span className="signal-detail-label">What this check does</span>
+                <p className="signal-detail-text">{sig.what_checked}</p>
+              </div>
+            )}
+            {sig.caveat && (
+              <div className="signal-detail-row" style={{ marginTop: 8 }}>
+                <span className="signal-detail-label">Caveat</span>
+                <p className="signal-detail-text">{sig.caveat}</p>
+              </div>
+            )}
+          </div>
+        </motion.div>
+      )}
+    </motion.div>
+  );
+}
+
 function ForensicReportCard({ reportData, showJson, onToggleJson, onDownloadPdf, pdfDownloading }) {
   const jsonStr = useMemo(() => {
     if (!reportData || !showJson) return "";
@@ -556,7 +736,7 @@ function ForensicReportCard({ reportData, showJson, onToggleJson, onDownloadPdf,
   );
 }
 
-function LandingPage({ fileInputRef, previewUrl, handleDrop, handleFileChange, contextText, setContextText, fileSelected, isAnalyzing, handleAnalyze, sessionError }) {
+function LandingPage({ fileInputRef, previewUrl, fileType, handleDrop, handleFileChange, contextText, setContextText, fileSelected, isAnalyzing, handleAnalyze, sessionError }) {
   return (
     <div className="landing-root">
 
@@ -570,14 +750,14 @@ function LandingPage({ fileInputRef, previewUrl, handleDrop, handleFileChange, c
             <span className="lp-hero-accent">what you see?</span>
           </h2>
           <p className="lp-hero-sub">
-            AI-generated images are becoming harder to spot by eye. ArgusAI is a forensic tool that analyzes images the same way an investigator would, looking at the technical evidence inside the image itself rather than just how it looks.
+            AI-generated media is becoming harder to spot by eye. ArgusAI is a forensic tool that analyzes images and videos the same way an investigator would, looking at the technical evidence inside the file itself rather than just how it looks.
           </p>
           <p className="lp-hero-sub">
-            Upload any image and get a forensic verdict: real or AI-generated. Each check explains exactly what it found and why it matters, so you understand the evidence trail instead of trusting a single number.
+            Upload any image or video and get a forensic verdict: real or AI-generated. Each check explains exactly what it found and why it matters, so you understand the evidence trail instead of trusting a single number.
           </p>
           <ul className="lp-hero-bullets">
-            <li>Analyzes pixel-level noise, lighting physics, and frequency patterns that AI images get wrong</li>
-            <li>Searches live news and fact-checkers to see if the image matches a real reported event</li>
+            <li>Analyzes pixel-level noise, lighting physics, and frequency patterns that AI gets wrong</li>
+            <li>Searches live news and fact-checkers to see if the file matches a real reported event</li>
             <li>Shows you every signal individually so the reasoning is fully transparent</li>
           </ul>
         </div>
@@ -592,14 +772,26 @@ function LandingPage({ fileInputRef, previewUrl, handleDrop, handleFileChange, c
               onDrop={handleDrop}
               onClick={() => !previewUrl && fileInputRef.current?.click()}
             >
-              <input ref={fileInputRef} type="file" accept="image/*" className="file-input-hidden" onChange={handleFileChange} />
+              <input ref={fileInputRef} type="file"
+                accept="image/*,video/*,audio/*,.mp3,.wav,.ogg,.m4a,.flac"
+                className="file-input-hidden" onChange={handleFileChange} />
               {previewUrl ? (
-                <img src={previewUrl} alt="Preview" className="lp-preview-img" />
+                fileType?.startsWith("video/") ? (
+                  <video src={previewUrl} controls className="lp-preview-img" />
+                ) : fileType?.startsWith("audio/") ? (
+                  <div className="lp-audio-preview">
+                    <Zap size={36} style={{ color: "#06b6d4", marginBottom: 10 }} />
+                    <p style={{ color: "#06b6d4", fontWeight: 600, margin: "0 0 8px" }}>Audio ready for analysis</p>
+                    <audio src={previewUrl} controls style={{ width: "100%" }} />
+                  </div>
+                ) : (
+                  <img src={previewUrl} alt="Preview" className="lp-preview-img" />
+                )
               ) : (
                 <div className="lp-drop-inner">
                   <div className="lp-drop-icon"><ImageIcon size={20} /></div>
-                  <p className="lp-drop-title">Drop an image to examine</p>
-                  <p className="lp-drop-sub">or click to browse (JPG, PNG, WEBP)</p>
+                  <p className="lp-drop-title">Drop image, video, or audio</p>
+                  <p className="lp-drop-sub">or click to browse (JPG, PNG, MP4, WAV, MP3…)</p>
                 </div>
               )}
             </div>
@@ -715,6 +907,7 @@ export default function App() {
   const [scanStep, setScanStep]         = useState(0);
   const [pdfLoadingForId, setPdfLoadingForId] = useState(null);
   const [arizeHealth, setArizeHealth] = useState(null);
+  const [fileType, setFileType]         = useState("");
 
   const fileInputRef = useRef(null);
   const feedEndRef   = useRef(null);
@@ -777,16 +970,26 @@ export default function App() {
 
   const handleFileChange = (e) => {
     const file = e.target.files[0];
-    if (!file || !file.type.startsWith("image/")) return;
+    if (!file) return;
+    const isImg = file.type.startsWith("image/");
+    const isVid = file.type.startsWith("video/");
+    const isAud = file.type.startsWith("audio/");
+    if (!isImg && !isVid && !isAud) return;
     setFileSelected(true);
+    setFileType(file.type);
     if (previewUrl) URL.revokeObjectURL(previewUrl);
+    // Audio has no visual preview — just store a blob URL for possible playback
     setPreviewUrl(URL.createObjectURL(file));
   };
 
   const handleDrop = (e) => {
     e.preventDefault();
     const file = e.dataTransfer.files[0];
-    if (!file || !file.type.startsWith("image/")) return;
+    if (!file) return;
+    const isImg = file.type.startsWith("image/");
+    const isVid = file.type.startsWith("video/");
+    const isAud = file.type.startsWith("audio/");
+    if (!isImg && !isVid && !isAud) return;
     if (fileInputRef.current) {
       const dt = new DataTransfer();
       dt.items.add(file);
@@ -796,13 +999,17 @@ export default function App() {
   };
 
   const clearImage = () => {
-    setPreviewUrl(""); setFileSelected(false);
+    setPreviewUrl(""); setFileSelected(false); setFileType("");
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
   const handleAnalyze = async () => {
     const file = fileInputRef.current?.files[0];
     if (!file) return;
+
+    const isAudio = file.type.startsWith("audio/");
+    const activeSteps = isAudio ? AUDIO_SCAN_STEPS : SCAN_STEPS;
+
     setIsAnalyzing(true); setScanStep(0);
     setStatus("Running forensic pipeline...");
     setShowJsonById({});
@@ -810,42 +1017,68 @@ export default function App() {
     const imageSnapshot = previewUrl;
 
     try {
-      const postAnalyze = (sessionKey) => {
-        const fd = new FormData();
-        fd.append("file", file);
-        fd.append("context", contextText.trim());
-        return fetch(`${API_BASE}/sessions/${sessionKey}/analyze`, { method: "POST", body: fd });
-      };
-
       let sid = await ensureSession();
 
       setMessages((prev) => [
         ...prev,
-        { id: `u-${Date.now()}`, role: "user", kind: "analyze", text: contextText.trim(), imageUrl: imageSnapshot },
+        { id: `u-${Date.now()}`, role: "user", kind: "analyze", text: contextText.trim(), imageUrl: imageSnapshot, fileType: file.type },
       ]);
 
-      let res = await postAnalyze(sid);
-      if (res.status === 404) {
-        setSessionId(null);
-        sid = await createFreshSession();
-        res = await postAnalyze(sid);
-      }
-      if (!res.ok) {
-        let detail = "";
-        try {
-          const errBody = await res.json();
-          if (errBody?.error) detail = ` ${errBody.error}`;
-        } catch {
-          /* ignore */
+      if (isAudio) {
+        // ── AUDIO PATH ───────────────────────────────────────────────────
+        const postAudio = (sessionKey) => {
+          const fd = new FormData();
+          fd.append("file", file);
+          fd.append("context", contextText.trim());
+          return fetch(`${API_BASE}/sessions/${sessionKey}/analyze-audio`, { method: "POST", body: fd });
+        };
+
+        let res = await postAudio(sid);
+        if (res.status === 404) {
+          setSessionId(null);
+          sid = await createFreshSession();
+          res = await postAudio(sid);
         }
-        setStatus(`Analysis failed.${detail}`);
-        return;
+        if (!res.ok) {
+          let detail = "";
+          try {
+            const errBody = await res.json();
+            if (errBody?.error) detail = ` ${errBody.error}`;
+          } catch { /* ignore */ }
+          setStatus(`Audio analysis failed.${detail}`);
+          return;
+        }
+        const audioReport = await res.json();
+        setMessages((prev) => [...prev, { id: `a-${Date.now()}`, role: "assistant", kind: "report", report: audioReport }]);
+      } else {
+        // ── IMAGE / VIDEO PATH ────────────────────────────────────────────
+        const postAnalyze = (sessionKey) => {
+          const fd = new FormData();
+          fd.append("file", file);
+          fd.append("context", contextText.trim());
+          return fetch(`${API_BASE}/sessions/${sessionKey}/analyze`, { method: "POST", body: fd });
+        };
+
+        let res = await postAnalyze(sid);
+        if (res.status === 404) {
+          setSessionId(null);
+          sid = await createFreshSession();
+          res = await postAnalyze(sid);
+        }
+        if (!res.ok) {
+          let detail = "";
+          try {
+            const errBody = await res.json();
+            if (errBody?.error) detail = ` ${errBody.error}`;
+          } catch { /* ignore */ }
+          setStatus(`Analysis failed.${detail}`);
+          return;
+        }
+        const report = await res.json();
+        setMessages((prev) => [...prev, { id: `a-${Date.now()}`, role: "assistant", kind: "report", report }]);
       }
 
-      const report = await res.json();
-      setMessages((prev) => [...prev, { id: `a-${Date.now()}`, role: "assistant", kind: "report", report }]);
       setStatus("");
-      // keep image in panel so user can reference it; allow new file
       setContextText("");
     } catch {
       setStatus(
@@ -963,6 +1196,7 @@ export default function App() {
           <LandingPage
             fileInputRef={fileInputRef}
             previewUrl={previewUrl}
+            fileType={fileType}
             handleDrop={handleDrop}
             handleFileChange={handleFileChange}
             contextText={contextText}
@@ -988,7 +1222,19 @@ export default function App() {
               >
                 {m.role === "user" && m.kind === "analyze" && (
                   <div className="user-bubble">
-                    {m.imageUrl && <img src={m.imageUrl} alt="" className="msg-thumb" />}
+                    {m.imageUrl && (
+                      m.fileType?.startsWith("video/") ? (
+                        <video src={m.imageUrl} className="msg-thumb" muted />
+                      ) : m.fileType?.startsWith("audio/") ? (
+                        <div className="msg-audio-thumb">
+                          <Zap size={18} style={{color:"#06b6d4"}} />
+                          <span>Audio file submitted</span>
+                          <audio src={m.imageUrl} controls className="msg-audio-player" />
+                        </div>
+                      ) : (
+                        <img src={m.imageUrl} alt="" className="msg-thumb" />
+                      )
+                    )}
                     {m.text && <p className="msg-context">{m.text}</p>}
                   </div>
                 )}
@@ -997,6 +1243,9 @@ export default function App() {
                 )}
                 {m.role === "assistant" && m.kind === "text" && (
                   <div className="assistant-bubble"><p>{m.text}</p></div>
+                )}
+                {m.role === "assistant" && m.kind === "audio_report" && m.report && (
+                  <AudioReportCard reportData={m.report} />
                 )}
                 {m.role === "assistant" && m.kind === "report" && m.report && (
                   <ForensicReportCard
@@ -1062,10 +1311,22 @@ export default function App() {
               onDrop={handleDrop}
               onClick={() => !previewUrl && fileInputRef.current?.click()}
             >
-              <input ref={fileInputRef} type="file" accept="image/*" className="file-input-hidden" onChange={handleFileChange} />
+              <input ref={fileInputRef} type="file"
+                accept="image/*,video/*,audio/*,.mp3,.wav,.ogg,.m4a,.flac"
+                className="file-input-hidden" onChange={handleFileChange} />
               {previewUrl ? (
                 <div className="preview-wrap">
-                  <img src={previewUrl} alt="Preview" className="preview-img" />
+                  {fileType?.startsWith("video/") ? (
+                    <video src={previewUrl} className="preview-img" muted />
+                  ) : fileType?.startsWith("audio/") ? (
+                    <div className="audio-preview-wrap">
+                      <Zap size={32} style={{color:"#06b6d4",marginBottom:8}} />
+                      <p className="drop-title" style={{color:"#06b6d4",marginBottom:4}}>Audio ready</p>
+                      <audio src={previewUrl} controls style={{width:"100%",marginTop:4}} />
+                    </div>
+                  ) : (
+                    <img src={previewUrl} alt="Preview" className="preview-img" />
+                  )}
                   {isAnalyzing && <ScanningOverlay steps={SCAN_STEPS} currentStep={scanStep} />}
                   {!isAnalyzing && (
                     <div className="preview-actions">
@@ -1083,7 +1344,7 @@ export default function App() {
                   <div className="drop-icon-ring">
                     <div className="drop-cloud-icon" />
                   </div>
-                  <p className="drop-title">Drop image here</p>
+                  <p className="drop-title">Drop image, video, or audio</p>
                   <p className="drop-sub">or click to browse</p>
                 </div>
               )}

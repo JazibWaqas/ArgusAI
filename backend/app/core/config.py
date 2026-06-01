@@ -26,6 +26,9 @@ class Settings:
         self.detector_health_ttl_hours = int(os.getenv("DETECTOR_HEALTH_TTL_HOURS", "24"))
         self.serpapi_key = os.getenv("SERPAPI_KEY")
         self.tineye_api_key = os.getenv("TINEYE_API_KEY")
+        # Audio deepfake detector settings
+        self.audio_model_path = os.getenv("AUDIO_MODEL_PATH", "backend/models/wav2vec2-deepfake")
+        self.hf_audio_space_id = os.getenv("HF_AUDIO_SPACE_ID", "Sameer121/deepfake-audio-detector")
 
 
 settings = Settings()

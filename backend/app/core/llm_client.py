@@ -105,6 +105,25 @@ class LLMClient:
             self.last_model = model
 
     def _image_mime_type(self, image_bytes: bytes) -> str:
+        # Detect audio files
+        if image_bytes.startswith(b"RIFF") and image_bytes[8:12] == b"WAVE":
+            return "audio/wav"
+        if image_bytes.startswith(b"ID3") or image_bytes.startswith(b"\xff\xfb") or image_bytes.startswith(b"\xff\xf3") or image_bytes.startswith(b"\xff\xf2"):
+            return "audio/mp3"
+        if image_bytes.startswith(b"fLaC"):
+            return "audio/flac"
+        if image_bytes.startswith(b"OggS"):
+            return "audio/ogg"
+        if image_bytes.startswith(b"\x00\x00\x00") and b"ftyp" in image_bytes[:16] and (b"m4a" in image_bytes[:32] or b"mp42" not in image_bytes[:32]):
+            return "audio/mp4"
+
+        if image_bytes.startswith(b'\x00\x00\x00') and b'ftyp' in image_bytes[:16]:
+            return "video/mp4"
+        if image_bytes.startswith(b'\x1aE\xdf\xa3'):
+            return "video/webm"
+        if image_bytes[4:8] == b'moov' or image_bytes[4:8] == b'mdat':
+            return "video/quicktime"
+
         try:
             with Image.open(BytesIO(image_bytes)) as image:
                 fmt = (image.format or "").upper()
@@ -119,6 +138,7 @@ class LLMClient:
             "GIF": "image/gif",
             "BMP": "image/bmp",
         }.get(fmt, "image/png")
+
 
     async def _post_with_fallback(self, client: httpx.AsyncClient, base_model: str, headers: dict, payload: dict) -> httpx.Response:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{base_model}:generateContent"
@@ -272,13 +292,24 @@ class LLMClient:
             return None
 
         ctx = (user_context or "").strip()
+        mime = self._image_mime_type(image_bytes)
+        is_audio = mime.startswith("audio/")
+        doc_type = "audio recording" if is_audio else "image"
+        action_verb = "listen to" if is_audio else "see"
+        sensory_verb = "hear" if is_audio else "see"
+        inspect_step = (
+            "Step 1: Listen to the audio carefully. Identify speaker names, spoken content, accents, or background cues."
+            if is_audio else
+            "Step 1: Look at the image carefully. Identify who or what is depicted, any text, logos, locations, or events visible."
+        )
+
         prompt = (
-            "You are a forensic investigative journalist. You can see the uploaded image directly. "
-            "Use Google Search as a tool to determine the provenance and authenticity of what you see in the image. "
+            f"You are a forensic investigative journalist. You can {action_verb} the uploaded {doc_type} directly. "
+            f"Use Google Search as a tool to determine the provenance and authenticity of what you {sensory_verb} in the {doc_type}. "
             "Treat the user's context as a claim to investigate, not as proof.\n\n"
             f"User-provided context: {ctx or 'No user claim provided.'}\n\n"
-            "Step 1: Look at the image carefully. Identify who or what is depicted, any text, logos, locations, or events visible. "
-            "Step 2: Use Google Search to find when this image or the depicted event first appeared online, and whether fact-checkers have investigated it. "
+            f"{inspect_step}\n"
+            f"Step 2: Use Google Search to find when this {doc_type} or the depicted event/claim first appeared online, and whether fact-checkers have investigated it.\n"
             "Step 3: Verify dates and look for contradictions between the claimed context and what sources actually say.\n\n"
             "Return ONLY one JSON object with exactly these keys:\n"
             "- known_deepfake (boolean)\n"
@@ -291,6 +322,7 @@ class LLMClient:
             "- search_queries (array of strings): the main queries used or inferred from grounding metadata.\n"
             "Do not use markdown fences."
         )
+
         payload = {
             "contents": [
                 {
@@ -361,22 +393,27 @@ class LLMClient:
             return None
 
         ctx = (user_context or "").strip()
+        mime = self._image_mime_type(image_bytes)
+        is_audio = mime.startswith("audio/")
+        doc_type = "audio recording" if is_audio else "image"
+        examine_phrase = "Listen to the audio recording. Use search to determine whether this recording aligns" if is_audio else "Examine the image. Use search to determine whether this image aligns"
         extra = (
             f"\n\nUser-provided context (treat as investigative hints, not proof): {ctx}"
             if ctx
             else ""
         )
         prompt = (
-            "You are a lead forensic journalist with access to Google Search. "
-            "Examine the image. Use search to determine whether this image aligns with verified real-world reporting "
-            "or is widely described as fabricated, AI-generated, or a known deepfake."
+            f"You are a lead forensic journalist with access to Google Search. "
+            f"{examine_phrase} with verified real-world reporting "
+            f"or is widely described as fabricated, AI-generated, or a known deepfake."
             + extra
-            + "\n\nAfter searching, respond with ONLY a single JSON object (no markdown fences) using exactly these keys:\n"
+            + f"\n\nAfter searching, respond with ONLY a single JSON object (no markdown fences) using exactly these keys:\n"
             "- known_deepfake (boolean): true only if credible reporting or fact-checkers say this depiction is fake, AI, or misleading.\n"
             "- verified_real (boolean): true only if credible outlets corroborate the depicted situation as real.\n"
-            "- context (string): 3-5 plain sentences explaining what you found, what sources said, and why that leads to your verdict. Be specific - name the fact-checkers or outlets if you found them. Write simply, no em dashes, no pretentious phrases.\n"
-            "If the scene is generic with no identifiable public story, set both booleans false and explain in context."
+            f"- context (string): 3-5 plain sentences explaining what you found, what sources said, and why that leads to your verdict. Be specific - name the fact-checkers or outlets if you found them. Write simply, no em dashes, no pretentious phrases.\n"
+            f"If the scene/audio is generic with no identifiable public story, set both booleans false and explain in context."
         )
+
 
         payload = {
             "contents": [
@@ -495,22 +532,40 @@ class LLMClient:
         if not llm_settings.gemini_api_key:
             return None
 
-        prompt = (
-            "You are examining this image to decide whether it was taken by a real camera or generated by AI.\n\n"
-            "Look carefully for specific physical problems that AI generators commonly produce:\n"
-            "1. Hands and fingers: count them. Are any fingers fused together, unnaturally elongated, or are there too many? Describe exactly which hand and what is wrong.\n"
-            "2. Background geometry: do straight lines stay straight? Do fences, roads, text, or building edges warp or dissolve into each other?\n"
-            "3. Text and logos: is any text in the image readable? AI often produces text that looks like letters but is actually gibberish on close inspection.\n"
-            "4. Lighting and shadows: does every object cast a shadow that matches the apparent light source? Name any specific objects that cast no shadow or the wrong shadow.\n"
-            "5. Watermarks: look at all four corners right now. Is there a Google Gemini sparkle, a colored OpenAI/DALL-E bar, or any text saying 'AI Generated'? If yes, confidence must be 1.0.\n"
-            "6. Skin and material texture: is skin unnaturally smooth with no pores? Do fabrics or surfaces look artificially perfect?\n\n"
-            "Important: do not flag normal photography choices like intentional blur, filters, retouching, or HDR. Only flag things that would be physically impossible in a real photograph.\n\n"
-            "Respond ONLY with a valid JSON object using exactly these keys:\n"
-            "- anomalies (array of strings: each one should describe one specific problem you found, naming the exact location in the image and what is wrong with it. Be concrete, not generic.)\n"
-            "- confidence (float 0.0 to 1.0: how strongly do these specific issues point to AI generation, not just editing or style)\n"
-            "- summary (string: 2 to 3 plain sentences describing exactly what you found and why it points toward real or AI. Be specific. Name the things you saw. Do not use jargon or pretentious language.)\n"
-            "If you find no issues, anomalies must be an empty array []. Do not include markdown formatting."
-        )
+        mime = self._image_mime_type(image_bytes)
+        is_audio = mime.startswith("audio/")
+        if is_audio:
+            prompt = (
+                "You are examining this audio recording to decide whether it is authentic human speech or generated/synthesised by AI.\n\n"
+                "Look/listen carefully for specific characteristics that AI voice generators commonly produce:\n"
+                "1. Cadence and flow: is the speech rate completely constant, or does it have natural variations and pauses? Describe any robotic transitions.\n"
+                "2. Pronunciation and phoneme errors: does the generator mispronounce common words or slur syllables unnaturally?\n"
+                "3. Breathing and physiological cues: does the speaker take natural breaths in logical places? AI speech often lacks realistic breathing patterns.\n"
+                "4. Background consistency: is there a sudden change in background room acoustics, static, or hiss when the speaker starts/stops talking?\n"
+                "5. Voice cloning artifacts: are there spectral anomalies, metallic echoes, or phasey voice sounds?\n\n"
+                "Respond ONLY with a valid JSON object using exactly these keys:\n"
+                "- anomalies (array of strings: each one should describe one specific audio problem you found, naming the timestamp or context and what is wrong with it.)\n"
+                "- confidence (float 0.0 to 1.0: how strongly do these specific issues point to AI generation, not just low quality or background noise)\n"
+                "- summary (string: 2 to 3 plain sentences describing exactly what you found and why it points toward real or AI.)\n"
+                "If you find no issues, anomalies must be an empty array []. Do not include markdown formatting."
+            )
+        else:
+            prompt = (
+                "You are examining this image to decide whether it was taken by a real camera or generated by AI.\n\n"
+                "Look carefully for specific physical problems that AI generators commonly produce:\n"
+                "1. Hands and fingers: count them. Are any fingers fused together, unnaturally elongated, or are there too many? Describe exactly which hand and what is wrong.\n"
+                "2. Background geometry: do straight lines stay straight? Do fences, roads, text, or building edges warp or dissolve into each other?\n"
+                "3. Text and logos: is any text in the image readable? AI often produces text that looks like letters but is actually gibberish on close inspection.\n"
+                "4. Lighting and shadows: does every object cast a shadow that matches the apparent light source? Name any specific objects that cast no shadow or the wrong shadow.\n"
+                "5. Watermarks: look at all four corners right now. Is there a Google Gemini sparkle, a colored OpenAI/DALL-E bar, or any text saying 'AI Generated'? If yes, confidence must be 1.0.\n"
+                "6. Skin and material texture: is skin unnaturally smooth with no pores? Do fabrics or surfaces look artificially perfect?\n\n"
+                "Important: do not flag normal photography choices like intentional blur, filters, retouching, or HDR. Only flag things that would be physically impossible in a real photograph.\n\n"
+                "Respond ONLY with a valid JSON object using exactly these keys:\n"
+                "- anomalies (array of strings: each one should describe one specific problem you found, naming the exact location in the image and what is wrong with it. Be concrete, not generic.)\n"
+                "- confidence (float 0.0 to 1.0: how strongly do these specific issues point to AI generation, not just editing or style)\n"
+                "- summary (string: 2 to 3 plain sentences describing exactly what you found and why it points toward real or AI. Be specific. Name the things you saw. Do not use jargon or pretentious language.)\n"
+                "If you find no issues, anomalies must be an empty array []. Do not include markdown formatting."
+            )
 
         payload = {
             "contents": [
@@ -572,18 +627,34 @@ class LLMClient:
             if uc
             else ""
         )
-        prompt = (
-            "You are an elite investigative journalist and digital forensics expert. Examine this image carefully. "
-            + hint
-            + "If it depicts a generic scene (unidentifiable people, random landscape, generic stock photo), reply strictly with: [\"GENERIC_SCENE\"]\n\n"
-            "If it depicts recognizable public figures, politicians, specific geopolitical events, viral moments, or highly specific contexts, "
-            "write exactly 3 highly targeted Google search queries to investigate the authenticity of this event. Your angles should be:\n"
-            "1. A direct chronological news search for the specific event depicted.\n"
-            "2. A search specifically looking for 'debunk', 'fake', 'AI generated', or 'fact check' regarding the context.\n"
-            "3. A broader entity/location context search to verify if such an event was physically possible or reported.\n\n"
-            "Return ONLY a valid JSON array of strings. Do NOT use markdown. Example:\n"
-            "[\"Donald Trump arrest New York exactly what happened\", \"Donald Trump arrested fake AI generated fact check\", \"NYPD statements Donald Trump arrest photos\"]"
-        )
+        mime = self._image_mime_type(image_bytes)
+        is_audio = mime.startswith("audio/")
+        if is_audio:
+            prompt = (
+                "You are an elite investigative journalist and digital forensics expert. Listen to this audio recording carefully. "
+                + hint
+                + "If it depicts a generic/unidentifiable speaker or generic stock audio with no specific claim/geopolitical topic, reply strictly with: [\"GENERIC_SCENE\"]\n\n"
+                "If it features recognizable public figures, politicians, specific geopolitical claims, or highly specific contexts, "
+                "write exactly 3 highly targeted Google search queries to investigate the authenticity of this speech. Your angles should be:\n"
+                "1. A direct search for the specific speech/claims or statements made by the depicted public figure.\n"
+                "2. A search specifically looking for 'debunk', 'fake audio', 'cloned voice', 'deepfake', or 'fact check' regarding the statements.\n"
+                "3. A broader context search to verify if/when the figure made such statements publicly.\n\n"
+                "Return ONLY a valid JSON array of strings. Do NOT use markdown. Example:\n"
+                "[\"Donald Trump speech speech_text exactly what happened\", \"Donald Trump audio fake voice deepfake fact check\", \"Donald Trump statements regarding speech_topic\"]"
+            )
+        else:
+            prompt = (
+                "You are an elite investigative journalist and digital forensics expert. Examine this image carefully. "
+                + hint
+                + "If it depicts a generic scene (unidentifiable people, random landscape, generic stock photo), reply strictly with: [\"GENERIC_SCENE\"]\n\n"
+                "If it depicts recognizable public figures, politicians, specific geopolitical events, viral moments, or highly specific contexts, "
+                "write exactly 3 highly targeted Google search queries to investigate the authenticity of this event. Your angles should be:\n"
+                "1. A direct chronological news search for the specific event depicted.\n"
+                "2. A search specifically looking for 'debunk', 'fake', 'AI generated', or 'fact check' regarding the context.\n"
+                "3. A broader entity/location context search to verify if such an event was physically possible or reported.\n\n"
+                "Return ONLY a valid JSON array of strings. Do NOT use markdown. Example:\n"
+                "[\"Donald Trump arrest New York exactly what happened\", \"Donald Trump arrested fake AI generated fact check\", \"NYPD statements Donald Trump arrest photos\"]"
+            )
         payload = {
             "contents": [{"parts": [{"text": prompt}, {"inline_data": {"mime_type": self._image_mime_type(image_bytes), "data": base64.b64encode(image_bytes).decode("utf-8")}}]}]
         }

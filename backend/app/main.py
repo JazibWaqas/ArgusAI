@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any
 
@@ -14,6 +15,9 @@ from .core.llm import llm_settings
 from .core.llm_client import LLMClient
 from .core.observability import tracing_health
 from .core.pipeline import AnalysisPipeline
+from .core.audio_pipeline import AudioAnalysisPipeline
+
+# Force reloading import
 from .detectors.lighting import LightingConsistencyDetector
 from .detectors.metadata import MetadataDetector
 from .detectors.noise import NoisePatternDetector
@@ -23,9 +27,23 @@ from .detectors.ela import ErrorLevelAnalysisDetector
 from .detectors.spectral import SpectralArtifactDetector
 from .detectors.osint import OpenSourceIntelligenceDetector
 from .models.report import ForensicReport
+from .models.audio_report import AudioForensicReport
+
+log = logging.getLogger(__name__)
 
 app = FastAPI(title=settings.project_name)
 pipeline = AnalysisPipeline()
+audio_pipeline = AudioAnalysisPipeline()
+
+
+@app.on_event("startup")
+async def startup_event() -> None:
+    """Log startup state.  Audio model warm-up already runs at module import time in detectors/audio.py."""  # noqa: reload
+    from .detectors.audio import _local_model, MODEL_LOCAL_DIR
+    if _local_model is not None:
+        log.info("[startup] Audio detector: local wav2vec2 model ready at '%s'.", MODEL_LOCAL_DIR)
+    else:
+        log.info("[startup] Audio detector: local model not found — HF Space fallback will be used.")
 
 
 class ChatMessageRequest(BaseModel):
@@ -141,6 +159,52 @@ async def analyze_in_session(
         "user",
         f"[Analysis request]{(' ' + context) if context.strip() else ''}",
         {"kind": "analyze"},
+    )
+    session_store.append_message(
+        session_id,
+        "assistant",
+        report.explanation,
+        {"kind": "report", "verdict": report.verdict.value, "report": report.model_dump(mode="json")},
+    )
+    return report.model_dump(mode="json")
+
+
+@app.post("/sessions/{session_id}/analyze-audio")
+async def analyze_audio_in_session(
+    session_id: str,
+    file: UploadFile = File(...),
+    context: str = Form(""),
+):
+    """
+    Analyze an audio file for deepfake / AI-generated speech.
+    Uses local wav2vec2 model when available, falls back to HF Space.
+    """
+    if not session_store.get(session_id):
+        return JSONResponse(status_code=404, content={"error": "Unknown session."})
+
+    contents = await file.read()
+    if _too_large(contents):
+        return JSONResponse(status_code=413, content={"error": "File too large."})
+
+    # Reject obvious non-audio early (best-effort MIME sniff)
+    content_type = (file.content_type or "").lower()
+    if content_type and not (
+        content_type.startswith("audio/")
+        or content_type in ("application/octet-stream", "")
+    ):
+        return JSONResponse(
+            status_code=415,
+            content={"error": f"Expected audio file, got '{content_type}'."},
+        )
+
+    report = await pipeline.analyze(contents, user_context=context)
+    session_store.set_report(session_id, report)
+
+    session_store.append_message(
+        session_id,
+        "user",
+        f"[Audio analysis request]{(' ' + context) if context.strip() else ''}",
+        {"kind": "analyze_audio"},
     )
     session_store.append_message(
         session_id,

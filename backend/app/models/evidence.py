@@ -36,6 +36,10 @@ class EvidenceSignal(BaseModel):
     confidence: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     supports: SignalSupport = SignalSupport.UNKNOWN
     notes: Optional[str] = None
+    visible: bool = Field(
+        default=True,
+        description="Whether this signal should be shown to users and counted in verdict reasoning for this media type.",
+    )
     verdict_influence_percent: Optional[int] = Field(
         default=None,
         ge=0,
@@ -55,5 +59,6 @@ class ImageInfo(BaseModel):
 class EvidenceProfile(BaseModel):
     image: ImageInfo
     signals: List[EvidenceSignal]
+    media_type: str = Field(default="image", description="'image', 'video', or 'audio'.")
     warnings: List[str] = Field(default_factory=list)
     health: Dict[str, Any] = Field(default_factory=dict)

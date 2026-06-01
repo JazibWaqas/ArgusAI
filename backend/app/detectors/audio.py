@@ -281,6 +281,7 @@ def _parse_hf_result(result: Any, latency: float) -> EvidenceSignal:
 def _build_signal(prob_real: float, prob_fake: float, source: str, latency: float) -> EvidenceSignal:
     is_fake = prob_fake > 0.5
     confidence = prob_fake if is_fake else prob_real
+    is_directional = confidence >= 0.60
 
     # Map confidence to label
     if confidence >= 0.90:
@@ -292,12 +293,18 @@ def _build_signal(prob_real: float, prob_fake: float, source: str, latency: floa
     else:
         conf_label = "Guarded"
 
-    supports = SignalSupport.AI_GENERATED if is_fake else SignalSupport.AUTHENTIC
+    supports = SignalSupport.INCONCLUSIVE if not is_directional else SignalSupport.AI_GENERATED if is_fake else SignalSupport.AUTHENTIC
     verdict_word = "AI-generated voice" if is_fake else "authentic human voice"
-    summary = (
-        f"This audio appears to be {'AI-generated (TTS/voice cloning)' if is_fake else 'authentic human speech'}. "
-        f"Confidence: {confidence:.0%}. Inference via {source.replace('_', ' ')}."
-    )
+    if not is_directional:
+        summary = (
+            f"The audio detector was inconclusive. The model was close to a coin flip "
+            f"(real: {prob_real:.0%}, fake: {prob_fake:.0%}) via {source.replace('_', ' ')}."
+        )
+    else:
+        summary = (
+            f"This audio appears to be {'AI-generated (TTS/voice cloning)' if is_fake else 'authentic human speech'}. "
+            f"Confidence: {confidence:.0%}. Inference via {source.replace('_', ' ')}."
+        )
     source_label = "🖥 Local wav2vec2 model" if source == "local_wav2vec2" else "☁ HuggingFace Space"
 
     return EvidenceSignal(
@@ -313,7 +320,7 @@ def _build_signal(prob_real: float, prob_fake: float, source: str, latency: floa
             "text-to-speech / voice cloning system (ElevenLabs, Amazon Polly, Kokoro, etc.)."
         ),
         what_found=(
-            f"The model classified this audio as a {verdict_word} with {confidence:.0%} certainty. "
+            f"The model classified this audio as {'inconclusive' if not is_directional else 'a ' + verdict_word} with {confidence:.0%} directional confidence. "
             f"Probability real: {prob_real:.0%} | Probability fake: {prob_fake:.0%}."
         ),
         why_it_matters=(

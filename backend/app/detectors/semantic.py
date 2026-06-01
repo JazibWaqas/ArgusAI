@@ -32,7 +32,8 @@ class SemanticInconsistencyDetector(Detector):
             )
 
         client = LLMClient()
-        result = await client.analyze_image_semantics(image_bytes)
+        media_type = str(context.get("media_type") or "image")
+        result = await client.analyze_image_semantics(image_bytes, user_context=str(context.get("user_context") or ""))
         if not result:
             observations = ["Set GEMINI_API_KEY to enable semantic analysis."]
             if client.last_error:
@@ -85,15 +86,25 @@ class SemanticInconsistencyDetector(Detector):
             
         supports = SignalSupport.UNKNOWN
         final_reliability = 0.4
-        what_found = "The visual review did not produce a clear directional result."
-        why_it_matters = "This check tries to spot visible problems that often give AI-generated images away."
+        if media_type == "video":
+            what_checked = "We looked across the video frames for morphing, flicker, inconsistent motion, broken geometry, impossible shadows, or unstable details."
+            what_found = "The video review did not produce a clear directional result."
+            why_it_matters = "This check tries to spot temporal and visual problems that often give AI-generated footage away."
+        else:
+            what_checked = "We looked for visible clues such as anatomy errors, warped shapes, impossible text, or inconsistent lighting/reflections."
+            what_found = "The visual review did not produce a clear directional result."
+            why_it_matters = "This check tries to spot visible problems that often give AI-generated images away."
         caveat = "This detector is useful, but it can still be wrong and should be treated as one part of the full picture."
         
         if confidence is not None:
             if confidence >= 0.65:
                 supports = SignalSupport.AI_GENERATED
-                what_found = "The visual check found specific problems in this image that are characteristic of AI generation. See the summary above for the exact issues."
-                why_it_matters = "When an image has broken anatomy, impossible geometry, or missing shadows, that is strong evidence it was generated rather than photographed."
+                if media_type == "video":
+                    what_found = "The video review found specific temporal or visual problems that are characteristic of AI generation. See the summary above for the exact issues."
+                    why_it_matters = "When footage has morphing objects, unstable identity details, impossible motion, or shifting geometry, that is strong evidence it was generated rather than recorded."
+                else:
+                    what_found = "The visual check found specific problems in this image that are characteristic of AI generation. See the summary above for the exact issues."
+                    why_it_matters = "When an image has broken anatomy, impossible geometry, or missing shadows, that is strong evidence it was generated rather than photographed."
                 if confidence > 0.9:
                     # An explicit reasoning like catching a watermark should override doubt
                     final_reliability = 0.9
@@ -101,8 +112,12 @@ class SemanticInconsistencyDetector(Detector):
                     final_reliability = 0.55
             elif confidence <= 0.2:
                 supports = SignalSupport.AUTHENTIC
-                what_found = "The visual check went through the image carefully and did not find any of the usual tells: hands look right, background geometry holds, text is readable, shadows make sense."
-                why_it_matters = "AI generators almost always slip up in at least one visible area. Not finding anything here is a meaningful result, not just an absence of evidence."
+                if media_type == "video":
+                    what_found = "The video review did not find the usual temporal tells: motion stays coherent, details remain stable, and scene geometry holds across frames."
+                    why_it_matters = "AI video generators often slip across time. Stable footage is meaningful support for a real recording, not just an absence of evidence."
+                else:
+                    what_found = "The visual check went through the image carefully and did not find any of the usual tells: hands look right, background geometry holds, text is readable, shadows make sense."
+                    why_it_matters = "AI generators almost always slip up in at least one visible area. Not finding anything here is a meaningful result, not just an absence of evidence."
                 final_reliability = 0.3
             else:
                 supports = SignalSupport.INCONCLUSIVE
@@ -117,7 +132,7 @@ class SemanticInconsistencyDetector(Detector):
             status=SignalStatus.OK,
             reliability=final_reliability,
             summary=summary,
-            what_checked="We looked for visible clues such as anatomy errors, warped shapes, impossible text, or inconsistent lighting/reflections.",
+            what_checked=what_checked,
             what_found=what_found,
             why_it_matters=why_it_matters,
             caveat=caveat,

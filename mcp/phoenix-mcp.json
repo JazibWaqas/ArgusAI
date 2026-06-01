@@ -6,7 +6,7 @@
         "-y",
         "@arizeai/phoenix-mcp@latest",
         "--baseUrl",
-        "${PHOENIX_COLLECTOR_ENDPOINT}",
+        "${PHOENIX_DASHBOARD_URL}",
         "--apiKey",
         "${PHOENIX_API_KEY}"
       ]

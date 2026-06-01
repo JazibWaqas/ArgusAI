@@ -26,6 +26,49 @@ def _hash_bytes(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
 
+def _looks_like_audio(data: bytes) -> bool:
+    return (
+        (data.startswith(b"RIFF") and data[8:12] == b"WAVE")
+        or data.startswith(b"ID3")
+        or data.startswith(b"\xff\xfb")
+        or data.startswith(b"\xff\xf3")
+        or data.startswith(b"\xff\xf2")
+        or data.startswith(b"fLaC")
+        or data.startswith(b"OggS")
+        or data.startswith(b"\x30\x26\xB2\x75\x8E\x66\xCF\x11")
+    )
+
+
+def _looks_like_video(data: bytes) -> bool:
+    header = data[:64]
+    return (
+        (data.startswith(b"\x00\x00\x00") and b"ftyp" in header and not any(brand in header for brand in (b"M4A", b"M4B", b"m4a", b"m4b")))
+        or data.startswith(b"\x1aE\xdf\xa3")
+    )
+
+
+SIGNAL_VISIBILITY = {
+    "image": {
+        "spectral_artifacts",
+        "metadata_analysis",
+        "noise_pattern_analysis",
+        "lighting_consistency",
+        "semantic_inconsistencies",
+        "error_level_analysis",
+        "osint_verification",
+    },
+    "video": {
+        "spectral_artifacts",
+        "metadata_analysis",
+        "semantic_inconsistencies",
+        "error_level_analysis",
+        "osint_verification",
+        "temporal_coherence",
+        "audio_track",
+    },
+}
+
+
 class AnalysisPipeline:
     def __init__(self) -> None:
         self.reasoning = ReasoningEngine()
@@ -36,20 +79,25 @@ class AnalysisPipeline:
         is_video = False
         is_audio = False
         frames = []
+        video_error = None
         
         # Detect audio files by magic bytes
-        if (
-            image_bytes.startswith(b"RIFF") and image_bytes[8:12] == b"WAVE"
-            or image_bytes.startswith(b"ID3")
-            or image_bytes.startswith(b"\xff\xfb")
-            or image_bytes.startswith(b"\xff\xf3")
-            or image_bytes.startswith(b"\xff\xf2")
-            or image_bytes.startswith(b"fLaC")
-            or image_bytes.startswith(b"OggS")
-        ):
+        if _looks_like_audio(image_bytes):
             is_audio = True
             original_format = "AUDIO"
             image = None
+        elif _looks_like_video(image_bytes):
+            is_video = True
+            original_format = "VIDEO"
+            image = None
+            try:
+                import cv2
+                from ..core.video import extract_sharpest_frames
+                frames_cv = extract_sharpest_frames(image_bytes, max_frames=3)
+                image = Image.fromarray(cv2.cvtColor(frames_cv[0], cv2.COLOR_BGR2RGB))
+                frames = [Image.fromarray(cv2.cvtColor(f, cv2.COLOR_BGR2RGB)) for f in frames_cv]
+            except Exception as exc:
+                video_error = str(exc)
         else:
             try:
                 opened = Image.open(BytesIO(image_bytes))
@@ -57,30 +105,27 @@ class AnalysisPipeline:
                 image = opened.convert("RGB")
             except Exception:
                 try:
-                    if image_bytes.startswith(b"\x30\x26\xB2\x75\x8E\x66\xCF\x11"):
-                        is_audio = True
-                        original_format = "AUDIO"
-                        image = None
-                    else:
-                        import cv2
-                        from ..core.video import extract_sharpest_frames
-                        frames_cv = extract_sharpest_frames(image_bytes, max_frames=3)
-                        is_video = True
-                        image = Image.fromarray(cv2.cvtColor(frames_cv[0], cv2.COLOR_BGR2RGB))
-                        original_format = "VIDEO"
-                        frames = [Image.fromarray(cv2.cvtColor(f, cv2.COLOR_BGR2RGB)) for f in frames_cv]
-                except Exception:
-                    is_audio = True
-                    original_format = "AUDIO"
+                    import cv2
+                    from ..core.video import extract_sharpest_frames
+                    frames_cv = extract_sharpest_frames(image_bytes, max_frames=3)
+                    is_video = True
+                    image = Image.fromarray(cv2.cvtColor(frames_cv[0], cv2.COLOR_BGR2RGB))
+                    original_format = "VIDEO"
+                    frames = [Image.fromarray(cv2.cvtColor(f, cv2.COLOR_BGR2RGB)) for f in frames_cv]
+                except Exception as exc:
+                    is_video = True
+                    video_error = str(exc)
+                    original_format = "VIDEO"
                     image = None
 
         image_info = ImageInfo(
             width=image.width if image else 0,
             height=image.height if image else 0,
-            mode=image.mode if image else "audio",
+            mode=image.mode if image else ("video" if is_video else "audio"),
             sha256=_hash_bytes(image_bytes),
             format=original_format,
         )
+        media_type = "audio" if is_audio else "video" if is_video else "image"
 
 
         with start_span(
@@ -89,6 +134,7 @@ class AnalysisPipeline:
                 "image.sha256": image_info.sha256,
                 "image.width": image_info.width,
                 "image.height": image_info.height,
+                "media.type": media_type,
                 "pipeline.detector_count": len(registry.all()),
             },
         ) as root_span:
@@ -98,6 +144,8 @@ class AnalysisPipeline:
                 "user_context": (user_context or "").strip(),
                 "is_video": is_video,
                 "is_audio": is_audio,
+                "media_type": media_type,
+                "video_error": video_error,
             }
 
             detectors = registry.all()
@@ -123,9 +171,59 @@ class AnalysisPipeline:
                         "circuit_breaker_reason": reason,
                     },
                     supports=SignalSupport.UNKNOWN,
+                    visible=False,
+                )
+
+            def unavailable_for_media(detector, reason: str) -> EvidenceSignal:
+                return EvidenceSignal(
+                    id=detector.id,
+                    name=detector.name,
+                    category=detector.category,
+                    status=SignalStatus.UNAVAILABLE,
+                    reliability=0.0,
+                    summary=reason,
+                    what_checked="This detector is not used for this media type.",
+                    what_found=reason,
+                    why_it_matters="ArgusAI only shows checks that produce meaningful evidence for the uploaded media.",
+                    caveat="This is not a detector failure. The signal was intentionally excluded.",
+                    observations=[reason],
+                    supports=SignalSupport.UNKNOWN,
+                    visible=False,
                 )
 
             async def run_detector_tracked(detector):
+                if detector.id not in SIGNAL_VISIBILITY.get(media_type, set()):
+                    sig = unavailable_for_media(
+                        detector,
+                        f"{detector.name} is calibrated for still images and is hidden for {media_type} reports.",
+                    )
+                    xray_metrics[detector.id] = {
+                        "status": sig.status.value,
+                        "support": sig.supports.value,
+                        "time_seconds": 0.0,
+                        "reliability": sig.reliability,
+                        "confidence": sig.confidence,
+                        "summary": sig.summary,
+                        "visible": False,
+                    }
+                    return sig
+
+                if is_video and detector.id in {"spectral_artifacts", "metadata_analysis", "error_level_analysis"} and not frames:
+                    sig = unavailable_for_media(
+                        detector,
+                        f"{detector.name} needs extracted video frames, but frame extraction was unavailable: {video_error or 'unknown video decode error'}.",
+                    ).model_copy(update={"visible": True})
+                    xray_metrics[detector.id] = {
+                        "status": sig.status.value,
+                        "support": sig.supports.value,
+                        "time_seconds": 0.0,
+                        "reliability": sig.reliability,
+                        "confidence": sig.confidence,
+                        "summary": sig.summary,
+                        "visible": True,
+                    }
+                    return sig
+
                 disabled_reason = self.health_governor.disabled_reason(detector.id)
                 if disabled_reason:
                     sig = disabled_signal(detector, disabled_reason)
@@ -136,6 +234,7 @@ class AnalysisPipeline:
                         "reliability": sig.reliability,
                         "confidence": sig.confidence,
                         "summary": sig.summary,
+                        "visible": sig.visible,
                         "governed_by_arize": True,
                         "circuit_breaker": True,
                         "circuit_breaker_reason": disabled_reason,
@@ -148,31 +247,7 @@ class AnalysisPipeline:
                     {"detector.id": detector.id, "detector.name": detector.name, "detector.category": detector.category},
                 ) as span:
                     try:
-                        if is_audio:
-                            if detector.id == "spectral_artifacts":
-                                from ..detectors.audio import analyze_audio
-                                sig = await analyze_audio(image_bytes)
-                                sig = sig.model_copy(update={
-                                    "id": "spectral_artifacts",
-                                    "name": "Spectral Artifacts",
-                                    "category": "spectral",
-                                    "notes": "Audio wav2vec2 / HF Space voice deepfake detector."
-                                })
-                            elif detector.id == "metadata_analysis":
-                                sig = await self._analyze_audio_metadata(image_bytes)
-                            elif detector.id == "noise_pattern_analysis":
-                                sig = self._analyze_audio_noise()
-                            elif detector.id == "lighting_consistency":
-                                sig = self._analyze_audio_reverb()
-                            elif detector.id == "semantic_inconsistencies":
-                                sig = self._analyze_audio_semantics()
-                            elif detector.id == "error_level_analysis":
-                                sig = self._analyze_audio_ela()
-                            elif detector.id == "osint_verification":
-                                sig = await detector.analyze(None, context)
-                            else:
-                                sig = await detector.analyze(None, context)
-                        elif is_video and detector.id not in ("semantic_inconsistencies", "osint_verification") and frames:
+                        if is_video and detector.id not in ("semantic_inconsistencies", "osint_verification") and frames:
                             sigs = []
                             for f in frames:
                                 sigs.append(await detector.analyze(f, context))
@@ -197,6 +272,7 @@ class AnalysisPipeline:
                         }
                         if health_event:
                             metric_row["health_event"] = health_event
+                        metric_row["visible"] = sig.visible
                         xray_metrics[detector.id] = metric_row
 
                         set_span_attribute(span, "detector.status", sig.status.value)
@@ -230,14 +306,56 @@ class AnalysisPipeline:
 
             tasks = [run_detector_tracked(detector) for detector in detectors]
             signals = await asyncio.gather(*tasks)
+            if is_video:
+                extra_video_signals = await self._video_extra_signals(image_bytes, signals)
+                signals = [*signals, *extra_video_signals]
+                for sig in extra_video_signals:
+                    xray_metrics[sig.id] = {
+                        "status": sig.status.value,
+                        "support": sig.supports.value,
+                        "time_seconds": (sig.metrics or {}).get("latency_seconds", 0.0),
+                        "reliability": sig.reliability,
+                        "confidence": sig.confidence,
+                        "summary": sig.summary,
+                        "visible": sig.visible,
+                    }
+
+            signals_by_id = {signal.id: signal for signal in signals}
+            calibration_event = None
+            spectral = signals_by_id.get("spectral_artifacts")
+            semantic = signals_by_id.get("semantic_inconsistencies")
+            if spectral and semantic:
+                calibration_event = self.health_governor.record_calibration_observation(
+                    spectral.supports.value,
+                    semantic.supports.value,
+                )
+                attenuation = self.health_governor.spectral_attenuation_factor()
+                if attenuation < 1.0:
+                    adjusted = spectral.model_copy(
+                        update={
+                            "reliability": round(spectral.reliability * attenuation, 4),
+                            "metrics": {
+                                **(spectral.metrics or {}),
+                                "calibration_divergence": True,
+                                "spectral_attenuation_factor": attenuation,
+                            },
+                            "observations": [
+                                *spectral.observations,
+                                "Arize calibration governor reduced spectral influence because spectral and semantic detectors repeatedly disagreed.",
+                            ],
+                        }
+                    )
+                    signals = [adjusted if signal.id == "spectral_artifacts" else signal for signal in signals]
+                    xray_metrics.setdefault("spectral_artifacts", {})["calibration_divergence"] = True
+                    xray_metrics.setdefault("spectral_artifacts", {})["spectral_attenuation_factor"] = attenuation
 
             warnings: List[str] = []
             for signal in signals:
-                if signal.status in {SignalStatus.ERROR, SignalStatus.UNAVAILABLE, SignalStatus.WARNING}:
+                if signal.visible and signal.status in {SignalStatus.ERROR, SignalStatus.UNAVAILABLE, SignalStatus.WARNING}:
                     warnings.append(f"{signal.name}: {signal.summary}")
 
             health_snapshot = self.health_governor.snapshot()
-            evidence = EvidenceProfile(image=image_info, signals=signals, warnings=warnings, health=health_snapshot)
+            evidence = EvidenceProfile(image=image_info, signals=signals, media_type=media_type, warnings=warnings, health=health_snapshot)
 
             reasoning_start = time.perf_counter()
             reasoning_outcome = await self.reasoning.reason(evidence)
@@ -261,6 +379,7 @@ class AnalysisPipeline:
             }
 
             report = ForensicReport(
+                media_type=media_type,
                 verdict=reasoning_outcome.verdict,
                 certainty=reasoning_outcome.certainty,
                 confidence_label=reasoning_outcome.confidence_label,
@@ -274,16 +393,21 @@ class AnalysisPipeline:
             )
 
             set_span_attribute(root_span, "verdict", report.verdict.value)
+            set_span_attribute(root_span, "media.type", media_type)
             set_span_attribute(root_span, "certainty", report.certainty)
             set_span_attribute(root_span, "total_detectors", len(signals))
             set_span_attribute(root_span, "failed_detectors", sum(1 for s in signals if s.status in {SignalStatus.ERROR, SignalStatus.UNAVAILABLE}))
             set_span_attribute(root_span, "pipeline.latency_seconds", round(global_duration, 4))
             set_span_attribute(root_span, "detector_health.status", health_snapshot.get("status"))
+            set_span_attribute(root_span, "calibration_divergence", bool((health_snapshot.get("calibration_divergence") or {}).get("active")))
+            if calibration_event:
+                set_span_attribute(root_span, "calibration_divergence.event", True)
 
             # --- GENERATE X-RAY DIAGNOSTIC LOG ---
             xray_log = {
                 "timestamp": report.generated_at.isoformat(),
                 "image_hash": image_info.sha256,
+                "media_type": media_type,
                 "image_info": image_info.model_dump(),
                 "global_execution_time": round(global_duration, 4),
                 "reasoning_execution_time": round(reasoning_duration, 4),
@@ -315,121 +439,84 @@ class AnalysisPipeline:
             return f"{', '.join(offline)} offline - verdict based on remaining signals"
         return "All detector health gates operational"
 
-    async def _analyze_audio_metadata(self, audio_bytes: bytes) -> EvidenceSignal:
-        try:
-            import soundfile as sf
-            with BytesIO(audio_bytes) as buf:
-                info = sf.info(buf)
-            format_name = getattr(info, "format", "Unknown")
-            sample_rate = getattr(info, "samplerate", 16000)
-            channels = getattr(info, "channels", 1)
-            duration = getattr(info, "duration", 0.0)
-            subformat = getattr(info, "subtype", "Unknown")
-        except Exception:
-            format_name = "Unknown"
-            sample_rate = 16000
-            channels = 1
-            duration = len(audio_bytes) / 32000.0
-            subformat = "Unknown"
+    async def _video_extra_signals(self, video_bytes: bytes, base_signals: List[EvidenceSignal]) -> List[EvidenceSignal]:
+        semantic = next((sig for sig in base_signals if sig.id == "semantic_inconsistencies"), None)
+        temporal = self._temporal_signal_from_semantic(semantic)
+        audio_track = await self._analyze_video_audio_track(video_bytes)
+        return [temporal, audio_track]
 
+    def _temporal_signal_from_semantic(self, semantic: Optional[EvidenceSignal]) -> EvidenceSignal:
+        if not semantic or semantic.status in {SignalStatus.ERROR, SignalStatus.UNAVAILABLE}:
+            return EvidenceSignal(
+                id="temporal_coherence",
+                name="Temporal Coherence",
+                category="semantic",
+                status=SignalStatus.UNAVAILABLE,
+                reliability=0.0,
+                summary="Temporal coherence could not be assessed because the video semantic review was unavailable.",
+                what_checked="We look across the clip for morphing, flicker, unstable identity details, inconsistent physics, and geometry that shifts between frames.",
+                what_found="The video review did not return usable temporal observations.",
+                why_it_matters="AI video often looks plausible in single frames while breaking across time.",
+                caveat="This is a detector availability issue, not evidence for or against the clip.",
+                observations=["Temporal signal depends on the Gemini video review."],
+                supports=SignalSupport.UNKNOWN,
+                visible=True,
+            )
         return EvidenceSignal(
-            id="metadata_analysis",
-            name="Metadata Analysis",
-            category="metadata",
-            status=SignalStatus.OK,
-            reliability=0.6,
-            summary=f"Audio metadata check: Format {format_name}/{subformat}, {channels} channel(s), {sample_rate}Hz, {duration:.1f}s.",
-            what_checked="Reads format headers, channel layout, and sample rate from the audio container.",
-            what_found=f"Parsed container: Format={format_name}, Subtype={subformat}, Channels={channels}, Sample Rate={sample_rate}Hz, Duration={duration:.2f}s.",
-            why_it_matters="Suspicious or edited audio clips often show sample rate conversion artifacts or non-standard container metadata.",
-            caveat="Clean metadata only indicates a well-formed file container; it does not guarantee the authenticity of the speech.",
-            observations=[
-                f"Container format: {format_name}",
-                f"Codec/Subtype: {subformat}",
-                f"Sample rate: {sample_rate} Hz",
-                f"Channels: {channels}",
-                f"Duration: {duration:.2f} seconds",
-            ],
-            supports=SignalSupport.UNKNOWN,
-        )
-
-    def _analyze_audio_noise(self) -> EvidenceSignal:
-        return EvidenceSignal(
-            id="noise_pattern_analysis",
-            name="Noise Pattern Analysis",
-            category="noise",
-            status=SignalStatus.OK,
-            reliability=0.7,
-            summary="Background noise floor is uniform throughout the speech recording.",
-            what_checked="Checks for sudden level changes or discontinuities in silent/background portions of the audio.",
-            what_found="The noise floor remains constant at approximately -45 dB with no splicing transitions.",
-            why_it_matters="Mashups or edited audio clips typically show abrupt shifts in background noise at splice boundaries.",
-            caveat="Uniform background noise can be artificially simulated or masked by adding a continuous noise layer.",
-            observations=[
-                "Uniform noise floor detected across the audio timeline.",
-                "No splicing noise transients or abrupt level shifts identified.",
-            ],
-            supports=SignalSupport.AUTHENTIC,
-            confidence=0.65,
-        )
-
-    def _analyze_audio_reverb(self) -> EvidenceSignal:
-        return EvidenceSignal(
-            id="lighting_consistency",
-            name="Acoustic Reverb Consistency",
-            category="lighting",
-            status=SignalStatus.OK,
-            reliability=0.75,
-            summary="Room acoustic reverberation matches a single physical environment.",
-            what_checked="Analyzes the late reverberation decay rate (RT60) to verify speaker acoustics remain uniform.",
-            what_found="RT60 decay rate is stable at 0.35s across all voice segments, consistent with a uniform room profile.",
-            why_it_matters="Splicing clips from different locations results in mismatched room resonance and echo signatures.",
-            caveat="Post-processing reverb effects can sometimes mask acoustical inconsistencies.",
-            observations=[
-                "Stable RT60 echo profile (approx. 0.35s).",
-                "No acoustic room signature transitions detected.",
-            ],
-            supports=SignalSupport.AUTHENTIC,
-            confidence=0.7,
-        )
-
-    def _analyze_audio_semantics(self) -> EvidenceSignal:
-        return EvidenceSignal(
-            id="semantic_inconsistencies",
-            name="Semantic Inconsistencies",
+            id="temporal_coherence",
+            name="Temporal Coherence",
             category="semantic",
-            status=SignalStatus.OK,
-            reliability=0.8,
-            summary="Speech flow, grammar, and pronunciation are natural. No speech synthesis jitter detected.",
-            what_checked="Checks for artificial phrasing, unnatural pronunciation, or machine-like speech cadence.",
-            what_found="No pronunciation artifacts or syntactic patterns typical of voice generation were identified.",
-            why_it_matters="Even state-of-the-art TTS models occasionally produce robotic word transitions or semantic errors.",
-            caveat="Highly polished speech synthesis or cloned voices can achieve fully natural cadence.",
-            observations=[
-                "Speech rate and cadence are natural and variable.",
-                "No speech synthesis cadence jitter or mechanical gaps detected.",
-            ],
-            supports=SignalSupport.AUTHENTIC,
-            confidence=0.75,
+            status=semantic.status,
+            reliability=0.35 if semantic.supports == SignalSupport.AUTHENTIC else 0.75,
+            summary=semantic.summary,
+            what_checked="We reviewed the video across time for morphing, flicker, unstable identities, impossible motion, and geometry that shifts between frames.",
+            what_found=semantic.what_found or "The temporal review completed without a separate structured finding.",
+            why_it_matters="AI video generators often fail across time even when individual frames look convincing.",
+            caveat="Low bitrate, motion blur, and heavy compression can resemble temporal artifacts, so this signal is weighed with the rest of the evidence.",
+            observations=semantic.observations,
+            metrics={**(semantic.metrics or {}), "derived_from": "semantic_inconsistencies"},
+            confidence=semantic.confidence,
+            supports=SignalSupport.INCONCLUSIVE if semantic.supports == SignalSupport.AUTHENTIC else semantic.supports,
+            notes="Derived from the Gemini video prompt focused on cross-frame consistency.",
+            visible=True,
         )
 
-    def _analyze_audio_ela(self) -> EvidenceSignal:
-        return EvidenceSignal(
-            id="error_level_analysis",
-            name="Error Level Analysis",
-            category="forensic",
-            status=SignalStatus.OK,
-            reliability=0.65,
-            summary="Standard compression level check indicates a uniform encoder pass.",
-            what_checked="Analyzes high-frequency quantization noise levels to check for multiple re-compression stages.",
-            what_found="Uniform compression artifacts consistent with standard single-pass audio encoding.",
-            why_it_matters="Re-saved or edited audio clips often exhibit localized double-compression artifacts in the high frequency spectrum.",
-            caveat="High compression levels can destroy low-level coding anomalies, leaving the analysis inconclusive.",
-            observations=[
-                "Uniform quantization noise distribution.",
-                "No double-compression markers detected in the high frequency range.",
-            ],
-            supports=SignalSupport.AUTHENTIC,
-            confidence=0.6,
+    async def _analyze_video_audio_track(self, video_bytes: bytes) -> EvidenceSignal:
+        start = time.perf_counter()
+        try:
+            from ..core.video import extract_audio_track
+            audio_bytes = await asyncio.to_thread(extract_audio_track, video_bytes)
+        except Exception:
+            audio_bytes = None
+
+        if not audio_bytes:
+            return EvidenceSignal(
+                id="audio_track",
+                name="Audio Track",
+                category="audio",
+                status=SignalStatus.UNAVAILABLE,
+                reliability=0.0,
+                summary="No usable audio track was found in this video.",
+                what_checked="We tried to extract a short mono WAV track from the video container and run the audio authenticity detector.",
+                what_found="The clip was silent, the audio stream was unsupported, or ffmpeg was unavailable in this runtime.",
+                why_it_matters="If a video includes speech, voice-clone evidence can change the investigation. Silent clips simply skip this check.",
+                caveat="Unavailable audio does not affect the visual video verdict.",
+                observations=["Video audio extraction returned no WAV bytes."],
+                metrics={"latency_seconds": round(time.perf_counter() - start, 4)},
+                supports=SignalSupport.UNKNOWN,
+                visible=True,
+            )
+
+        from ..detectors.audio import analyze_audio
+        sig = await analyze_audio(audio_bytes)
+        return sig.model_copy(
+            update={
+                "id": "audio_track",
+                "name": "Audio Track",
+                "category": "audio",
+                "summary": f"Embedded video audio: {sig.summary}",
+                "metrics": {**(sig.metrics or {}), "latency_seconds": round(time.perf_counter() - start, 4)},
+                "visible": True,
+            }
         )
 

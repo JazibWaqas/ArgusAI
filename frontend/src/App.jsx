@@ -4,11 +4,94 @@ import {
   ShieldCheck, AlertOctagon, HelpCircle, Search, Camera, Eye,
   ScanSearch, Activity, Target, Database, ChevronDown, ChevronRight,
   Fingerprint, Sparkles, Send, X, Image as ImageIcon, Copy, Check,
-  Zap, Globe, Layers, Cpu, FileDown
+  Zap, Globe, Layers, Cpu, FileDown, Lock, RefreshCw, BarChart3
 } from "lucide-react";
 import "./styles.css";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
+const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || "argusai2026";
+const SUPPORTED_MEDIA = {
+  image: ["image/jpeg", "image/png", "image/webp", "image/gif", "image/bmp"],
+  video: ["video/mp4", "video/webm", "video/quicktime", "video/x-matroska", "video/x-mkvideo"],
+  audio: ["audio/wav", "audio/mp3", "audio/mpeg", "audio/ogg", "audio/flac", "audio/m4a", "audio/mp4", "audio/x-m4a"],
+};
+
+function detectMediaType(file) {
+  const mime = (file?.type || "").toLowerCase();
+  const name = (file?.name || "").toLowerCase();
+  if (SUPPORTED_MEDIA.image.includes(mime) || /\.(jpe?g|png|webp|gif|bmp)$/.test(name)) return "image";
+  if (SUPPORTED_MEDIA.video.includes(mime) || /\.(mp4|webm|mov|mkv)$/.test(name)) return "video";
+  if (SUPPORTED_MEDIA.audio.includes(mime) || /\.(wav|mp3|mpeg|ogg|flac|m4a)$/.test(name)) return "audio";
+  return null;
+}
+
+function mediaBadgeLabel(mediaType) {
+  if (mediaType === "video") return "Video";
+  if (mediaType === "audio") return "Audio";
+  if (mediaType === "image") return "Image";
+  return "";
+}
+
+function getMediaCopy(mediaType = "default") {
+  if (mediaType === "image") {
+    return {
+      badge: "Image Investigation",
+      titleAccent: "what you see?",
+      uploadTitle: "Image selected",
+      contextPlaceholder: "Optional context, e.g. 'Pope Francis wearing a puffer jacket, March 2023'",
+      processing: "Analyzing pixels, metadata, and web sources...",
+      reportNoun: "image",
+      evidenceSubject: "this image",
+      heroSub:
+        "ArgusAI investigates still images with pixel forensics, camera metadata, semantic vision, and live web provenance. Each signal explains what it found, so the verdict reads like an evidence trail, not a naked score.",
+      heroSub2:
+        "Upload an image and get a forensic verdict: authentic, AI-generated, or inconclusive. The report shows which checks agreed, which were weak, and why.",
+    };
+  }
+  if (mediaType === "video") {
+    return {
+      badge: "Video Investigation",
+      titleAccent: "what you watch?",
+      uploadTitle: "Video selected",
+      contextPlaceholder: "Optional context, e.g. 'Is this campaign video real?'",
+      processing: "Extracting frames, checking motion, and reviewing provenance...",
+      reportNoun: "footage",
+      evidenceSubject: "this footage",
+      heroSub:
+        "ArgusAI investigates video by extracting frames, checking cross-frame consistency, reviewing embedded audio when present, and searching public context.",
+      heroSub2:
+        "Upload a clip and get a forensic verdict with video-specific signals: temporal coherence, semantic review, frame evidence, OSINT, and audio-track analysis when available.",
+    };
+  }
+  if (mediaType === "audio") {
+    return {
+      badge: "Audio Investigation",
+      titleAccent: "what you hear?",
+      uploadTitle: "Audio selected",
+      contextPlaceholder: "Optional context, e.g. 'Did this public figure really say this?'",
+      processing: "Analyzing voice patterns and checking public context...",
+      reportNoun: "recording",
+      evidenceSubject: "this recording",
+      heroSub:
+        "ArgusAI investigates audio with voice authenticity checks, Gemini semantic listening, and public-context verification when the claim is specific.",
+      heroSub2:
+        "Upload a recording and get an audio authenticity report that explains whether the voice and production patterns look human, cloned, synthetic, or unresolved.",
+    };
+  }
+  return {
+    badge: "Forensic Media Investigation",
+    titleAccent: "what you see or hear?",
+    uploadTitle: "Media selected",
+    contextPlaceholder: "Optional context, e.g. 'What is this claimed to show?'",
+    processing: "Running forensic investigation...",
+    reportNoun: "media",
+    evidenceSubject: "this file",
+    heroSub:
+      "ArgusAI investigates images, video, and audio with media-specific forensic checks, Gemini reasoning, OSINT provenance, and Arize-backed reliability monitoring.",
+    heroSub2:
+      "Upload a file and get an evidence trail: what each signal checked, what it found, why it matters, and how the verdict was reached.",
+  };
+}
 
 /** ELA/OSINT stash large blobs in metrics; PDF endpoint does not need them and huge JSON breaks POST. */
 const METRIC_KEYS_STRIP_FOR_PDF = ["ela_image_base64", "grounding_metadata"];
@@ -41,16 +124,21 @@ const SCAN_STEPS = [
   "Generating forensic report...",
 ];
 
-const AUDIO_SCAN_STEPS = [
-  "Extracting spectral frequencies (Wav2Vec2)...",
-  "Reading container format metadata...",
-  "Analyzing background noise floors...",
-  "Measuring acoustic room reverberation...",
-  "Evaluating spoken semantic cadence...",
-  "Probing error level quantization...",
-  "Performing live OSINT search...",
+const VIDEO_SCAN_STEPS = [
+  "Extracting sharp video frames...",
+  "Analyzing temporal consistency...",
+  "Checking spectral artifacts in frames...",
+  "Running semantic video review...",
+  "Investigating public provenance...",
   "Aggregating evidence signals...",
   "Generating forensic report...",
+];
+
+const AUDIO_SCAN_STEPS = [
+  "Extracting spectral frequencies (Wav2Vec2)...",
+  "Analyzing voice authenticity...",
+  "Checking public context...",
+  "Generating audio report...",
 ];
 
 const CAROUSEL_IMAGES = [
@@ -116,10 +204,18 @@ const formatVerdict = (verdict) => {
   return titled.replace(/\bAi\b/g, "AI");
 };
 
-const formatSupportLabel = (support) => {
+const formatSupportLabel = (support, mediaType = "image") => {
   const value = (support || "unknown").toLowerCase();
-  if (value === "authentic") return "Suggests a real photo";
-  if (value === "ai_generated") return "Suggests AI generation";
+  if (value === "authentic") {
+    if (mediaType === "video") return "Suggests real footage";
+    if (mediaType === "audio") return "Suggests authentic human voice";
+    return "Suggests authentic photograph";
+  }
+  if (value === "ai_generated") {
+    if (mediaType === "video") return "Suggests AI-generated video";
+    if (mediaType === "audio") return "Suggests AI-generated / cloned speech";
+    return "Suggests AI-generated image";
+  }
   if (value === "inconclusive") return "Mixed or unclear";
   return "No clear direction";
 };
@@ -151,6 +247,24 @@ function formatSourceDate(value) {
   return String(value);
 }
 
+function formatTime(value) {
+  if (!value) return "unknown";
+  const dt = new Date(value);
+  if (Number.isNaN(dt.getTime())) return String(value);
+  return dt.toLocaleString();
+}
+
+function formatPercent(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return "n/a";
+  return `${Math.round(num * 100)}%`;
+}
+
+function shortHash(value) {
+  if (!value) return "unknown";
+  return String(value).slice(0, 10);
+}
+
 const formatStatusLabel = (status) => {
   const value = (status || "").toLowerCase();
   if (value === "ok") return "Completed";
@@ -167,26 +281,61 @@ const formatConfidenceLabel = (label) => {
 };
 
 const SIGNAL_DESCRIPTIONS = {
-  spectral_artifacts: "Runs the image through six different frequency-analysis models and combines their votes. It is looking for mathematical patterns in the pixel data that appear in AI-generated images but not in real camera photos.",
-  metadata_analysis: "Reads the invisible information stored inside the image file itself, such as which camera or app created it, the date it was taken, and GPS coordinates. Missing or inconsistent metadata can be a clue, though it is never conclusive on its own.",
-  noise_pattern_analysis: "Every real camera sensor adds a tiny, consistent layer of electrical noise to every photo it takes. This check looks for that noise fingerprint. AI generators tend to produce images that are either too smooth or have noise that does not match any real sensor.",
-  lighting_consistency: "Checks whether the brightness distribution across the image matches how real-world lighting behaves. Real cameras often clip highlights and crush shadows in a physically predictable way. AI images sometimes produce light that is unnaturally balanced or inconsistent with a real light source.",
-  error_level_analysis: "Re-saves the image at a lower quality and compares the result to the original. Regions that have been edited or composited usually show a different compression residual than untouched areas. The heatmap below highlights where those differences are largest.",
-  semantic_inconsistencies: "Uses a vision model to look at the image the same way a human analyst would, checking for physical mistakes that AI generators commonly make: wrong number of fingers, shadows missing for certain objects, text that is garbled, or objects that could not physically exist in that configuration.",
-  osint_verification: "Searches the public web in real time to see whether the event or subject in the image appears in credible news reporting, fact-checker databases, or is flagged as a known fake. This is the only check that goes beyond the image file itself.",
+  spectral_artifacts: {
+    image: "Runs the image through frequency-analysis models looking for mathematical patterns in pixel data that appear in AI-generated images but not in real camera photos.",
+    video: "Runs extracted video frames through frequency-analysis models looking for hidden generation patterns in the frame pixels.",
+  },
+  metadata_analysis: {
+    image: "Reads invisible file metadata such as camera, software, creation date, and GPS fields. Missing or inconsistent metadata can be a clue, though never conclusive on its own.",
+    video: "Reads video container and frame metadata where available. Missing or stripped metadata limits provenance, but does not prove manipulation.",
+  },
+  noise_pattern_analysis: {
+    image: "Every real camera sensor adds a tiny, consistent layer of electrical noise to a photo. This check looks for that sensor fingerprint.",
+  },
+  lighting_consistency: {
+    image: "Checks whether brightness, contrast, highlights, and shadows behave like a physically captured photograph rather than a generated image.",
+  },
+  error_level_analysis: {
+    image: "Re-saves the image and compares compression residuals. Edited or composited regions often show different compression stress.",
+    video: "Runs compression-residual analysis on extracted frames. It can reveal frame-level editing or compositing clues, but not every video artifact is AI.",
+  },
+  semantic_inconsistencies: {
+    image: "Uses Gemini vision to look for visible physical mistakes: broken hands, warped geometry, garbled text, impossible shadows, or objects that could not exist in that configuration.",
+    video: "Uses Gemini video review to look for generated-video clues: morphing, flicker, unstable details, impossible motion, shifting geometry, or prompt-like production patterns.",
+    audio: "Uses Gemini listening to check cadence, breathing, pronunciation, synthetic voice texture, and generated-audio production patterns.",
+  },
+  temporal_coherence: {
+    video: "Checks whether objects, faces, text, lighting, and motion remain stable across time. AI video often fails between frames even when individual frames look plausible.",
+  },
+  audio_track: {
+    video: "Extracts the video's embedded audio track, when present, and checks whether speech or production patterns suggest cloning or synthesis.",
+  },
+  audio_deepfake: {
+    audio: "Checks the recording with audio authenticity models and Gemini listening for cloned voice, text-to-speech, missing breathing, metallic artifacts, or synthetic production.",
+  },
+  osint_verification: {
+    image: "Searches the public web to see whether the depicted event or subject appears in credible reporting, fact-checker databases, or known fake coverage.",
+    video: "Searches the public web to determine whether the footage or claimed event is documented, disputed, or flagged as manipulated.",
+    audio: "Searches public context around the claimed speaker, statement, or event when the recording has enough context to investigate.",
+  },
 };
 
-function getSignalDescription(signal) {
+function getSignalDescription(signal, mediaType = "image") {
   const id = (signal.id || "").toLowerCase();
-  if (SIGNAL_DESCRIPTIONS[id]) return SIGNAL_DESCRIPTIONS[id];
+  const direct = SIGNAL_DESCRIPTIONS[id];
+  if (typeof direct === "string") return direct;
+  if (direct && typeof direct === "object") return direct[mediaType] || direct.default || direct.image || direct.video || direct.audio || null;
   // fuzzy match by name fragment
   for (const [key, desc] of Object.entries(SIGNAL_DESCRIPTIONS)) {
-    if (id.includes(key.split("_")[0])) return desc;
+    if (id.includes(key.split("_")[0])) {
+      if (typeof desc === "string") return desc;
+      return desc[mediaType] || desc.default || desc.image || desc.video || desc.audio || null;
+    }
   }
   return null;
 }
 
-function AnimatedSignalCard({ signal, index }) {
+function AnimatedSignalCard({ signal, index, mediaType = "image" }) {
   const ref = useRef(null);
   const isInView = useInView(ref, { once: true, margin: "-40px" });
   const [showDetails, setShowDetails] = useState(false);
@@ -216,20 +365,20 @@ function AnimatedSignalCard({ signal, index }) {
       <div className="stat-item">
         <span className="stat-label">Result</span>
         <span className={`stat-value ${getSupportClass(signal.supports)}`}>
-          {formatSupportLabel(signal.supports)}
+          {formatSupportLabel(signal.supports, mediaType)}
         </span>
       </div>
     </div>
   );
 
-  const signalDescription = getSignalDescription(signal);
+  const signalDescription = getSignalDescription(signal, mediaType);
   const osintMetrics = signal.metrics || {};
   const factSources = Array.isArray(osintMetrics.fact_check_sources) ? osintMetrics.fact_check_sources : [];
   const earliest = osintMetrics.earliest_web_appearance || null;
   const timeline = osintMetrics.timeline_contradiction || null;
 
   // ELA heatmap is always visible above the toggle (not hidden behind expand)
-  const elaImage = signal.metrics?.ela_image_base64 ? (
+  const elaImage = mediaType === "image" && signal.metrics?.ela_image_base64 ? (
     <div className="signal-image-container">
       <img src={`data:image/png;base64,${signal.metrics.ela_image_base64}`} alt="ELA compression heatmap — brighter areas had more compression stress" />
     </div>
@@ -500,7 +649,7 @@ function AudioReportCard({ reportData }) {
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.15, duration: 0.4 }}
       >
-        Audio deepfake analysis via two-tier pipeline (local wav2vec2 + HF Space fallback).
+        Audio authenticity analysis via dedicated voice models and Gemini semantic listening when model confidence is weak.
       </motion.div>
 
       {/* Signal card */}
@@ -620,6 +769,10 @@ function ForensicReportCard({ reportData, showJson, onToggleJson, onDownloadPdf,
     .filter(Boolean);
   const showLeaning = reportData.verdict === "inconclusive" && reportData.leaning;
   const modelHealth = reportData.pipeline_health?.model_health_label;
+  const mediaType = reportData.media_type || reportData.evidence?.media_type || "image";
+  const visibleSignals = (reportData.evidence?.signals || []).filter((signal) => signal?.visible !== false);
+  const mediaCopy = getMediaCopy(mediaType);
+  const mediaNoun = mediaCopy.reportNoun;
 
   return (
     <div className="report-inner">
@@ -657,7 +810,7 @@ function ForensicReportCard({ reportData, showJson, onToggleJson, onDownloadPdf,
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.18, duration: 0.4 }}
       >
-        {modelHealth || "All detector health gates operational"}. The verdict is based on evidence agreement, not a naked classifier output.
+        {modelHealth || "All detector health gates operational"}. The verdict is based on media-specific evidence agreement, not a naked classifier output.
       </motion.div>
 
       <motion.div
@@ -681,12 +834,12 @@ function ForensicReportCard({ reportData, showJson, onToggleJson, onDownloadPdf,
           <Layers size={14} /> Evidence signals
         </h3>
         <p className="signals-section-copy">
-          Each card explains what that check looked for, what it found in this image, why it matters, and what might also explain it.
+          Each card explains what that check looked for, what it found in this {mediaNoun}, why it matters, and what might also explain it.
         </p>
         <div className="signals-grid">
-          {reportData.evidence?.signals?.length > 0
-            ? reportData.evidence.signals.map((signal, i) => (
-                <AnimatedSignalCard key={signal.id} signal={signal} index={i} />
+          {visibleSignals.length > 0
+            ? visibleSignals.map((signal, i) => (
+                <AnimatedSignalCard key={signal.id} signal={signal} index={i} mediaType={mediaType} />
               ))
             : <p style={{ color: "var(--text-muted)" }}>No signals extracted.</p>
           }
@@ -736,7 +889,212 @@ function ForensicReportCard({ reportData, showJson, onToggleJson, onDownloadPdf,
   );
 }
 
-function LandingPage({ fileInputRef, previewUrl, fileType, handleDrop, handleFileChange, contextText, setContextText, fileSelected, isAnalyzing, handleAnalyze, sessionError }) {
+function AdminPanel({ open, onClose, arizeHealth, onHealthUpdate }) {
+  const [password, setPassword] = useState("");
+  const [authed, setAuthed] = useState(() => localStorage.getItem("argusai_admin") === "1");
+  const [shake, setShake] = useState(false);
+  const [traces, setTraces] = useState([]);
+  const [health, setHealth] = useState(arizeHealth);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => {
+    setHealth(arizeHealth);
+  }, [arizeHealth]);
+
+  const loadAdminData = useCallback(async () => {
+    if (!authed) return;
+    setLoading(true);
+    setError("");
+    try {
+      const [healthRes, tracesRes] = await Promise.all([
+        fetch(`${API_BASE}/arize/health`),
+        fetch(`${API_BASE}/arize/traces?limit=10`),
+      ]);
+      const healthJson = healthRes.ok ? await healthRes.json() : null;
+      const tracesJson = tracesRes.ok ? await tracesRes.json() : { traces: [] };
+      if (healthJson) {
+        setHealth(healthJson);
+        onHealthUpdate?.(healthJson);
+      }
+      setTraces(Array.isArray(tracesJson.traces) ? tracesJson.traces : []);
+    } catch {
+      setError("Could not load Arize operator data.");
+    } finally {
+      setLoading(false);
+    }
+  }, [authed, onHealthUpdate]);
+
+  useEffect(() => {
+    if (open && authed) loadAdminData();
+  }, [open, authed, loadAdminData]);
+
+  if (!open) return null;
+
+  const governor = health?.detector_governor || {};
+  const detectorRows = Object.entries(governor.detectors || {});
+  const calibration = governor.calibration_divergence;
+  const latestTrace = traces[0];
+  const latestDetectors = latestTrace?.detectors ? Object.entries(latestTrace.detectors) : [];
+  const maxLatency = Math.max(0.01, ...latestDetectors.map(([, row]) => Number(row?.latency) || 0));
+
+  const submitPassword = (e) => {
+    e.preventDefault();
+    if (password === ADMIN_PASSWORD) {
+      localStorage.setItem("argusai_admin", "1");
+      setAuthed(true);
+      setPassword("");
+      return;
+    }
+    setShake(true);
+    setPassword("");
+    setTimeout(() => setShake(false), 450);
+  };
+
+  return (
+    <AnimatePresence>
+      <motion.div className="admin-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+        <motion.div
+          className="admin-modal"
+          initial={{ opacity: 0, y: 18, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 12, scale: 0.98 }}
+          transition={{ duration: 0.18 }}
+        >
+          <div className="admin-head">
+            <div>
+              <span className="admin-kicker">Operator View</span>
+              <h2>Arize Reliability Console</h2>
+            </div>
+            <button className="admin-icon-btn" onClick={onClose} title="Close">
+              <X size={18} />
+            </button>
+          </div>
+
+          {!authed ? (
+            <form className={`admin-login ${shake ? "admin-shake" : ""}`} onSubmit={submitPassword}>
+              <Lock size={28} />
+              <input
+                type="password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="Password"
+                autoFocus
+              />
+              <button type="submit">Unlock</button>
+            </form>
+          ) : (
+            <div className="admin-dashboard">
+              <div className="admin-toolbar">
+                <div className={`admin-health-pill ${health?.status === "calibration_alert" ? "warn" : health?.status === "anomaly" ? "error" : "ok"}`}>
+                  <Activity size={14} />
+                  {health?.label || "Arize health unavailable"}
+                </div>
+                <button className="admin-refresh" onClick={loadAdminData} disabled={loading}>
+                  <RefreshCw size={14} /> {loading ? "Refreshing" : "Refresh"}
+                </button>
+              </div>
+
+              {error && <div className="admin-alert error">{error}</div>}
+              {calibration?.active && (
+                <div className="admin-alert warn">
+                  <AlertOctagon size={16} />
+                  Spectral detector influence is reduced to {formatPercent(governor.spectral_attenuation_factor)} after repeated calibration divergence.
+                </div>
+              )}
+
+              <section className="admin-section">
+                <h3>Recent Investigations</h3>
+                <div className="admin-table-wrap">
+                  <table className="admin-table">
+                    <thead>
+                      <tr>
+                        <th>Time</th>
+                        <th>Media</th>
+                        <th>Verdict</th>
+                        <th>Certainty</th>
+                        <th>Latency</th>
+                        <th>Trace</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {traces.length ? traces.map((trace, idx) => (
+                        <tr key={`${trace.sha256 || idx}-${trace.timestamp || idx}`}>
+                          <td>{formatTime(trace.timestamp)}</td>
+                          <td>{trace.media_type || "image"}</td>
+                          <td>{formatVerdict(trace.verdict || "unknown")}</td>
+                          <td>{formatPercent(trace.certainty)}</td>
+                          <td>{Number(trace.latency_seconds || 0).toFixed(2)}s</td>
+                          <td className="mono">{shortHash(trace.sha256)}</td>
+                        </tr>
+                      )) : (
+                        <tr><td colSpan={6}>No x-ray traces written yet.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </section>
+
+              <section className="admin-grid">
+                <div className="admin-section">
+                  <h3>Detector Health</h3>
+                  <div className="admin-health-grid">
+                    {detectorRows.length ? detectorRows.map(([id, row]) => (
+                      <div key={id} className={`admin-detector ${row.active ? "active" : ""}`}>
+                        <span className="mono">{id}</span>
+                        <strong>{row.active ? "Adjusted" : "Recovered"}</strong>
+                        <small>{row.reason || "nominal"}</small>
+                      </div>
+                    )) : (
+                      <div className="admin-empty">All detector health gates are nominal.</div>
+                    )}
+                  </div>
+                </div>
+
+                <div className="admin-section">
+                  <h3><BarChart3 size={14} /> Latest Latency</h3>
+                  <div className="admin-bars">
+                    {latestDetectors.length ? latestDetectors.slice(0, 8).map(([id, row]) => {
+                      const latency = Number(row?.latency) || 0;
+                      return (
+                        <div className="admin-bar-row" key={id}>
+                          <span className="mono">{id}</span>
+                          <div className="admin-bar-track">
+                            <div className="admin-bar-fill" style={{ width: `${Math.max(4, (latency / maxLatency) * 100)}%` }} />
+                          </div>
+                          <strong>{latency.toFixed(2)}s</strong>
+                        </div>
+                      );
+                    }) : (
+                      <div className="admin-empty">Run an investigation to populate latency bars.</div>
+                    )}
+                  </div>
+                </div>
+              </section>
+
+              <section className="admin-section">
+                <h3>Calibration Events</h3>
+                <div className="admin-events">
+                  {(governor.recent_events || []).length ? governor.recent_events.slice().reverse().map((event, idx) => (
+                    <div className={`admin-event ${event.reason === "calibration_divergence" ? "warn" : ""}`} key={`${event.recorded_at || idx}-${idx}`}>
+                      <span className="mono">{event.reason || "detector_event"}</span>
+                      <p>{event.detector_id || "detector"} · {formatTime(event.recorded_at)}{event.active_until ? ` · active until ${formatTime(event.active_until)}` : ""}</p>
+                    </div>
+                  )) : (
+                    <div className="admin-empty">No calibration or circuit-breaker events recorded.</div>
+                  )}
+                </div>
+              </section>
+            </div>
+          )}
+        </motion.div>
+      </motion.div>
+    </AnimatePresence>
+  );
+}
+
+function LandingPage({ fileInputRef, previewUrl, fileType, selectedMediaType, handleDrop, handleFileChange, contextText, setContextText, fileSelected, isAnalyzing, handleAnalyze, sessionError }) {
+  const mediaCopy = getMediaCopy(selectedMediaType || "default");
   return (
     <div className="landing-root">
 
@@ -744,21 +1102,17 @@ function LandingPage({ fileInputRef, previewUrl, fileType, handleDrop, handleFil
       <section className="lp-hero">
         {/* Left: pitch */}
         <div className="lp-hero-left">
-          <div className="lp-hero-badge">Forensic Image Verification</div>
+          <div className="lp-hero-badge">{mediaCopy.badge}</div>
           <h2 className="lp-hero-title">
             Can you trust<br/>
-            <span className="lp-hero-accent">what you see?</span>
+            <span className="lp-hero-accent">{mediaCopy.titleAccent}</span>
           </h2>
-          <p className="lp-hero-sub">
-            AI-generated media is becoming harder to spot by eye. ArgusAI is a forensic tool that analyzes images and videos the same way an investigator would, looking at the technical evidence inside the file itself rather than just how it looks.
-          </p>
-          <p className="lp-hero-sub">
-            Upload any image or video and get a forensic verdict: real or AI-generated. Each check explains exactly what it found and why it matters, so you understand the evidence trail instead of trusting a single number.
-          </p>
+          <p className="lp-hero-sub">{mediaCopy.heroSub}</p>
+          <p className="lp-hero-sub">{mediaCopy.heroSub2}</p>
           <ul className="lp-hero-bullets">
-            <li>Analyzes pixel-level noise, lighting physics, and frequency patterns that AI gets wrong</li>
-            <li>Searches live news and fact-checkers to see if the file matches a real reported event</li>
-            <li>Shows you every signal individually so the reasoning is fully transparent</li>
+            <li>Runs only the signals that make sense for the uploaded media type</li>
+            <li>Uses Gemini and public-source research to explain provenance and context</li>
+            <li>Shows every visible signal individually so the reasoning stays transparent</li>
           </ul>
         </div>
 
@@ -776,29 +1130,36 @@ function LandingPage({ fileInputRef, previewUrl, fileType, handleDrop, handleFil
                 accept="image/*,video/*,audio/*,.mp3,.wav,.ogg,.m4a,.flac"
                 className="file-input-hidden" onChange={handleFileChange} />
               {previewUrl ? (
-                fileType?.startsWith("video/") ? (
-                  <video src={previewUrl} controls className="lp-preview-img" />
-                ) : fileType?.startsWith("audio/") ? (
-                  <div className="lp-audio-preview">
-                    <Zap size={36} style={{ color: "#06b6d4", marginBottom: 10 }} />
-                    <p style={{ color: "#06b6d4", fontWeight: 600, margin: "0 0 8px" }}>Audio ready for analysis</p>
-                    <audio src={previewUrl} controls style={{ width: "100%" }} />
+                <div style={{ width: "100%", position: "relative" }}>
+                  {selectedMediaType && (
+                    <span className="arize-badge" style={{ position: "absolute", top: 10, left: 10, zIndex: 2 }}>
+                      {mediaBadgeLabel(selectedMediaType)}
+                    </span>
+                  )}
+                  {selectedMediaType === "video" ? (
+                    <video src={previewUrl} controls className="lp-preview-img" />
+                  ) : selectedMediaType === "audio" ? (
+                    <div className="lp-audio-preview">
+                      <Zap size={36} style={{ color: "#06b6d4", marginBottom: 10 }} />
+                      <p style={{ color: "#06b6d4", fontWeight: 600, margin: "0 0 8px" }}>{mediaCopy.uploadTitle}</p>
+                      <audio src={previewUrl} controls style={{ width: "100%" }} />
+                    </div>
+                  ) : (
+                    <img src={previewUrl} alt="Preview" className="lp-preview-img" />
+                  )}
                   </div>
-                ) : (
-                  <img src={previewUrl} alt="Preview" className="lp-preview-img" />
-                )
               ) : (
                 <div className="lp-drop-inner">
                   <div className="lp-drop-icon"><ImageIcon size={20} /></div>
                   <p className="lp-drop-title">Drop image, video, or audio</p>
-                  <p className="lp-drop-sub">or click to browse (JPG, PNG, MP4, WAV, MP3…)</p>
+                  <p className="lp-drop-sub">or click to browse (JPG, PNG, MP4, WAV, MP3...)</p>
                 </div>
               )}
             </div>
             <textarea
               className="lp-context-input"
               rows={2}
-              placeholder="Optional context, e.g. 'Is this the Netanyahu video?'"
+              placeholder={mediaCopy.contextPlaceholder}
               value={contextText}
               onChange={(e) => setContextText(e.target.value)}
               disabled={isAnalyzing}
@@ -811,8 +1172,8 @@ function LandingPage({ fileInputRef, previewUrl, fileType, handleDrop, handleFil
               whileTap={fileSelected && !isAnalyzing ? { scale: 0.97 } : {}}
             >
               {isAnalyzing
-                ? <><div className="spin-ring white" />Running pipeline…</>
-                : <><Search size={15} />Run Forensic Analysis</>
+                ? <><div className="spin-ring white" />{mediaCopy.processing}</>
+                : <><Search size={15} />Run Investigation</>
               }
             </motion.button>
           </div>
@@ -821,7 +1182,7 @@ function LandingPage({ fileInputRef, previewUrl, fileType, handleDrop, handleFil
 
       {/* ── EVIDENCE STRIP ── */}
       <section className="lp-evidence">
-        <p className="lp-section-eyebrow">Tested on images like these</p>
+        <p className="lp-section-eyebrow">Sample investigation media</p>
         <div className="lp-carousel-wrapper">
           <div className="lp-carousel-track">
             {[...CAROUSEL_IMAGES, ...CAROUSEL_IMAGES].map((src, idx) => (
@@ -843,22 +1204,22 @@ function LandingPage({ fileInputRef, previewUrl, fileType, handleDrop, handleFil
           <div className="lp-pipeline-card" style={{"--card-accent":"#a855f7"}}>
             <div className="lp-step-num" style={{color:"#a855f7",borderColor:"rgba(168,85,247,0.3)",background:"rgba(168,85,247,0.07)"}}>01</div>
             <h4>Spectral analysis</h4>
-            <p>Looks for hidden frequency patterns in the image that appear when AI generates pixels. Real cameras produce different mathematical signatures that are hard to fake.</p>
+            <p>Looks for hidden frequency patterns in image pixels or extracted video frames when that signal is relevant.</p>
           </div>
           <div className="lp-pipeline-card" style={{"--card-accent":"#3b82f6"}}>
             <div className="lp-step-num" style={{color:"#3b82f6",borderColor:"rgba(59,130,246,0.3)",background:"rgba(59,130,246,0.07)"}}>02</div>
             <h4>Physical coherence</h4>
-            <p>Checks whether the lighting, shadows, and noise in the image obey real-world physics. AI images often get these details wrong in ways a camera never would.</p>
+            <p>Checks the physical and semantic coherence of the media: scene geometry, motion, voice cadence, lighting, or other cues depending on file type.</p>
           </div>
           <div className="lp-pipeline-card" style={{"--card-accent":"#10b981"}}>
             <div className="lp-step-num" style={{color:"#10b981",borderColor:"rgba(16,185,129,0.3)",background:"rgba(16,185,129,0.07)"}}>03</div>
             <h4>Live web fact-checking</h4>
-            <p>Searches live news and public databases to see whether the event in the image was actually reported. This catches known fakes that have already been identified online.</p>
+            <p>Searches live news and public databases to see whether the claimed image, footage, recording, or event has public provenance.</p>
           </div>
           <div className="lp-pipeline-card" style={{"--card-accent":"#00e5ff"}}>
             <div className="lp-step-num" style={{color:"#00e5ff",borderColor:"rgba(0,229,255,0.3)",background:"rgba(0,229,255,0.07)"}}>04</div>
             <h4>Verdict engine</h4>
-            <p>All six signals are weighed together and a final verdict is issued with a plain-language explanation of exactly what was found and why.</p>
+            <p>The visible signals are weighed together and a final verdict is issued with a plain-language explanation of exactly what was found and why.</p>
           </div>
         </div>
       </section>
@@ -876,14 +1237,14 @@ function LandingPage({ fileInputRef, previewUrl, fileType, handleDrop, handleFil
           <div className="lp-diff-icon" style={{background:"rgba(16,185,129,0.08)",borderColor:"rgba(16,185,129,0.2)",color:"#10b981"}}><Globe size={18}/></div>
           <div>
             <h4>Cross-referenced with the web</h4>
-            <p>Pixel analysis only goes so far. ArgusAI also checks whether the image matches real events reported by credible news sources.</p>
+            <p>File analysis only goes so far. ArgusAI also checks whether the claim matches real events or statements reported by credible sources.</p>
           </div>
         </div>
         <div className="lp-diff-card">
           <div className="lp-diff-icon" style={{background:"rgba(0,229,255,0.08)",borderColor:"rgba(0,229,255,0.2)",color:"#00e5ff"}}><Zap size={18}/></div>
           <div>
             <h4>Results in under 30 seconds</h4>
-            <p>All seven checks run in parallel. You get a full forensic report with a clear verdict in the time it takes to read this sentence.</p>
+            <p>Image, video, and audio each use the checks that fit. You get a forensic report with a clear evidence trail instead of a generic score.</p>
           </div>
         </div>
       </section>
@@ -908,6 +1269,8 @@ export default function App() {
   const [pdfLoadingForId, setPdfLoadingForId] = useState(null);
   const [arizeHealth, setArizeHealth] = useState(null);
   const [fileType, setFileType]         = useState("");
+  const [selectedMediaType, setSelectedMediaType] = useState("");
+  const [adminOpen, setAdminOpen] = useState(false);
 
   const fileInputRef = useRef(null);
   const feedEndRef   = useRef(null);
@@ -971,12 +1334,16 @@ export default function App() {
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
-    const isImg = file.type.startsWith("image/");
-    const isVid = file.type.startsWith("video/");
-    const isAud = file.type.startsWith("audio/");
-    if (!isImg && !isVid && !isAud) return;
+    const mediaType = detectMediaType(file);
+    if (!mediaType) {
+      setStatus("Unsupported file type. Use JPG, PNG, WebP, MP4, WebM, MOV, WAV, MP3, OGG, FLAC, or M4A.");
+      if (fileInputRef.current) fileInputRef.current.value = "";
+      return;
+    }
+    setStatus("");
     setFileSelected(true);
     setFileType(file.type);
+    setSelectedMediaType(mediaType);
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     // Audio has no visual preview — just store a blob URL for possible playback
     setPreviewUrl(URL.createObjectURL(file));
@@ -986,10 +1353,10 @@ export default function App() {
     e.preventDefault();
     const file = e.dataTransfer.files[0];
     if (!file) return;
-    const isImg = file.type.startsWith("image/");
-    const isVid = file.type.startsWith("video/");
-    const isAud = file.type.startsWith("audio/");
-    if (!isImg && !isVid && !isAud) return;
+    if (!detectMediaType(file)) {
+      setStatus("Unsupported file type. Use JPG, PNG, WebP, MP4, WebM, MOV, WAV, MP3, OGG, FLAC, or M4A.");
+      return;
+    }
     if (fileInputRef.current) {
       const dt = new DataTransfer();
       dt.items.add(file);
@@ -999,7 +1366,7 @@ export default function App() {
   };
 
   const clearImage = () => {
-    setPreviewUrl(""); setFileSelected(false); setFileType("");
+    setPreviewUrl(""); setFileSelected(false); setFileType(""); setSelectedMediaType("");
     if (fileInputRef.current) fileInputRef.current.value = "";
   };
 
@@ -1007,21 +1374,25 @@ export default function App() {
     const file = fileInputRef.current?.files[0];
     if (!file) return;
 
-    const isAudio = file.type.startsWith("audio/");
-    const activeSteps = isAudio ? AUDIO_SCAN_STEPS : SCAN_STEPS;
+    const mediaType = detectMediaType(file);
+    if (!mediaType) {
+      setStatus("Unsupported file type. Use JPG, PNG, WebP, MP4, WebM, MOV, WAV, MP3, OGG, FLAC, or M4A.");
+      return;
+    }
+    const isAudio = mediaType === "audio";
 
     setIsAnalyzing(true); setScanStep(0);
-    setStatus("Running forensic pipeline...");
+    setStatus(getMediaCopy(mediaType).processing);
     setShowJsonById({});
 
-    const imageSnapshot = previewUrl;
+    const mediaSnapshot = previewUrl;
 
     try {
       let sid = await ensureSession();
 
       setMessages((prev) => [
         ...prev,
-        { id: `u-${Date.now()}`, role: "user", kind: "analyze", text: contextText.trim(), imageUrl: imageSnapshot, fileType: file.type },
+        { id: `u-${Date.now()}`, role: "user", kind: "analyze", text: contextText.trim(), imageUrl: mediaSnapshot, fileType: file.type, mediaType },
       ]);
 
       if (isAudio) {
@@ -1049,7 +1420,7 @@ export default function App() {
           return;
         }
         const audioReport = await res.json();
-        setMessages((prev) => [...prev, { id: `a-${Date.now()}`, role: "assistant", kind: "report", report: audioReport }]);
+        setMessages((prev) => [...prev, { id: `a-${Date.now()}`, role: "assistant", kind: "audio_report", report: audioReport }]);
       } else {
         // ── IMAGE / VIDEO PATH ────────────────────────────────────────────
         const postAnalyze = (sessionKey) => {
@@ -1152,7 +1523,10 @@ export default function App() {
     }
   };
 
-  const hasReport  = messages.some((m) => m.role === "assistant" && m.kind === "report");
+  const hasReport  = messages.some((m) => m.role === "assistant" && (m.kind === "report" || m.kind === "audio_report"));
+  const currentScanSteps = selectedMediaType === "audio" ? AUDIO_SCAN_STEPS : selectedMediaType === "video" ? VIDEO_SCAN_STEPS : SCAN_STEPS;
+  const arizeWarn = arizeHealth?.status === "anomaly" || arizeHealth?.status === "calibration_alert";
+  const activeMediaCopy = getMediaCopy(selectedMediaType || "default");
 
   return (
     <div className="app-root">
@@ -1162,27 +1536,19 @@ export default function App() {
           <img src="/logo.jpeg" alt="ArgusAI" className="logo-img" />
           <div className="logo-text">
             <span className="logo-name">ArgusAI</span>
-            <span className="logo-sub">Forensic image verification</span>
+            <span className="logo-sub">Forensic media investigation</span>
           </div>
         </div>
         <div className="header-nav">
-          {arizeHealth?.dashboard_url ? (
-            <a
-              className={`arize-badge ${arizeHealth.status === "anomaly" ? "arize-badge-warn" : ""}`}
-              href={arizeHealth.dashboard_url}
-              target="_blank"
-              rel="noreferrer"
-              title="Open Phoenix dashboard"
-            >
-              <Activity size={13} />
-              {arizeHealth.label || "Monitored by Arize Phoenix"}
-            </a>
-          ) : (
-            <span className={`arize-badge ${arizeHealth?.status === "anomaly" ? "arize-badge-warn" : ""}`}>
-              <Activity size={13} />
-              {arizeHealth?.label || "Phoenix monitor ready"}
-            </span>
-          )}
+          <button
+            type="button"
+            className={`arize-badge arize-badge-button ${arizeWarn ? "arize-badge-warn" : ""}`}
+            onClick={() => setAdminOpen(true)}
+            title="Open Arize reliability console"
+          >
+            <Activity size={13} />
+            {arizeHealth?.label || "Phoenix monitor ready"}
+          </button>
         </div>
       </header>
 
@@ -1197,6 +1563,7 @@ export default function App() {
             fileInputRef={fileInputRef}
             previewUrl={previewUrl}
             fileType={fileType}
+            selectedMediaType={selectedMediaType}
             handleDrop={handleDrop}
             handleFileChange={handleFileChange}
             contextText={contextText}
@@ -1303,7 +1670,7 @@ export default function App() {
         {/* Session-mode right aside */}
         {(messages.length > 0 || status) && (
           <aside className="control-panel glass-panel">
-            <div className="panel-head-label">New examination</div>
+            <div className="panel-head-label">New {activeMediaCopy.reportNoun} investigation</div>
 
             <div
               className={`drop-zone ${previewUrl ? "has-preview" : ""}`}
@@ -1316,18 +1683,23 @@ export default function App() {
                 className="file-input-hidden" onChange={handleFileChange} />
               {previewUrl ? (
                 <div className="preview-wrap">
-                  {fileType?.startsWith("video/") ? (
+                  {selectedMediaType && (
+                    <span className="arize-badge" style={{ position: "absolute", top: 10, left: 10, zIndex: 2 }}>
+                      {mediaBadgeLabel(selectedMediaType)}
+                    </span>
+                  )}
+                  {selectedMediaType === "video" ? (
                     <video src={previewUrl} className="preview-img" muted />
-                  ) : fileType?.startsWith("audio/") ? (
+                  ) : selectedMediaType === "audio" ? (
                     <div className="audio-preview-wrap">
                       <Zap size={32} style={{color:"#06b6d4",marginBottom:8}} />
-                      <p className="drop-title" style={{color:"#06b6d4",marginBottom:4}}>Audio ready</p>
+                      <p className="drop-title" style={{color:"#06b6d4",marginBottom:4}}>{activeMediaCopy.uploadTitle}</p>
                       <audio src={previewUrl} controls style={{width:"100%",marginTop:4}} />
                     </div>
                   ) : (
                     <img src={previewUrl} alt="Preview" className="preview-img" />
                   )}
-                  {isAnalyzing && <ScanningOverlay steps={SCAN_STEPS} currentStep={scanStep} />}
+                  {isAnalyzing && <ScanningOverlay steps={currentScanSteps} currentStep={scanStep} />}
                   {!isAnalyzing && (
                     <div className="preview-actions">
                       <button className="preview-btn" onClick={(e) => { e.stopPropagation(); clearImage(); }}>
@@ -1354,7 +1726,7 @@ export default function App() {
             <textarea
               className="context-input"
               rows={3}
-              placeholder="e.g. Is this the Netanyahu video? Verify if this event occurred."
+              placeholder={activeMediaCopy.contextPlaceholder}
               value={contextText}
               onChange={(e) => setContextText(e.target.value)}
               disabled={isAnalyzing}
@@ -1368,8 +1740,8 @@ export default function App() {
               whileTap={fileSelected && !isAnalyzing ? { scale: 0.97 } : {}}
             >
               {isAnalyzing
-                ? <><div className="spin-ring white" />Analyzing…</>
-                : <><Search size={18} />Run Analysis</>
+                ? <><div className="spin-ring white" />{activeMediaCopy.processing}</>
+                : <><Search size={18} />Run Investigation</>
               }
             </motion.button>
 
@@ -1388,6 +1760,15 @@ export default function App() {
         )}
 
       </main>
+      <button className="admin-lock" onClick={() => setAdminOpen(true)} title="Operator view">
+        <Lock size={15} />
+      </button>
+      <AdminPanel
+        open={adminOpen}
+        onClose={() => setAdminOpen(false)}
+        arizeHealth={arizeHealth}
+        onHealthUpdate={setArizeHealth}
+      />
     </div>
   );
 }

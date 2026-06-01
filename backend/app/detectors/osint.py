@@ -22,6 +22,15 @@ class OpenSourceIntelligenceDetector(Detector):
     async def analyze(self, image, context: Dict[str, Any]) -> EvidenceSignal:
         image_bytes: bytes = context.get("image_bytes", b"")
         user_context: str = str(context.get("user_context") or "").strip()
+        media_type = str(context.get("media_type") or "image")
+        subject = "audio recording" if media_type == "audio" else "video clip" if media_type == "video" else "image"
+        claim_example = (
+            "'Did this public figure really say this?'"
+            if media_type == "audio"
+            else "'Is this footage from the claimed event?'"
+            if media_type == "video"
+            else "'Is this a real photo of the Gaza ceasefire?'"
+        )
 
         if not image_bytes:
             return EvidenceSignal(
@@ -30,12 +39,12 @@ class OpenSourceIntelligenceDetector(Detector):
                 category=self.category,
                 status=SignalStatus.UNAVAILABLE,
                 reliability=0.0,
-                summary="This web verification check could not run because the raw image bytes were missing.",
-                what_checked="We try to find whether the image or the event it claims to show appears in trustworthy public reporting.",
-                what_found="The OSINT detector did not receive the image data it needed.",
-                why_it_matters="Context can help confirm whether an image matches a real public event or a known fake.",
-                caveat="This is a detector issue, not evidence about the image.",
-                observations=["Requires raw image bytes."],
+                summary=f"This web verification check could not run because the raw {subject} bytes were missing.",
+                what_checked=f"We try to find whether the {subject} or the claim around it appears in trustworthy public reporting.",
+                what_found=f"The OSINT detector did not receive the {subject} data it needed.",
+                why_it_matters=f"Context can help confirm whether a {subject} matches a real public event, statement, or known fake.",
+                caveat=f"This is a detector issue, not evidence about the {subject}.",
+                observations=[f"Requires raw {subject} bytes."],
                 supports=SignalSupport.UNKNOWN,
             )
 
@@ -47,9 +56,9 @@ class OpenSourceIntelligenceDetector(Detector):
                 status=SignalStatus.UNAVAILABLE,
                 reliability=0.0,
                 summary="Web verification was skipped. Add context to enable it.",
-                what_checked="We search the web to see whether the image or the event it shows has been verified or debunked publicly.",
+                what_checked=f"We search the web to see whether the {subject} or the claim around it has been verified or debunked publicly.",
                 what_found="No context was provided, so the web search was not run.",
-                why_it_matters="OSINT works best when you give it a clue, for example 'Is this a real photo of the Gaza ceasefire?' Without that, there is nothing specific to search for.",
+                why_it_matters=f"OSINT works best when you give it a clue, for example {claim_example}. Without that, there is nothing specific to search for.",
                 caveat="Add a description or claim in the context box and re-run to activate this check.",
                 observations=["OSINT skipped: no user context provided."],
                 supports=SignalSupport.UNKNOWN,
@@ -92,7 +101,7 @@ class OpenSourceIntelligenceDetector(Detector):
 
                 context_preview = (research_context[:450].rstrip() + ("..." if len(research_context) > 450 else "")) if research_context else ""
                 if is_deepfake:
-                    summary = "The research agent found credible public sources flagging this image or claim as fabricated."
+                    summary = f"The research agent found credible public sources flagging this {subject} or claim as fabricated."
                     supports = SignalSupport.AI_GENERATED
                     reliability = 0.98
                     why_it_matters = (
@@ -104,8 +113,8 @@ class OpenSourceIntelligenceDetector(Detector):
                     supports = SignalSupport.AUTHENTIC
                     reliability = 0.75
                     why_it_matters = (
-                        "Corroborated public reporting supports the underlying event. It still does not prove every pixel is untouched, "
-                        "so the image-level detectors remain important."
+                        "Corroborated public reporting supports the underlying event or statement. It still does not prove the file is untouched, "
+                        "so the media-specific detectors remain important."
                     )
                 else:
                     summary = "The research agent found related public context but no decisive provenance verdict."
@@ -138,14 +147,14 @@ class OpenSourceIntelligenceDetector(Detector):
                     status=SignalStatus.OK,
                     reliability=reliability,
                     summary=summary,
-                    what_checked="Gemini visually analyzes the image and uses Google Search grounding to find provenance, fact-checks, original context, and timeline contradictions.",
+                    what_checked=f"Gemini analyzes the {subject} and uses Google Search grounding to find provenance, fact-checks, original context, and timeline contradictions.",
                     what_found=context_preview or "The research agent completed, but did not return a concise public-source synthesis.",
                     why_it_matters=why_it_matters,
-                    caveat="OSINT is strongest for public figures, viral claims, and news events. Generic private images may have no searchable provenance.",
+                    caveat=f"OSINT is strongest for public figures, viral claims, and news events. Generic private {subject}s may have no searchable provenance.",
                     observations=observations,
                     metrics=metrics,
                     supports=supports,
-                    notes="Gemini vision + Google Search grounding. Gemini sees the image and searches the web — no third-party image search API required.",
+                    notes=f"Gemini + Google Search grounding. Gemini inspects the {subject} and searches the web.",
                 )
 
             grounded = await client.grounded_osint_investigation(image_bytes, user_context)
@@ -168,10 +177,10 @@ class OpenSourceIntelligenceDetector(Detector):
                     observations.append(f"Grounded synthesis: {grounded_context}")
 
                 if is_deepfake:
-                    summary = "Web fact-checking found this image or claim is publicly flagged as a fabrication."
+                    summary = f"Web fact-checking found this {subject} or claim is publicly flagged as a fabrication."
                     supports = SignalSupport.AI_GENERATED
                     reliability = 0.98
-                    what_found = context_preview if context_preview else "Search results and grounded context identify this image or claim as fake, misleading, or AI-generated."
+                    what_found = context_preview if context_preview else f"Search results and grounded context identify this {subject} or claim as fake, misleading, or AI-generated."
                     why_it_matters = (
                         "When fact-checkers or news organizations have already publicly identified something as fabricated, "
                         "that documented record is one of the strongest signals we have. The deception has already been caught and reported."
@@ -186,22 +195,22 @@ class OpenSourceIntelligenceDetector(Detector):
                     what_found = context_preview if context_preview else "Search results line up with credible reporting about the depicted event or situation."
                     why_it_matters = (
                         "Real-world events documented in credible journalism provide strong contextual support. "
-                        "This confirms the underlying scene is real and reported, even if it does not guarantee the specific image is unaltered."
+                        "This confirms the underlying scene or statement is real and reported, even if it does not guarantee the specific file is unaltered."
                     )
                     observations.append(
                         "Verified: Extracted context matches credible reporting on the depicted situation."
                     )
                 else:
-                    summary = "Google grounding found related coverage but no clear fact-checking consensus on this specific image."
+                    summary = f"Google grounding found related coverage but no clear fact-checking consensus on this specific {subject}."
                     supports = SignalSupport.INCONCLUSIVE
                     reliability = 0.45
-                    what_found = context_preview if context_preview else "The web search found related context, but no clear public determination on this exact image."
+                    what_found = context_preview if context_preview else f"The web search found related context, but no clear public determination on this exact {subject}."
                     why_it_matters = (
-                        "The subject exists publicly, but the web has not decisively verified or debunked this specific image. "
+                        f"The subject exists publicly, but the web has not decisively verified or debunked this specific {subject}. "
                         "Context is background information rather than a verdict."
                     )
                     observations.append(
-                        "Warning: Subject matter may appear in news, but authenticity of this specific image is not clearly settled in sources."
+                        f"Warning: Subject matter may appear in news, but authenticity of this specific {subject} is not clearly settled in sources."
                     )
 
                 metrics: Dict[str, Any] = {
@@ -222,7 +231,7 @@ class OpenSourceIntelligenceDetector(Detector):
                     status=SignalStatus.OK,
                     reliability=reliability,
                     summary=summary,
-                    what_checked="We searched the web to see whether this image or event is publicly verified, disputed, or debunked.",
+                    what_checked=f"We searched the web to see whether this {subject} or event is publicly verified, disputed, or debunked.",
                     what_found=what_found,
                     why_it_matters=why_it_matters,
                     caveat="OSINT is best for public claims and known events. It is much less useful for generic scenes with no clear context.",
@@ -244,11 +253,11 @@ class OpenSourceIntelligenceDetector(Detector):
                 category=self.category,
                 status=SignalStatus.WARNING,
                 reliability=0.1,
-                summary="The image looks too generic for meaningful web verification.",
+                summary=f"The {subject} looks too generic for meaningful web verification.",
                 what_checked="We tried to determine whether the scene points to a known public event, person, or widely discussed claim.",
                 what_found="The scene does not appear specific enough for a useful web fact-check.",
                 why_it_matters="OSINT only helps when there is a public event or claim to verify. Generic scenes usually cannot be confirmed this way.",
-                caveat="A skipped OSINT check does not say anything negative about the image. It only means there was no clear public context to search.",
+                caveat=f"A skipped OSINT check does not say anything negative about the {subject}. It only means there was no clear public context to search.",
                 observations=observations,
                 metrics={"provider": client.last_provider, "model": client.last_model, "fallback_used": client.last_fallback_used},
                 supports=SignalSupport.UNKNOWN,
@@ -287,7 +296,7 @@ class OpenSourceIntelligenceDetector(Detector):
                 what_checked="We tried to search the public web for corroboration or debunking of the scene.",
                 what_found="The OSINT pipeline could not complete the search step.",
                 why_it_matters="This removes one contextual check from the final result.",
-                caveat="This is a search failure, not evidence about the image.",
+                caveat=f"This is a search failure, not evidence about the {subject}.",
                 observations=[f"Error accessing open web: {exc}"],
                 metrics={"provider": client.last_provider, "model": client.last_model, "fallback_used": client.last_fallback_used},
                 supports=SignalSupport.UNKNOWN,
@@ -305,10 +314,10 @@ class OpenSourceIntelligenceDetector(Detector):
                 status=SignalStatus.ERROR,
                 reliability=0.0,
                 summary="The web search ran, but the fact-check summary could not be parsed cleanly.",
-                what_checked="We searched the web for reporting, fact-checks, and public context tied to the image.",
+                what_checked=f"We searched the web for reporting, fact-checks, and public context tied to the {subject}.",
                 what_found="The search completed, but the final synthesis was not usable.",
                 why_it_matters="This removes one contextual signal from the final result.",
-                caveat="This is a synthesis failure, not evidence about the image.",
+                caveat=f"This is a synthesis failure, not evidence about the {subject}.",
                 observations=observations,
                 metrics={"provider": client.last_provider, "model": client.last_model, "fallback_used": client.last_fallback_used},
                 supports=SignalSupport.UNKNOWN,
@@ -339,11 +348,11 @@ class OpenSourceIntelligenceDetector(Detector):
                 f"{context_preview}"
             )
             why_it_matters = (
-                "When credible fact-checkers or news organizations have already identified an image as fabricated, "
+                f"When credible fact-checkers or news organizations have already identified a {subject} or claim as fabricated, "
                 "that public record is one of the strongest signals we have — it means the deception has already been caught and documented."
             )
             observations.append(
-                "CRITICAL: The open internet explicitly flags this event or image as a fabricated deepfake."
+                f"CRITICAL: The open internet explicitly flags this event or {subject} as a fabricated deepfake."
             )
         elif is_real:
             summary = "Multiple independent sources corroborate that this event or scene actually happened."
@@ -355,13 +364,13 @@ class OpenSourceIntelligenceDetector(Detector):
             )
             why_it_matters = (
                 "Real-world events documented in credible journalism provide strong contextual support for authenticity. "
-                "This doesn't guarantee the exact image is unaltered — but it confirms the underlying scene is real and reported."
+                "This does not guarantee the exact file is unaltered, but it confirms the underlying scene or statement is real and reported."
             )
             observations.append(
                 "Verified: Extracted context matches verified real-world reporting and eyewitness accounts."
             )
         else:
-            summary = "The event is in the public record, but no clear fact-checking verdict exists for this specific image."
+            summary = f"The event or claim is in the public record, but no clear fact-checking verdict exists for this specific {subject}."
             supports = SignalSupport.INCONCLUSIVE
             reliability = 0.4
             what_found = (
@@ -369,11 +378,11 @@ class OpenSourceIntelligenceDetector(Detector):
                 f"{context_preview}"
             )
             why_it_matters = (
-                "The subject exists publicly, but the web hasn't definitively verified or debunked this specific image. "
+                f"The subject exists publicly, but the web has not definitively verified or debunked this specific {subject}. "
                 "That leaves context as background information rather than a clear verdict."
             )
             observations.append(
-                "Warning: Open web confirms the subject matter, but no explicit fact-checking consensus on this specific image was found."
+                f"Warning: Open web confirms the subject matter, but no explicit fact-checking consensus on this specific {subject} was found."
             )
 
         return EvidenceSignal(
@@ -383,7 +392,7 @@ class OpenSourceIntelligenceDetector(Detector):
             status=SignalStatus.OK,
             reliability=reliability,
             summary=summary,
-            what_checked="We searched the web to see whether this image or claim has been verified, disputed, or debunked publicly.",
+            what_checked=f"We searched the web to see whether this {subject} or claim has been verified, disputed, or debunked publicly.",
             what_found=what_found,
             why_it_matters=why_it_matters,
             caveat="OSINT is about public context, not just pixel analysis. It is strongest for famous events and weakest for generic scenes.",

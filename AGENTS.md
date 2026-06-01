@@ -1,6 +1,6 @@
 # AGENTS.md — ArgusAI Working Instructions
 
-Read `CLAUDE.md` first. It is the current hackathon source of truth and explains the product strategy, implementation state, and why the Arize reliability governor is the winning angle.
+Read `ContextFiles/CurrentHandoff.md` first, then `CLAUDE.md`. The handoff has the freshest deployment state, passwords, URLs, verified tests, and remaining manual work. `CLAUDE.md` explains the product strategy and why the Arize reliability governor is the winning angle.
 
 Critical framing:
 
@@ -15,32 +15,41 @@ Current implemented hackathon additions:
 - Phoenix/OpenTelemetry tracing in `backend/app/core/observability.py`.
 - Detector health governor in `backend/app/core/health_governor.py`.
 - Pipeline-level tracing and `pipeline_health` in `backend/app/core/pipeline.py`.
+- Multi-modal image/video/audio routing with `media_type` and signal `visible` fields.
+- Audio analysis endpoint now uses `AudioAnalysisPipeline`.
+- Gemini semantic fallback for audio, video, and image when primary detector/model is unavailable or weak.
+- Gemini fallback model behavior: primary `gemini-3.5-flash`, fallback `gemini-2.5-flash`.
+- Video temporal coherence signal and graceful embedded audio-track signal.
 - Gemini-grounded OSINT research agent and optional public-URL reverse-image enrichment in `backend/app/core/llm_client.py`.
 - Upgraded OSINT detector output in `backend/app/detectors/osint.py`.
 - Agent Builder endpoints in `backend/app/main.py`: `/agent/analyze` and `/agent/chat`.
 - Arize health endpoint in `backend/app/main.py`: `/arize/health`.
-- Arize badge and OSINT research UI in `frontend/src/App.jsx`.
+- Arize trace feed in `backend/app/main.py`: `/arize/traces`.
+- Arize badge, OSINT research UI, dynamic media UX, and password-gated admin dashboard in `frontend/src/App.jsx`.
 - `.env.example` documents required env vars.
 - `mcp/phoenix-mcp.json` is the official Phoenix MCP server template.
 - `ContextFiles/AgentBuilderPhoenixSetup.md` documents Agent Builder and Phoenix MCP setup.
 - Backend Cloud Run service is live at `https://argusai-backend-1007754127412.us-central1.run.app`.
+- Frontend Cloud Run service is live at `https://argusai-frontend-1007754127412.us-central1.run.app`.
+- Phoenix Cloud Run service is live at `https://argusai-phoenix-ddmxiumrdq-uc.a.run.app`.
+- Admin password is `argusai2026`.
 - Spectral weights are stored at `gs://argusai-497719-models/models/argusai_best_weights.pth`.
 - Local self-hosted Phoenix is working through `docker-compose.phoenix.yml` at `http://localhost:6006`.
-- Local `.env` points tracing to `http://localhost:6006/v1/traces`; Phoenix logs confirmed successful trace POSTs.
+- Cloud Run backend points tracing to `https://argusai-phoenix-ddmxiumrdq-uc.a.run.app/v1/traces`; Phoenix logs confirmed successful trace POSTs.
 
 Next highest-leverage work:
 
-1. Run a real Cloud Run `/analyze` request to verify lazy model download and detector behavior.
-2. Deploy the frontend with `VITE_API_BASE=https://argusai-backend-1007754127412.us-central1.run.app`.
-3. Configure Phoenix Cloud env vars and confirm traces arrive, or keep using verified self-hosted Phoenix for the recorded demo if hosted Arize remains blocked.
-4. Configure Agent Builder tools against `/agent/analyze` and `/agent/chat`.
-5. Connect the Phoenix MCP server using `mcp/phoenix-mcp.json`.
-6. Run the Pope puffer demo image end to end.
-7. Capture a prepared spectral circuit-breaker trace for the demo.
-8. Update any final submission copy to emphasize “forensic investigation platform.”
+1. Configure Agent Builder tools against `/agent/analyze` and `/agent/chat`.
+2. Connect the Phoenix MCP server using `mcp/phoenix-mcp.json`.
+3. Run the Pope puffer demo image end to end and confirm OSINT sources/dates.
+4. Capture a prepared calibration-governor or spectral circuit-breaker trace for the demo.
+5. Record the 3-minute demo.
+6. Complete Devpost copy emphasizing “forensic investigation platform.”
 
 Known caveat:
 
-Cloud Run uses `min-instances=0` to avoid idle spend, so first requests may cold start. Keep it that way during setup; switch to `min-instances=1` only near demo/judging if needed.
+Cloud Run uses `min-instances=0` to avoid idle spend, so first requests may cold start. Switch backend and Phoenix to `min-instances=1` only near demo/judging if needed.
 
-Cloud Run cannot use `http://localhost:6006` for Phoenix. That local URL only works on the laptop. Cloud Run needs Phoenix Cloud or another publicly reachable Phoenix collector.
+Backend `max-instances=1` is intentional because sessions are in memory. Do not raise it until session state is externalized.
+
+Cloud Run cannot use `http://localhost:6006` for Phoenix. That local URL only works on the laptop. Cloud Run currently uses public self-hosted Phoenix at `https://argusai-phoenix-ddmxiumrdq-uc.a.run.app`.

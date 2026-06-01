@@ -79,6 +79,7 @@ class LLMClient:
             token in lowered
             for token in (
                 "503",
+                "429",
                 "service unavailable",
                 "temporarily unavailable",
                 "timeout",
@@ -87,6 +88,9 @@ class LLMClient:
                 "connecterror",
                 "read timeout",
                 "resource exhausted",
+                "quota exceeded",
+                "rate-limit",
+                "rate limit",
                 "high demand",
             )
         )
@@ -114,7 +118,9 @@ class LLMClient:
             return "audio/flac"
         if image_bytes.startswith(b"OggS"):
             return "audio/ogg"
-        if image_bytes.startswith(b"\x00\x00\x00") and b"ftyp" in image_bytes[:16] and (b"m4a" in image_bytes[:32] or b"mp42" not in image_bytes[:32]):
+        if image_bytes.startswith(b"\x00\x00\x00") and b"ftyp" in image_bytes[:16] and any(
+            brand in image_bytes[:32] for brand in (b"m4a", b"M4A", b"m4b", b"M4B")
+        ):
             return "audio/mp4"
 
         if image_bytes.startswith(b'\x00\x00\x00') and b'ftyp' in image_bytes[:16]:
@@ -140,19 +146,86 @@ class LLMClient:
         }.get(fmt, "image/png")
 
 
+    async def _post_model(
+        self,
+        client: httpx.AsyncClient,
+        model: str,
+        headers: dict,
+        payload: dict,
+        key: str,
+    ) -> httpx.Response:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+        req_headers = {**headers, "x-goog-api-key": key}
+        response = await client.post(url, headers=req_headers, json=payload)
+        response.raise_for_status()
+        return response
+
+    async def _try_fallback_model(
+        self,
+        client: httpx.AsyncClient,
+        headers: dict,
+        payload: dict,
+        key: str,
+        *,
+        key_index: int,
+        primary_model: str,
+        reason_prefix: str,
+    ) -> Optional[httpx.Response]:
+        fallback_model = llm_settings.gemini_fallback_model
+        if not fallback_model or fallback_model == primary_model:
+            return None
+
+        try:
+            fallback_response = await self._post_model(client, fallback_model, headers, payload, key)
+            self._note_success(provider="gemini", model=fallback_model, fallback_used=True)
+            return fallback_response
+        except httpx.HTTPStatusError as fallback_exc:
+            fallback_reason, fallback_message = self._parse_google_error(fallback_exc.response)
+            self._note_error(
+                f"{reason_prefix}; Gemini fallback with key #{key_index} failed "
+                f"({fallback_reason or f'HTTP {fallback_exc.response.status_code}'}): {fallback_message}",
+                provider="gemini",
+                model=fallback_model,
+            )
+            return None
+        except Exception as fallback_exc:
+            self._note_error(
+                f"{reason_prefix}; Gemini fallback with key #{key_index} failed before completion: {fallback_exc}",
+                provider="gemini",
+                model=fallback_model,
+            )
+            return None
+
     async def _post_with_fallback(self, client: httpx.AsyncClient, base_model: str, headers: dict, payload: dict) -> httpx.Response:
-        url = f"https://generativelanguage.googleapis.com/v1beta/models/{base_model}:generateContent"
 
         last_exception = None
         for idx, key in enumerate(llm_settings.gemini_api_keys, start=1):
-            req_headers = {**headers, "x-goog-api-key": key}
             try:
-                response = await client.post(url, headers=req_headers, json=payload)
-                response.raise_for_status()
+                response = await self._post_model(client, base_model, headers, payload, key)
                 self._note_success(provider="gemini", model=base_model)
                 return response
             except httpx.HTTPStatusError as e:
                 reason, message = self._parse_google_error(e.response)
+
+                if (
+                    self._should_try_fallback(e.response.status_code, message)
+                    or self._is_transient_error(message)
+                    or e.response.status_code in (429, 500, 503, 504)
+                ):
+                    fallback_response = await self._try_fallback_model(
+                        client,
+                        headers,
+                        payload,
+                        key,
+                        key_index=idx,
+                        primary_model=base_model,
+                        reason_prefix=(
+                            f"Gemini primary model {base_model} failed "
+                            f"({reason or f'HTTP {e.response.status_code}'}): {message}"
+                        ),
+                    )
+                    if fallback_response is not None:
+                        return fallback_response
 
                 if self._should_rotate_key(e.response.status_code, reason):
                     self._note_error(
@@ -163,31 +236,6 @@ class LLMClient:
                     last_exception = e
                     continue
 
-                if self._should_try_fallback(e.response.status_code, message):
-                    fallback_model = llm_settings.gemini_fallback_model
-                    fallback_url = f"https://generativelanguage.googleapis.com/v1beta/models/{fallback_model}:generateContent"
-                    try:
-                        fallback_response = await client.post(fallback_url, headers=req_headers, json=payload)
-                        fallback_response.raise_for_status()
-                        self._note_success(provider="gemini", model=fallback_model, fallback_used=True)
-                        return fallback_response
-                    except httpx.HTTPStatusError as fallback_exc:
-                        fallback_reason, fallback_message = self._parse_google_error(fallback_exc.response)
-                        if self._should_rotate_key(fallback_exc.response.status_code, fallback_reason):
-                            self._note_error(
-                                f"Gemini fallback with key #{idx} failed ({fallback_reason or f'HTTP {fallback_exc.response.status_code}'}): {fallback_message}",
-                                provider="gemini",
-                                model=fallback_model,
-                            )
-                            last_exception = fallback_exc
-                            continue
-                        self._note_error(
-                            f"Gemini fallback model {fallback_model} failed ({fallback_reason or f'HTTP {fallback_exc.response.status_code}'}): {fallback_message}",
-                            provider="gemini",
-                            model=fallback_model,
-                        )
-                        raise fallback_exc
-
                 self._note_error(
                     f"Gemini request failed ({reason or f'HTTP {e.response.status_code}'}): {message}",
                     provider="gemini",
@@ -195,6 +243,18 @@ class LLMClient:
                 )
                 raise
             except Exception as exc:
+                fallback_response = await self._try_fallback_model(
+                    client,
+                    headers,
+                    payload,
+                    key,
+                    key_index=idx,
+                    primary_model=base_model,
+                    reason_prefix=f"Gemini primary model {base_model} failed before completion: {exc}",
+                )
+                if fallback_response is not None:
+                    return fallback_response
+
                 self._note_error(
                     f"Gemini request failed before completion: {exc}",
                     provider="gemini",
@@ -294,12 +354,17 @@ class LLMClient:
         ctx = (user_context or "").strip()
         mime = self._image_mime_type(image_bytes)
         is_audio = mime.startswith("audio/")
+        is_video = mime.startswith("video/")
         doc_type = "audio recording" if is_audio else "image"
+        if is_video:
+            doc_type = "video clip"
         action_verb = "listen to" if is_audio else "see"
         sensory_verb = "hear" if is_audio else "see"
         inspect_step = (
             "Step 1: Listen to the audio carefully. Identify speaker names, spoken content, accents, or background cues."
             if is_audio else
+            "Step 1: Watch the video carefully. Identify who or what is depicted, visible text, locations, events, and whether the footage changes suspiciously across time."
+            if is_video else
             "Step 1: Look at the image carefully. Identify who or what is depicted, any text, logos, locations, or events visible."
         )
 
@@ -395,8 +460,14 @@ class LLMClient:
         ctx = (user_context or "").strip()
         mime = self._image_mime_type(image_bytes)
         is_audio = mime.startswith("audio/")
-        doc_type = "audio recording" if is_audio else "image"
-        examine_phrase = "Listen to the audio recording. Use search to determine whether this recording aligns" if is_audio else "Examine the image. Use search to determine whether this image aligns"
+        is_video = mime.startswith("video/")
+        doc_type = "audio recording" if is_audio else "video clip" if is_video else "image"
+        if is_audio:
+            examine_phrase = "Listen to the audio recording. Use search to determine whether this recording aligns"
+        elif is_video:
+            examine_phrase = "Watch the video clip. Use search to determine whether this footage aligns"
+        else:
+            examine_phrase = "Examine the image. Use search to determine whether this image aligns"
         extra = (
             f"\n\nUser-provided context (treat as investigative hints, not proof): {ctx}"
             if ctx
@@ -528,30 +599,57 @@ class LLMClient:
             return await self._gemini_text_explanation(verdict, evidence, reasoning_summary)
         return None
 
-    async def analyze_image_semantics(self, image_bytes: bytes) -> Optional[Dict[str, Any]]:
+    async def analyze_image_semantics(self, image_bytes: bytes, user_context: str = "") -> Optional[Dict[str, Any]]:
         if not llm_settings.gemini_api_key:
             return None
 
         mime = self._image_mime_type(image_bytes)
         is_audio = mime.startswith("audio/")
+        is_video = mime.startswith("video/")
+        ctx = (user_context or "").strip()
+        context_line = (
+            f"\nUser-provided context, treat this as a claim to verify rather than proof: {ctx}\n"
+            if ctx
+            else "\nNo user-provided context was supplied.\n"
+        )
         if is_audio:
             prompt = (
                 "You are examining this audio recording to decide whether it is authentic human speech or generated/synthesised by AI.\n\n"
+                + context_line +
                 "Look/listen carefully for specific characteristics that AI voice generators commonly produce:\n"
                 "1. Cadence and flow: is the speech rate completely constant, or does it have natural variations and pauses? Describe any robotic transitions.\n"
                 "2. Pronunciation and phoneme errors: does the generator mispronounce common words or slur syllables unnaturally?\n"
                 "3. Breathing and physiological cues: does the speaker take natural breaths in logical places? AI speech often lacks realistic breathing patterns.\n"
                 "4. Background consistency: is there a sudden change in background room acoustics, static, or hiss when the speaker starts/stops talking?\n"
                 "5. Voice cloning artifacts: are there spectral anomalies, metallic echoes, or phasey voice sounds?\n\n"
+                "Also judge the overall production pattern. If the recording sounds like polished text-to-speech, synthetic narration, cloned voice output, or a Gemini-style generated audio sample, say so directly and raise confidence.\n\n"
                 "Respond ONLY with a valid JSON object using exactly these keys:\n"
                 "- anomalies (array of strings: each one should describe one specific audio problem you found, naming the timestamp or context and what is wrong with it.)\n"
                 "- confidence (float 0.0 to 1.0: how strongly do these specific issues point to AI generation, not just low quality or background noise)\n"
                 "- summary (string: 2 to 3 plain sentences describing exactly what you found and why it points toward real or AI.)\n"
                 "If you find no issues, anomalies must be an empty array []. Do not include markdown formatting."
             )
+        elif is_video:
+            prompt = (
+                "You are examining this video footage to decide whether it is an authentic recording or generated/manipulated by AI.\n\n"
+                + context_line +
+                "Look carefully for problems that only become visible across time:\n"
+                "1. Temporal consistency: do faces, hands, objects, text, or background details morph, flicker, or shift between frames?\n"
+                "2. Physics and motion: do objects move with plausible momentum, contact, shadows, and reflections across the clip?\n"
+                "3. Identity consistency: do facial features, clothing details, logos, or scene geometry remain stable?\n"
+                "4. Compression versus generation: do not confuse normal video compression, motion blur, or low bitrate artifacts with impossible temporal changes.\n"
+                "5. Watermarks: look for visible AI-generation labels or watermarks. If present, confidence must be 1.0.\n\n"
+                "Also judge the overall visual production pattern. If the clip has the synthetic style, overly smooth motion, staged surrealism, generated-camera movement, or prompt-like composition typical of Gemini/Imagen/Veo-style AI video, say so directly. You do not need a single frame-level glitch if the full clip is plainly generated.\n\n"
+                "Respond ONLY with a valid JSON object using exactly these keys:\n"
+                "- anomalies (array of strings: each one should describe one specific temporal or visual problem, naming the moment/location in the footage and what is wrong.)\n"
+                "- confidence (float 0.0 to 1.0: how strongly these specific issues point to AI generation, not just low-quality video)\n"
+                "- summary (string: 2 to 3 plain sentences describing exactly what you found and why it points toward real footage or AI.)\n"
+                "If you find no issues, anomalies must be an empty array []. Do not include markdown formatting."
+            )
         else:
             prompt = (
                 "You are examining this image to decide whether it was taken by a real camera or generated by AI.\n\n"
+                + context_line +
                 "Look carefully for specific physical problems that AI generators commonly produce:\n"
                 "1. Hands and fingers: count them. Are any fingers fused together, unnaturally elongated, or are there too many? Describe exactly which hand and what is wrong.\n"
                 "2. Background geometry: do straight lines stay straight? Do fences, roads, text, or building edges warp or dissolve into each other?\n"
@@ -727,17 +825,29 @@ class LLMClient:
                         continue
                     return None
 
-    def _get_reasoner_system_prompt(self) -> str:
+    def _get_reasoner_system_prompt(self, media_type: str = "image") -> str:
+        if media_type == "video":
+            report_type = "video verification report"
+            evidence_item = "footage"
+            concrete = "frames, motion artifacts, temporal inconsistencies, named anomalies, specific visual errors"
+        elif media_type == "audio":
+            report_type = "audio authenticity report"
+            evidence_item = "recording"
+            concrete = "voice probabilities, cadence findings, acoustic artifacts, speaker/context findings"
+        else:
+            report_type = "image verification report"
+            evidence_item = "image"
+            concrete = "actual numbers, named anomalies, specific anatomy errors"
         return (
-            "You are writing the explanation section of an image verification report for a general audience."
+            f"You are writing the explanation section of a {report_type} for a general audience."
             " The reader has no technical background. Your job is to explain, in plain language, exactly what the system found"
             " and how it reached its conclusion. Think of it as explaining your reasoning to a curious friend, not writing a lab report.\n\n"
             "STRUCTURE: Write exactly three short paragraphs. No bullet points, no headers, no markdown.\n"
             "- Paragraph 1: State the verdict and confidence directly. Tell the reader what the bottom line is and how sure the system is."
             " Mention how many checks ran and how they split (e.g. two pointed toward AI, one toward real, three were inconclusive).\n"
             "- Paragraph 2: Walk through the two or three most important findings. For each one, say what the check actually did,"
-            " what it specifically found in this image, and why that points toward real or AI. Use the specific details from the evidence data"
-            " (actual numbers, named anomalies, specific anatomy errors, etc.). Do not just repeat the check name. Mention the strongest counter-evidence too.\n"
+            f" what it specifically found in this {evidence_item}, and why that points toward real or AI. Use the specific details from the evidence data"
+            f" ({concrete}, etc.). Do not just repeat the check name. Mention the strongest counter-evidence too.\n"
             "- Paragraph 3: Be honest about what the system could not settle. Say which checks were inconclusive and why, and remind the"
             " reader that no single check is definitive on its own.\n\n"
             "STYLE RULES:\n"
@@ -757,8 +867,9 @@ class LLMClient:
         reasoning_summary: Optional[Dict[str, Any]] = None,
     ) -> Optional[str]:
         summary_json = json.dumps(reasoning_summary or {}, indent=2)
+        media_type = str(evidence.get("media_type") or (reasoning_summary or {}).get("media_type") or "image")
         prompt = (
-            f"{self._get_reasoner_system_prompt()}\n\n"
+            f"{self._get_reasoner_system_prompt(media_type)}\n\n"
             f"Verdict Declared: {verdict}\n\n"
             f"Reasoning Summary:\n{summary_json}\n\n"
             f"Evidence JSON Profile:\n{json.dumps(evidence, indent=2)}"

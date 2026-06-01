@@ -1,107 +1,106 @@
 # ArgusAI Implementation Progress
 
-Last updated: May 29, 2026
+Last updated: June 1, 2026.
 
-## Status: BACKEND DEPLOYED — local Phoenix working — frontend and Agent Builder still pending
+For full details, read `ContextFiles/CurrentHandoff.md`. This file is the concise progress tracker.
 
-The backend is live on Google Cloud Run with Gemini configured through Secret Manager and spectral weights stored in Cloud Storage. Local self-hosted Arize Phoenix is also running through Docker for development and demo fallback while the hosted Arize account issue is unresolved.
+## Status
 
----
+Backend, frontend, and self-hosted Phoenix are deployed on Google Cloud Run. Image, audio, and video analysis have been smoke-tested against the live backend. Arize/Phoenix is receiving live OpenTelemetry traces, and the admin dashboard is wired to backend Arize health/trace endpoints.
 
-## What Is Done (Code)
+## Live Services
 
-- Seven-detector FastAPI analysis pipeline, fully parallel with asyncio.gather
-- Weighted evidence reasoning engine with per-detector verdict influence scoring
-- Gemini-only LLM stack: vision, grounded OSINT research agent, narrative, chat
-- React/Vite frontend: signal cards, Arize health badge, OSINT research panel (hops, sources, earliest appearance, timeline warning), ELA heatmap, PDF export, session chat
-- Phoenix/OpenTelemetry observability: root analysis span + per-detector child spans
-- Spectral circuit-breaker attributes logged to Phoenix: `circuit_breaker`, `circuit_breaker_reason`, `gap_score`
-- DetectorHealthGovernor: persists circuit-breaker state across requests with configurable TTL
-- `/arize/health` endpoint for frontend badge polling
-- `grounded_osint_research_agent()`: multi-hop Gemini grounded search, structured JSON output with `earliest_web_appearance`, `fact_check_sources`, `timeline_contradiction`, `research_hops`
-- `/agent/analyze` and `/agent/chat` endpoints for Agent Builder
-- Dockerfile (CPU-only torch via --index-url, correct memory footprint)
-- `requirements.txt` clean (torch installed by Dockerfile separately, not by pip -r)
-- Git LFS configured via `.gitattributes` for `*.pth` and `*.pt`
-- MIT LICENSE file in repo root
-- `.env.example` with all required env vars documented
-- `mcp/phoenix-mcp.json` for Arize Phoenix MCP server config
-- `.gcloudignore` excludes local datasets, model weights, logs, virtualenvs, and frontend build output from Cloud Run source deploys
-- `docker-compose.phoenix.yml` runs local self-hosted Phoenix on `http://localhost:6006`
+- Frontend: `https://argusai-frontend-1007754127412.us-central1.run.app`
+- Backend: `https://argusai-backend-1007754127412.us-central1.run.app`
+- Phoenix: `https://argusai-phoenix-ddmxiumrdq-uc.a.run.app`
+- Admin password: `argusai2026`
 
----
+Google Cloud:
 
-## What Is Done (Cloud)
-
-- Google Cloud project: `argusai-497719`
+- Project: `argusai-497719`
 - Project number: `1007754127412`
 - Region: `us-central1`
-- Enabled APIs: Cloud Run, Cloud Build, Artifact Registry, Cloud Storage, Secret Manager, Vertex AI / AI Platform, Billing Budgets
-- Artifact Registry repository: `cloud-run-source-deploy`
-- Cloud Storage bucket: `gs://argusai-497719-models`
-- Spectral model object: `gs://argusai-497719-models/models/argusai_best_weights.pth`
-- Secret Manager secret: `argusai-gemini-api-key`
-- Backend Cloud Run service: `argusai-backend`
-- Backend URL: `https://argusai-backend-1007754127412.us-central1.run.app`
-- Health URL: `https://argusai-backend-1007754127412.us-central1.run.app/health`
-- Cloud Run settings: `4Gi` memory, `2` CPU, `300s` timeout, concurrency `1`, `min-instances=0`, `max-instances=3`
-- Cloud Run Gemini model env vars currently use `gemini-3.5-flash` for text, vision, grounding, and fallback
+- Gemini secret: `argusai-gemini-api-key`
+- Spectral weights: `gs://argusai-497719-models/models/argusai_best_weights.pth`
 
----
+## Done
 
-## What Is Done (Local Phoenix)
+- FastAPI backend with image/video `/analyze`, audio `/analyze-audio`, chat, PDF, Agent Builder endpoints, Arize health, and Arize trace feed.
+- React/Vite frontend with dynamic image/video/audio upload UX, media-specific copy, signal filtering, audio report rendering, Arize badge, and password-gated admin panel.
+- Phoenix/OpenTelemetry tracing in backend.
+- Phoenix self-hosted on Cloud Run and local Docker fallback.
+- Detector health governor with calibration divergence tracking.
+- Gemini semantic prompts for image, video, and audio.
+- Gemini fallback path from `gemini-3.5-flash` to `gemini-2.5-flash` for quota/high-demand/transient failures.
+- `/arize/traces` endpoint reading x-ray logs for admin dashboard.
+- Frontend Cloud Run deployment via `frontend/Dockerfile`.
+- Phoenix MCP config fixed to use `PHOENIX_DASHBOARD_URL`.
 
-- Docker container: `argusai-phoenix`
-- Phoenix version observed in logs: `16.3.0`
-- UI: `http://localhost:6006`
-- HTTP trace collector: `http://localhost:6006/v1/traces`
-- gRPC trace collector: `http://localhost:4317`
-- Local `.env` is configured for:
-  - `PHOENIX_COLLECTOR_ENDPOINT=http://localhost:6006/v1/traces`
-  - `PHOENIX_DASHBOARD_URL=http://localhost:6006`
-  - `PHOENIX_PROJECT_NAME=argusai-forensics`
-  - `ARIZE_HEALTH_GOVERNOR=1`
-- Verified `backend.app.core.observability.tracing_health()` returns `configured=True`, `enabled=True`, and `error=None`.
-- Verified Phoenix received trace traffic: Docker logs show multiple `POST /v1/traces HTTP/1.1" 200 OK` entries from a local ArgusAI smoke run.
-- The local Phoenix setup does not require `PHOENIX_API_KEY`.
+## Live Verification
 
-Start local Phoenix:
+Image AI sample:
 
-```powershell
-docker compose -f docker-compose.phoenix.yml up -d
-```
+- Verdict: `likely_ai_generated`
+- Certainty: `0.795`
+- Spectral: `ok`, supports `ai_generated`
+- Semantic: `ok`, supports `ai_generated`
+- Semantic model used: `gemini-2.5-flash` fallback
 
-Stop local Phoenix:
+Audio AI sample:
 
-```powershell
-docker compose -f docker-compose.phoenix.yml down
-```
+- File: `Images Dataset/AI audio/Coral_and_Turquoise.mp3`
+- Verdict: `ai_generated`
+- Certainty: `0.95`
+- Signal: Gemini semantic audio fallback
+- Finding: missing breathing and overly consistent synthetic production patterns
 
----
+Video AI sample:
+
+- File: `Images Dataset/AI video/mp_.mp4`
+- Verdict: `likely_ai_generated`
+- Certainty: `0.906`
+- Semantic: `ok`, supports `ai_generated`
+- Temporal coherence: `ok`, supports `ai_generated`
+- Embedded audio track: gracefully `unavailable`
+
+Arize/Phoenix:
+
+- Backend `/arize/health` reports tracing configured/enabled.
+- Backend `/arize/traces` returns recent image/audio/video traces.
+- Phoenix Cloud Run logs confirm repeated `POST /v1/traces` HTTP 200.
 
 ## Remaining
 
-1. Deploy frontend with `VITE_API_BASE=https://argusai-backend-1007754127412.us-central1.run.app`.
-2. If Arize Cloud account access starts working, add Phoenix Cloud env vars to Cloud Run. Until then, use local self-hosted Phoenix for the recorded demo and trace proof.
-3. Confirm Phoenix traces arrive from Cloud Run if using Phoenix Cloud. Local Phoenix tracing is already confirmed.
-4. Configure Google Cloud Agent Builder tools.
-5. Connect Phoenix MCP.
-6. Run Pope puffer demo image end to end.
-7. Record 3-minute YouTube demo.
-8. Complete Devpost submission.
+1. Configure Google Cloud Agent Builder tools:
+   - `POST https://argusai-backend-1007754127412.us-central1.run.app/agent/analyze`
+   - `POST https://argusai-backend-1007754127412.us-central1.run.app/agent/chat`
+2. Connect Phoenix MCP with `mcp/phoenix-mcp.json`.
+3. Run the Pope puffer demo image end to end and confirm OSINT output.
+4. Prepare or capture a calibration-governor/admin-panel demo moment.
+5. Record the 3-minute demo.
+6. Complete Devpost submission.
+7. Optionally set backend/Phoenix `min-instances=1` during recording/judging to avoid cold starts and Phoenix data reset.
 
----
+## Caveats
 
-## Verified
+- Backend sessions are in memory. Keep backend `max-instances=1` until external session storage exists.
+- Phoenix Cloud Run is unauthenticated and ephemeral. It is acceptable for hackathon/demo, not production.
+- Gemini 3.5 may rate-limit; Gemini 2.5 fallback is intentional.
+- Local browser automation via Node REPL could not run because Playwright was not installed there; HTTP-level frontend checks passed.
 
-- Python files compile: `python -m compileall backend/app` passes
-- Frontend production build: `npm run build` passes
-- Synthetic 64x64 PNG pipeline run returned 7 signals
-- requirements.txt no longer pins torch (Dockerfile handles CPU wheel install)
-- Cloud Run `/health` returns `status=ok`, Gemini ready, and all 7 detectors registered
-- `/health` currently reports `spectral_model_exists=false` before first analysis because Cloud Run downloads the GCS model lazily
-- Local Phoenix UI returns HTTP 200 at `http://127.0.0.1:6006/`
-- Local backend tracing successfully initializes against self-hosted Phoenix
-- Local Phoenix received trace POSTs from an ArgusAI smoke run
-- Gemini key in Cloud Run was rotated after the original Secret Manager version returned `PERMISSION_DENIED` as leaked
-- Deployed Cloud Run dataset smoke test passed with `gemini-3.5-flash`: verdict `likely_ai_generated`, certainty `0.837`, spectral detector `ok`, semantic detector `ok`, OSINT detector `warning` on a non-public-claim dataset image
+## Validation Commands
+
+```powershell
+python -m compileall backend\app
+cd frontend
+npm run build
+```
+
+Useful live checks:
+
+```powershell
+Invoke-RestMethod -Uri "https://argusai-backend-1007754127412.us-central1.run.app/health" | ConvertTo-Json -Depth 8
+Invoke-RestMethod -Uri "https://argusai-backend-1007754127412.us-central1.run.app/arize/health" | ConvertTo-Json -Depth 10
+Invoke-RestMethod -Uri "https://argusai-backend-1007754127412.us-central1.run.app/arize/traces?limit=10" | ConvertTo-Json -Depth 8
+```
+

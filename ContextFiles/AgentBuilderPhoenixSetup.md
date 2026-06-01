@@ -1,33 +1,38 @@
 # Agent Builder and Phoenix MCP Setup
 
-Last updated: May 29, 2026.
+Last updated: June 1, 2026.
 
-This project exposes backend endpoints for Google Cloud Agent Builder and includes a Phoenix MCP config template.
+Read `ContextFiles/CurrentHandoff.md` first for the complete deployed state.
+
+## Current URLs
+
+- Frontend: `https://argusai-frontend-1007754127412.us-central1.run.app`
+- Backend: `https://argusai-backend-1007754127412.us-central1.run.app`
+- Phoenix UI/base URL: `https://argusai-phoenix-ddmxiumrdq-uc.a.run.app`
+- Phoenix OTEL collector: `https://argusai-phoenix-ddmxiumrdq-uc.a.run.app/v1/traces`
+- Admin dashboard password: `argusai2026`
 
 ## Agent Builder Tools
 
 Create two tools in Google Cloud Agent Builder.
 
-### analyze_image
-
-HTTP endpoint:
-
-Current backend:
-
-`https://argusai-backend-1007754127412.us-central1.run.app`
+### Tool 1: analyze_media
 
 Endpoint:
 
-`POST https://argusai-backend-1007754127412.us-central1.run.app/agent/analyze`
+```text
+POST https://argusai-backend-1007754127412.us-central1.run.app/agent/analyze
+```
 
 Multipart form fields:
 
-- `file`: image upload
-- `context`: optional user claim or public image URL
+- `file`: image/video/audio upload
+- `context`: optional user claim, speaker/event context, or public source URL
 
 Returns:
 
 - `session_id`
+- `media_type`
 - `verdict`
 - `certainty`
 - `confidence_label`
@@ -37,38 +42,94 @@ Returns:
 - `model_health`
 - `arize_health`
 
-### ask_question
+Use description:
 
-HTTP endpoint:
+```text
+Analyze an uploaded image, video, or audio clip with ArgusAI. Use this tool when the user wants to verify whether media is authentic, AI-generated, synthetic, manipulated, or needs provenance investigation. Include any user claim as context.
+```
 
-`POST https://argusai-backend-1007754127412.us-central1.run.app/agent/chat`
+### Tool 2: ask_forensic_followup
+
+Endpoint:
+
+```text
+POST https://argusai-backend-1007754127412.us-central1.run.app/agent/chat
+```
 
 JSON body:
 
 ```json
 {
-  "session_id": "session id returned by analyze_image",
+  "session_id": "session id returned by analyze_media",
   "message": "Why did OSINT matter here?"
 }
+```
+
+Use description:
+
+```text
+Ask a follow-up question about the previous ArgusAI analysis. Use this after analyze_media returns a session_id.
 ```
 
 ## Phoenix MCP
 
 Template config:
 
-`mcp/phoenix-mcp.json`
+```text
+mcp/phoenix-mcp.json
+```
 
-It uses the official Arize Phoenix MCP server package:
+Current template:
 
-`@arizeai/phoenix-mcp`
+```json
+{
+  "mcpServers": {
+    "phoenix": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@arizeai/phoenix-mcp@latest",
+        "--baseUrl",
+        "${PHOENIX_DASHBOARD_URL}",
+        "--apiKey",
+        "${PHOENIX_API_KEY}"
+      ]
+    }
+  }
+}
+```
 
-The MCP connection is used for Phoenix prompts, datasets, and experiments during the Agent Builder/Arize workflow. Runtime tracing is handled by `arize-phoenix-otel` in the backend.
+For the current self-hosted Phoenix Cloud Run setup:
 
-## Local Self-Hosted Phoenix
+```env
+PHOENIX_DASHBOARD_URL=https://argusai-phoenix-ddmxiumrdq-uc.a.run.app
+PHOENIX_API_KEY=
+```
 
-The Arize hosted signup flow was unreliable during setup, so the current working fallback is self-hosted Phoenix through Docker.
+Important: the MCP `--baseUrl` should be the Phoenix UI/base URL, not `/v1/traces`. The OTEL collector endpoint is only for backend tracing.
 
-Start Phoenix:
+If the Agent Builder/MCP UI rejects a blank API key for self-hosted Phoenix, manually remove the `--apiKey` and `${PHOENIX_API_KEY}` args from the MCP server config for that environment.
+
+## Phoenix Runtime Tracing
+
+Backend tracing is already configured on Cloud Run:
+
+```env
+PHOENIX_COLLECTOR_ENDPOINT=https://argusai-phoenix-ddmxiumrdq-uc.a.run.app/v1/traces
+PHOENIX_DASHBOARD_URL=https://argusai-phoenix-ddmxiumrdq-uc.a.run.app
+PHOENIX_PROJECT_NAME=argusai-forensics
+ARIZE_HEALTH_GOVERNOR=1
+```
+
+Verified:
+
+- `GET /arize/health` shows tracing configured/enabled.
+- `GET /arize/traces?limit=10` returns recent image/audio/video traces.
+- Phoenix Cloud Run logs show repeated `POST /v1/traces` HTTP 200.
+
+## Local Self-Hosted Phoenix Fallback
+
+Start local Phoenix:
 
 ```powershell
 docker compose -f docker-compose.phoenix.yml up -d
@@ -80,7 +141,7 @@ Local URLs:
 - HTTP collector: `http://localhost:6006/v1/traces`
 - gRPC collector: `http://localhost:4317`
 
-Local `.env` should use:
+Local `.env`:
 
 ```env
 PHOENIX_COLLECTOR_ENDPOINT=http://localhost:6006/v1/traces
@@ -89,27 +150,15 @@ PHOENIX_DASHBOARD_URL=http://localhost:6006
 ARIZE_HEALTH_GOVERNOR=1
 ```
 
-No `PHOENIX_API_KEY` is needed for the local Docker setup.
-
-Verified on May 29, 2026:
-
-- Phoenix container `argusai-phoenix` is running.
-- UI returns HTTP 200.
-- Backend tracing initializes with `enabled=True`.
-- Phoenix logs show successful `POST /v1/traces` traffic from a local ArgusAI smoke run.
-
-## Phoenix Cloud
-
-Phoenix env vars are not configured on Cloud Run yet. Add these once the Arize account is ready:
-
-- `PHOENIX_API_KEY`
-- `PHOENIX_COLLECTOR_ENDPOINT`
-- `PHOENIX_DASHBOARD_URL`
-
-Cloud Run should use Phoenix Cloud rather than `localhost`, because `localhost` inside Cloud Run would point to the Cloud Run container itself, not this laptop's Phoenix container.
+No `PHOENIX_API_KEY` is needed for local Phoenix.
 
 ## Demo Use
 
-For the 3-minute video, do not spend more than 10-15 seconds on Agent Builder. Show that the agent can call `analyze_image`, then return to the full ArgusAI UI and Phoenix trace.
+For the 3-minute video, spend only 10-20 seconds on Agent Builder:
 
-The main Arize proof is the detector health trace and reliability governor, not the Agent Builder configuration screen. If Phoenix Cloud is still unavailable, use local Phoenix in the recording and state that the demo is self-hosted Phoenix using the same OpenTelemetry trace path.
+1. Show Agent Builder has tools for `analyze_media` and `ask_forensic_followup`.
+2. Run one quick call or show the successful configuration.
+3. Return to the ArgusAI frontend/admin panel.
+
+The main Arize proof is Phoenix-backed detector health and the admin trace view, not the Agent Builder configuration screen.
+

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import logging
+import json
 import os
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, File, Form, Request, UploadFile
@@ -113,7 +115,9 @@ async def health() -> dict:
 async def arize_health() -> dict:
     governor = pipeline.health_governor.snapshot()
     trace = tracing_health()
-    if governor.get("status") == "anomaly":
+    if governor.get("status") == "calibration_alert":
+        label = "Calibration alert - spectral detector weight reduced"
+    elif governor.get("status") == "anomaly":
         label = "Detector anomaly detected - view in Arize"
     elif trace.get("enabled"):
         label = "Monitored by Arize Phoenix"
@@ -128,6 +132,61 @@ async def arize_health() -> dict:
         "tracing": trace,
         "detector_governor": governor,
     }
+
+
+@app.get("/arize/traces")
+async def arize_traces(limit: int = 10) -> dict:
+    log_dir = Path("logs/xray")
+    if not log_dir.exists():
+        return {"traces": []}
+
+    traces: list[dict[str, Any]] = []
+    for path in sorted(log_dir.glob("*.json"), key=lambda item: item.stat().st_mtime, reverse=True)[: max(1, min(limit, 50))]:
+        try:
+            data = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+
+        detectors = {}
+        raw_detectors = data.get("detector_metrics") or {}
+        if isinstance(raw_detectors, dict):
+            for detector_id, row in raw_detectors.items():
+                if not isinstance(row, dict):
+                    continue
+                detectors[detector_id] = {
+                    "status": str(row.get("status") or "unknown").lower(),
+                    "latency": row.get("time_seconds"),
+                    "support": row.get("support"),
+                    "visible": row.get("visible", True),
+                }
+
+        signal = data.get("signal")
+        if isinstance(signal, dict):
+            detectors[signal.get("id") or "audio_deepfake"] = {
+                "status": signal.get("status"),
+                "latency": (signal.get("metrics") or {}).get("latency_seconds"),
+                "support": signal.get("supports"),
+                "visible": True,
+            }
+
+        health = data.get("pipeline_health") or {}
+        governor = health.get("detector_governor") if isinstance(health, dict) else {}
+        calibration = governor.get("calibration_divergence") if isinstance(governor, dict) else None
+        traces.append(
+            {
+                "timestamp": data.get("timestamp") or data.get("generated_at"),
+                "sha256": data.get("image_hash") or data.get("sha256"),
+                "media_type": data.get("media_type") or ("audio" if path.name.startswith("audio_") else "image"),
+                "verdict": data.get("final_verdict") or data.get("verdict"),
+                "certainty": data.get("certainty"),
+                "latency_seconds": data.get("global_execution_time") or data.get("latency_seconds"),
+                "detectors": detectors,
+                "circuit_breaker_fired": any(bool((row or {}).get("circuit_breaker")) for row in raw_detectors.values()) if isinstance(raw_detectors, dict) else False,
+                "calibration_divergence": bool((calibration or {}).get("active")),
+            }
+        )
+
+    return {"traces": traces}
 
 
 def _too_large(contents: bytes) -> bool:
@@ -197,7 +256,7 @@ async def analyze_audio_in_session(
             content={"error": f"Expected audio file, got '{content_type}'."},
         )
 
-    report = await pipeline.analyze(contents, user_context=context)
+    report = await audio_pipeline.analyze(contents, user_context=context)
     session_store.set_report(session_id, report)
 
     session_store.append_message(
@@ -210,7 +269,7 @@ async def analyze_audio_in_session(
         session_id,
         "assistant",
         report.explanation,
-        {"kind": "report", "verdict": report.verdict.value, "report": report.model_dump(mode="json")},
+        {"kind": "report", "verdict": report.verdict, "report": report.model_dump(mode="json")},
     )
     return report.model_dump(mode="json")
 
@@ -229,10 +288,12 @@ async def session_followup(session_id: str, body: ChatMessageRequest):
     session_store.append_message(session_id, "user", body.message, {"kind": "text"})
 
     client = LLMClient()
+    report_payload = data.last_report.model_dump(mode="json")
+    evidence_payload = report_payload.get("evidence") or report_payload
     reply = await client.followup_answer(
         body.message,
-        data.last_report.verdict.value,
-        data.last_report.evidence.model_dump(),
+        data.last_report.verdict.value if hasattr(data.last_report.verdict, "value") else str(data.last_report.verdict),
+        evidence_payload,
     )
     if not reply:
         reply = "I could not generate a follow-up answer. Check LLM API keys and try again."

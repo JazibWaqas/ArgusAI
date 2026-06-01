@@ -23,6 +23,7 @@ class ScoreBreakdown(BaseModel):
 
 
 class ForensicReport(BaseModel):
+    media_type: str = Field(default="image", description="'image', 'video', or 'audio'.")
     verdict: Verdict
     certainty: float = Field(..., ge=0.0, le=1.0)
     confidence_label: str

@@ -1,6 +1,7 @@
 import os
+import subprocess
 import tempfile
-from typing import List
+from typing import List, Optional
 
 import cv2
 import numpy as np
@@ -67,3 +68,52 @@ def extract_sharpest_frames(video_bytes: bytes, max_frames: int = 3) -> List[np.
     top_frames = [f[1] for f in frames[:max_frames]]
     
     return top_frames
+
+
+def extract_audio_track(video_bytes: bytes) -> Optional[bytes]:
+    """
+    Extract a short mono WAV audio track from a video with ffmpeg when available.
+    Returns None for silent videos, missing ffmpeg, or unsupported containers.
+    """
+    if len(video_bytes) > MAX_FILE_SIZE_BYTES:
+        raise ValueError(f"Video file exceeds maximum size of {MAX_FILE_SIZE_BYTES / (1024*1024)}MB.")
+
+    input_path = None
+    output_path = None
+    try:
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as temp_video:
+            temp_video.write(video_bytes)
+            input_path = temp_video.name
+        with tempfile.NamedTemporaryFile(delete=False, suffix=".wav") as temp_audio:
+            output_path = temp_audio.name
+
+        cmd = [
+            "ffmpeg",
+            "-y",
+            "-v",
+            "error",
+            "-i",
+            input_path,
+            "-t",
+            str(MAX_DURATION_SECONDS),
+            "-vn",
+            "-ac",
+            "1",
+            "-ar",
+            "16000",
+            output_path,
+        ]
+        result = subprocess.run(cmd, capture_output=True, timeout=30, check=False)
+        if result.returncode != 0 or not output_path or not os.path.exists(output_path) or os.path.getsize(output_path) == 0:
+            return None
+        with open(output_path, "rb") as f:
+            return f.read()
+    except Exception:
+        return None
+    finally:
+        for path in (input_path, output_path):
+            if path and os.path.exists(path):
+                try:
+                    os.remove(path)
+                except Exception:
+                    pass

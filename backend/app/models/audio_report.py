@@ -1,6 +1,7 @@
 """Pydantic response model for audio deepfake analysis."""
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any, Dict
 
 from pydantic import BaseModel
@@ -9,6 +10,8 @@ from .evidence import EvidenceSignal
 
 
 class AudioForensicReport(BaseModel):
+    media_type: str = "audio"
+
     verdict: str
     """'authentic' | 'ai_generated' | 'unknown'"""
 
@@ -29,3 +32,9 @@ class AudioForensicReport(BaseModel):
 
     pipeline_health: Dict[str, Any]
     """Latency and other diagnostic metadata."""
+
+    generated_at: datetime
+
+    @staticmethod
+    def now() -> datetime:
+        return datetime.now(timezone.utc)

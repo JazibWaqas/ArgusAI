@@ -16,6 +16,9 @@ SIGNAL_IMPORTANCE = {
     "semantic_inconsistencies": 0.8,
     "error_level_analysis": 0.35,
     "osint_verification": 0.75,
+    "temporal_coherence": 0.75,
+    "audio_track": 0.7,
+    "audio_deepfake": 0.82,
 }
 
 STATUS_FACTOR = {
@@ -48,7 +51,9 @@ class ReasoningOutcome:
 
 class ReasoningEngine:
     async def reason(self, evidence: EvidenceProfile) -> ReasoningOutcome:
-        scored_signals = [self._score_signal(signal) for signal in evidence.signals]
+        media_type = getattr(evidence, "media_type", "image") or "image"
+        visible_signals = [signal for signal in evidence.signals if getattr(signal, "visible", True)]
+        scored_signals = [self._score_signal(signal) for signal in visible_signals]
 
         authentic_score = sum(item.contribution for item in scored_signals if item.bucket == "authentic")
         ai_score = sum(item.contribution for item in scored_signals if item.bucket == "ai_generated")
@@ -60,9 +65,9 @@ class ReasoningEngine:
         agreement = margin / directional_total if directional_total else 0.0
         uncertainty_ratio = inconclusive_score / total_considered if total_considered else 0.0
         usable_signal_count = sum(
-            1 for signal in evidence.signals if signal.status in {SignalStatus.OK, SignalStatus.WARNING} and signal.reliability > 0
+            1 for signal in visible_signals if signal.status in {SignalStatus.OK, SignalStatus.WARNING} and signal.reliability > 0
         )
-        blocked_signal_count = len(evidence.signals) - usable_signal_count
+        blocked_signal_count = len(visible_signals) - usable_signal_count
 
         leaning = None
         if directional_total >= 0.25 and margin >= 0.08:
@@ -82,7 +87,7 @@ class ReasoningEngine:
             total_considered=total_considered,
             agreement=agreement,
             uncertainty_ratio=uncertainty_ratio,
-            usable_signal_ratio=(usable_signal_count / len(evidence.signals)) if evidence.signals else 0.0,
+            usable_signal_ratio=(usable_signal_count / len(visible_signals)) if visible_signals else 0.0,
         )
         confidence_label = self._confidence_label(certainty)
 
@@ -98,9 +103,10 @@ class ReasoningEngine:
             leaning=leaning,
             usable_signal_count=usable_signal_count,
             blocked_signal_count=blocked_signal_count,
+            media_type=media_type,
         )
 
-        fallback_explanation = self._build_fallback_explanation(summary_payload)
+        fallback_explanation = self._build_fallback_explanation(summary_payload, media_type)
 
         client = LLMClient()
         llm_explanation = await client.generate_explanation(
@@ -199,6 +205,7 @@ class ReasoningEngine:
         leaning: Optional[Verdict],
         usable_signal_count: int,
         blocked_signal_count: int,
+        media_type: str,
     ) -> Dict[str, Any]:
         top_authentic = self._serialize_signals(scored_signals, "authentic")
         top_ai = self._serialize_signals(scored_signals, "ai_generated")
@@ -211,6 +218,7 @@ class ReasoningEngine:
             top_authentic=top_authentic,
             top_ai=top_ai,
             top_inconclusive=top_inconclusive,
+            media_type=media_type,
         )
 
         return {
@@ -219,6 +227,7 @@ class ReasoningEngine:
             "certainty_percent": int(round(certainty * 100)),
             "confidence_label": confidence_label,
             "leaning": leaning.value if leaning else None,
+            "media_type": media_type,
             "short_summary": short_summary,
             "scores": {
                 "authentic": round(authentic_score, 3),
@@ -309,8 +318,10 @@ class ReasoningEngine:
         top_authentic: List[Dict[str, Any]],
         top_ai: List[Dict[str, Any]],
         top_inconclusive: List[Dict[str, Any]],
+        media_type: str,
     ) -> str:
         certainty_pct = int(round(certainty * 100))
+        nouns = self._media_words(media_type)
 
         def _top_finding(signals: List[Dict[str, Any]]) -> str:
             """Pull the most specific finding from the top signal for the summary."""
@@ -334,10 +345,10 @@ class ReasoningEngine:
             if top:
                 finding = _top_finding(top_authentic)
                 return (
-                    f"This looks like a real photograph. Our confidence is {certainty_pct}%. "
-                    f"The strongest reason: {top['name']} found that {finding.lower() if finding else 'the image holds together physically'}."
+                    f"This looks like {nouns['authentic_article']}. Our confidence is {certainty_pct}%. "
+                    f"The strongest reason: {top['name']} found that {finding.lower() if finding else nouns['holds_together']}."
                 )
-            return f"The overall picture leans toward a real photograph at {certainty_pct}% confidence, with no strong AI signals detected."
+            return f"The overall evidence leans toward {nouns['authentic_article']} at {certainty_pct}% confidence, with no strong AI signals detected."
 
         if verdict == Verdict.LIKELY_AI_GENERATED:
             top = top_ai[0] if top_ai else None
@@ -345,13 +356,13 @@ class ReasoningEngine:
                 finding = _top_finding(top_ai)
                 return (
                     f"This looks AI-generated. Our confidence is {certainty_pct}%. "
-                    f"The strongest reason: {top['name']} found that {finding.lower() if finding else 'the image carries generation artifacts'}."
+                    f"The strongest reason: {top['name']} found that {finding.lower() if finding else nouns['ai_artifacts']}."
                 )
-            return f"The overall picture leans toward AI generation at {certainty_pct}% confidence, with multiple signals pointing the same way."
+            return f"The overall evidence leans toward AI generation at {certainty_pct}% confidence, with multiple signals pointing the same way."
 
         if leaning == Verdict.LIKELY_AUTHENTIC:
             top = top_authentic[0] if top_authentic else None
-            lean_reason = f" {top['name']} is the main reason it leans real." if top else ""
+            lean_reason = f" {top['name']} is the main reason it leans authentic." if top else ""
             return (
                 f"The result is mixed and we can only say this at {certainty_pct}% confidence. "
                 f"More checks point toward authentic than AI, but not by a wide enough margin to be confident.{lean_reason}"
@@ -371,7 +382,7 @@ class ReasoningEngine:
             f"The most weight came from {lead}, which could not produce a clear direction on their own."
         )
 
-    def _build_fallback_explanation(self, summary: Dict[str, Any]) -> str:
+    def _build_fallback_explanation(self, summary: Dict[str, Any], media_type: str = "image") -> str:
         certainty_percent = summary["certainty_percent"]
         verdict = Verdict(summary["verdict"])
         leaning = summary.get("leaning")
@@ -382,33 +393,34 @@ class ReasoningEngine:
         lead_authentic = self._signal_sentence(top_authentic)
         lead_ai = self._signal_sentence(top_ai)
         lead_uncertain = self._signal_sentence(top_inconclusive)
+        nouns = self._media_words(media_type)
 
         if verdict == Verdict.LIKELY_AUTHENTIC:
             intro = (
-                f"Right now, this looks more like a real photograph than an AI-generated one, with about {certainty_percent}% certainty. "
+                f"Right now, this looks more like {nouns['authentic_article']} than an AI-generated one, with about {certainty_percent}% certainty. "
                 "That score reflects how strongly the signals agree, not a guarantee."
             )
             evidence = (
                 f"The main reasons are {lead_authentic}. "
                 f"We still looked carefully at weaker or mixed signals such as {lead_uncertain}."
             )
-            close = "So in plain English, the image holds together more like a camera photo than a generated one, even though no single signal proves that by itself."
+            close = f"So in plain English, the {nouns['item']} holds together more like {nouns['authentic_article']} than a generated one, even though no single signal proves that by itself."
             return "\n\n".join([intro, evidence, close])
 
         if verdict == Verdict.LIKELY_AI_GENERATED:
             intro = (
-                f"Right now, this looks more likely AI-generated than camera-captured, with about {certainty_percent}% certainty. "
+                f"Right now, this looks more likely AI-generated than {nouns['authentic_phrase']}, with about {certainty_percent}% certainty. "
                 "That score reflects how strongly the signals agree, not a guarantee."
             )
             evidence = (
                 f"The biggest reasons are {lead_ai}. "
                 f"There are still some counter-signals or weaker checks, such as {lead_authentic or lead_uncertain}, but they do not outweigh the main issues."
             )
-            close = "So in plain English, more of the stronger signals look like generation artifacts or heavy synthetic processing than like a normal camera photo."
+            close = f"So in plain English, more of the stronger signals look like generation artifacts or heavy synthetic processing than like {nouns['authentic_article']}."
             return "\n\n".join([intro, evidence, close])
 
         if leaning == Verdict.LIKELY_AUTHENTIC.value:
-            lean_text = "slightly toward a real photograph"
+            lean_text = f"slightly toward {nouns['authentic_article']}"
             lead_support = lead_authentic
             lead_counter = lead_ai or lead_uncertain
         elif leaning == Verdict.LIKELY_AI_GENERATED.value:
@@ -432,6 +444,31 @@ class ReasoningEngine:
             f"Checks such as {lead_uncertain} add even more uncertainty, which is why the right answer here is to explain the balance of evidence instead of forcing a yes-or-no conclusion."
         )
         return "\n\n".join([intro, evidence, close])
+
+    def _media_words(self, media_type: str) -> Dict[str, str]:
+        if media_type == "video":
+            return {
+                "item": "footage",
+                "authentic_article": "real footage",
+                "authentic_phrase": "a real recording",
+                "holds_together": "the footage holds together across frames",
+                "ai_artifacts": "the footage carries generation artifacts",
+            }
+        if media_type == "audio":
+            return {
+                "item": "recording",
+                "authentic_article": "an authentic human recording",
+                "authentic_phrase": "authentic human speech",
+                "holds_together": "the recording has natural human speech patterns",
+                "ai_artifacts": "the recording carries voice synthesis artifacts",
+            }
+        return {
+            "item": "image",
+            "authentic_article": "a real photograph",
+            "authentic_phrase": "camera-captured",
+            "holds_together": "the image holds together physically",
+            "ai_artifacts": "the image carries generation artifacts",
+        }
 
     def _signal_sentence(self, items: List[Dict[str, Any]]) -> str:
         if not items:

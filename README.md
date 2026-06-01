@@ -1,8 +1,12 @@
 # ArgusAI
 
-Forensic investigation platform for image authenticity.
+Forensic investigation platform for image, video, and audio authenticity.
 
-ArgusAI is not a single-score deepfake detector. It runs seven parallel forensic detectors, builds an evidence trail, investigates public provenance with Gemini grounding, and uses Arize Phoenix as the audit layer for detector health.
+ArgusAI is not a single-score deepfake detector. It builds an evidence trail, investigates public provenance with Gemini grounding, and uses Arize Phoenix as the audit layer for detector health.
+
+For the latest hackathon handoff, deployment state, admin password, and next actions, read:
+
+`ContextFiles/CurrentHandoff.md`
 
 ## Hackathon Build Status
 
@@ -11,11 +15,11 @@ Target event: Google Cloud Rapid Agent Hackathon, Arize partner track.
 Current implementation:
 
 - FastAPI backend with session analysis, follow-up chat, PDF reports, and Agent Builder-facing endpoints.
-- React/Vite frontend with upload flow, animated analysis, signal cards, OSINT research details, Arize health badge, and PDF export.
-- Seven detectors running in parallel: spectral, metadata, noise, lighting, semantic vision, ELA, and OSINT.
+- React/Vite frontend with image/video/audio upload flow, animated analysis, signal cards, OSINT research details, Arize health badge, admin dashboard, and PDF export.
+- Media-specific forensic signals: spectral, metadata, noise/lighting for images, semantic reasoning, ELA, OSINT, temporal coherence for video, and audio authenticity for recordings.
 - Gemini-only AI stack for semantic analysis, OSINT synthesis, grounded research, report narratives, and chat follow-ups.
 - Arize Phoenix/OpenTelemetry instrumentation for root analysis traces and detector child spans.
-- Arize reliability governor: circuit-breaker events are not passive logs. They mark a detector unhealthy and remove it from future verdict influence during the health TTL.
+- Arize reliability governor: circuit-breaker and calibration events are not passive logs. They affect detector influence and are visible in the admin panel.
 - OSINT research agent output: research hops, earliest appearance candidate, fact-check sources, timeline contradiction, search queries, and optional reverse-image matches when the user provides a public image URL.
 
 Current cloud state:
@@ -23,20 +27,24 @@ Current cloud state:
 - Google Cloud project: `argusai-497719`.
 - Backend Cloud Run service: `argusai-backend`.
 - Backend URL: `https://argusai-backend-1007754127412.us-central1.run.app`.
+- Frontend Cloud Run service: `argusai-frontend`.
+- Frontend URL: `https://argusai-frontend-1007754127412.us-central1.run.app`.
+- Phoenix Cloud Run service: `argusai-phoenix`.
+- Phoenix URL: `https://argusai-phoenix-ddmxiumrdq-uc.a.run.app`.
 - Runtime region: `us-central1`.
-- Cloud Run settings: `4Gi` memory, `2` CPU, `300s` timeout, concurrency `1`, `min-instances=0`, `max-instances=3`.
+- Backend Cloud Run settings: `4Gi` memory, `2` CPU, `300s` timeout, concurrency `1`, `min-instances=0`, `max-instances=1`.
 - Gemini key is stored in Secret Manager as `argusai-gemini-api-key`.
 - Spectral weights are stored in Cloud Storage at `gs://argusai-497719-models/models/argusai_best_weights.pth`.
 - The backend health endpoint is live at `https://argusai-backend-1007754127412.us-central1.run.app/health`.
-- Local self-hosted Phoenix is working through Docker at `http://localhost:6006`; trace intake is confirmed through `POST /v1/traces`.
+- Phoenix trace intake is confirmed through Cloud Run logs showing `POST /v1/traces` HTTP 200.
+- Admin dashboard password: `argusai2026`.
 
 Still required:
 
-- Run a live `/analyze` request against Cloud Run to verify spectral model download and full detector behavior.
-- Deploy the frontend connected to the Cloud Run backend.
 - Configure Google Cloud Agent Builder tools against `/agent/analyze` and `/agent/chat`.
-- Create Phoenix Cloud space and set the Cloud Run Phoenix env vars, or use the verified self-hosted Phoenix path for the recorded demo if hosted signup remains blocked.
 - Connect the official Phoenix MCP server using `mcp/phoenix-mcp.json` for prompts/datasets/experiments.
+- Run the Pope puffer image end to end and confirm OSINT sources/dates.
+- Prepare or capture a calibration-governor demo moment.
 - Record the 3-minute demo.
 - Confirm whether model weights can be redistributed based on training dataset licenses.
 
@@ -51,7 +59,8 @@ The Arize integration is intentionally load-bearing. If the spectral detector fa
 ## API
 
 - `GET /health` - runtime status, detector list, LLM readiness, Phoenix tracing state, detector governor state.
-- `GET /arize/health` - compact status for the frontend Arize badge.
+- `GET /arize/health` - compact status for the frontend Arize badge and admin panel.
+- `GET /arize/traces` - recent analysis traces from x-ray logs for the admin dashboard.
 - `POST /sessions` - create an in-memory session.
 - `POST /sessions/{session_id}/analyze` - multipart `file`, optional `context`; returns full forensic report.
 - `POST /sessions/{session_id}/messages` - follow-up question about the last report.
@@ -135,7 +144,8 @@ Important deployment details:
 - `SPECTRAL_MODEL_GCS_URI` points Cloud Run to the private GCS checkpoint.
 - `SPECTRAL_MODEL_PATH=/tmp/argusai_best_weights.pth` in Cloud Run.
 - `SPECTRAL_REFERENCE_REAL_DIR=""` and `SPECTRAL_REFERENCE_AI_DIR=""` in Cloud Run so the container skips local reference-set self-test.
-- Keep `min-instances=0` during development. Switch to `min-instances=1` only near demo/judging if cold starts hurt.
+- Keep backend `max-instances=1` while sessions are in memory.
+- Keep `min-instances=0` during development. Switch backend/Phoenix to `min-instances=1` only near demo/judging if cold starts or Phoenix data reset hurt the demo.
 
 ## Demo Plan
 

@@ -7,12 +7,16 @@
 __pycache__/
 *.pyc
 .venv/
+.venv-adk/
 venv/
 frontend/node_modules/
 frontend/dist/
 logs/
+logs/agent_actions/
 spectral_eval_out/
 Images Dataset/
 argusai_fuse_best/
 *.pth
 *.pt
+firebase-key.json
+*firebase-adminsdk*.json

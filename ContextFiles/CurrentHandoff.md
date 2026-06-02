@@ -84,7 +84,7 @@ The deployed frontend bundle is verified to use the deployed backend URL, not `l
 Cloud Run services:
 
 ```text
-argusai-backend   latest verified revision: argusai-backend-00016-j7t
+argusai-backend   latest verified revision: argusai-backend-00017-bw8
 argusai-frontend  latest verified revision: argusai-frontend-00004-4h6
 argusai-phoenix   latest verified revision: argusai-phoenix-00001-dlc
 ```
@@ -185,6 +185,8 @@ Backend:
 - Agent Builder endpoints exist and are history-aware: `/agent/analyze` and `/agent/chat`.
 - Agent Builder endpoints now include Firestore history context: total persisted analyses, same-media counts, current detector reliability stats, recent same-media cases, and `phoenix_trace_id`.
 - `/agent/chat` injects Firestore history context before Gemini answers, so the agent can discuss accumulated reliability rather than acting like a generic Gemini wrapper.
+- Agent action endpoints exist under `/agent/tools/*`: detector reliability, similar cases, accuracy drift, detector recalibration, draft fact-check note, and human-review artifact.
+- `/agent/tools/recalibrate-detector` writes a bounded detector weight override to Firestore; `get_learned_weights()` consumes it, so future verdicts can change.
 
 Frontend:
 
@@ -210,6 +212,7 @@ Frontend:
 Cloud/Arize:
 
 - Backend deployed to Cloud Run.
+- Backend revision `argusai-backend-00017-bw8` is live with `/agent/tools/*` agent-action endpoints.
 - Frontend deployed to Cloud Run.
 - Phoenix deployed to Cloud Run using `arizephoenix/phoenix:latest`.
 - Firestore is active on Cloud Run. `/stats` returns `source: firestore`.
@@ -224,6 +227,32 @@ Config/docs:
 - `.env.example` includes Firebase env vars: `FIREBASE_PROJECT_ID`, `FIREBASE_SERVICE_ACCOUNT_JSON`, `GOOGLE_APPLICATION_CREDENTIALS`.
 - `mcp/phoenix-mcp.json` now uses `PHOENIX_DASHBOARD_URL` for `--baseUrl`, not the OTEL `/v1/traces` collector endpoint.
 - `frontend/Dockerfile` and `frontend/.gcloudignore` were added for Cloud Run frontend deployment.
+- Local Google ADK investigator agent exists at `agents/argusai_investigator`.
+- ADK agent uses Gemini, ArgusAI backend tools, and Phoenix MCP via `npx @arizeai/phoenix-mcp`.
+- ADK Phoenix MCP verification succeeded locally: `phoenix_list-projects` returned `argusai-forensics` / `UHJvamVjdDoy`, and `phoenix_list-traces` returned real traces/spans.
+
+ADK local run commands:
+
+```powershell
+uv venv .venv-adk
+uv pip install --python .venv-adk\Scripts\python.exe -r agents\argusai_investigator\requirements.txt
+$env:ARGUSAI_API_BASE="http://127.0.0.1:8000"
+$env:ADK_GEMINI_MODEL="gemini-3.5-flash"
+.\.venv-adk\Scripts\adk.exe run agents\argusai_investigator
+```
+
+If Windows reports `[WinError 10013]` or port `8000` is stuck, run the backend on `8001` and set `ARGUSAI_API_BASE` accordingly:
+
+```powershell
+.\.venv\Scripts\python.exe -m uvicorn backend.app.main:app --host 127.0.0.1 --port 8001
+$env:ARGUSAI_API_BASE="http://127.0.0.1:8001"
+```
+
+If Gemini 3.5 is temporarily high-demand during recording, use:
+
+```powershell
+$env:ADK_GEMINI_MODEL="gemini-2.5-flash"
+```
 
 ## Self-Calibration + Fixes (June 2, 2026 — latest session)
 

@@ -35,6 +35,7 @@ Current implementation:
 - Firestore persistence layer for accumulated analysis history, detector reliability stats, global stats, verdict feedback, and health governor state.
 - Agent Builder endpoints that use Firestore history context before responding, so the agent can discuss accumulated detector reliability and recent same-media cases.
 - Phoenix chain-of-custody links surfaced in verdict cards, signal details, admin trace rows, Agent Builder responses, and official PDFs.
+- Repo-local Google ADK investigator agent in `agents/argusai_investigator`, with ArgusAI backend tools and Phoenix MCP tools.
 - Cloud Run Gemini rotation across 35 keys through Secret Manager.
 - OSINT research agent output: research hops, earliest appearance candidate, fact-check sources, timeline contradiction, search queries, and optional reverse-image matches when the user provides a public image URL.
 
@@ -98,8 +99,26 @@ Demo line:
 - `POST /analyze` - direct full analysis without a session.
 - `POST /agent/analyze` - Agent Builder-friendly analysis response with simplified schema.
 - `POST /agent/chat` - Agent Builder-friendly follow-up endpoint.
+- `GET /agent/tools/detectors/{detector_id}/reliability` - agent tool for detector reliability and applied weight.
+- `GET /agent/tools/accuracy-drift` - agent tool for recent-vs-historical confirmed accuracy drift.
+- `GET /agent/tools/similar-cases` - agent tool for prior same-media investigations.
+- `POST /agent/tools/recalibrate-detector` - agent action that writes a bounded detector weight override.
+- `POST /agent/tools/draft-fact-check-note` - agent action artifact for a citable note.
+- `POST /agent/tools/flag-for-human-review` - agent action artifact for human review.
 - `GET /sessions/{session_id}/report.pdf` - PDF export for a session.
 - `POST /reports/official.pdf` - PDF export from a report JSON payload.
+
+## Local ADK Agent
+
+```powershell
+uv venv .venv-adk
+uv pip install --python .venv-adk\Scripts\python.exe -r agents\argusai_investigator\requirements.txt
+$env:ARGUSAI_API_BASE="http://127.0.0.1:8000"
+$env:ADK_GEMINI_MODEL="gemini-3.5-flash"
+.\.venv-adk\Scripts\adk.exe run agents\argusai_investigator
+```
+
+The ADK agent connects to Phoenix MCP with `npx @arizeai/phoenix-mcp`. If Gemini 3.5 is temporarily high-demand, set `ADK_GEMINI_MODEL=gemini-2.5-flash` for the demo run.
 
 ## Local Setup
 

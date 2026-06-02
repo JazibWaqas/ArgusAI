@@ -55,6 +55,24 @@ def _learned_multiplier(confirmed_accuracy: float, confirmed_total: int) -> floa
     return round(max(LEARNED_WEIGHT_FLOOR, min(LEARNED_WEIGHT_CEIL, raw)), 3)
 
 
+def _bounded_multiplier(value: Any) -> Optional[float]:
+    try:
+        raw = float(value)
+    except Exception:
+        return None
+    return round(max(LEARNED_WEIGHT_FLOOR, min(LEARNED_WEIGHT_CEIL, raw)), 3)
+
+
+def _effective_multiplier(data: dict[str, Any]) -> float:
+    override = _bounded_multiplier(data.get("agent_weight_override"))
+    if override is not None:
+        return override
+    return _learned_multiplier(
+        float(data.get("confirmed_accuracy") or 0.0),
+        int(data.get("confirmed_total") or 0),
+    )
+
+
 def _support_direction(support: Any) -> Optional[str]:
     value = getattr(support, "value", support)
     text = str(value or "").lower()
@@ -304,7 +322,7 @@ def get_stats() -> Optional[dict[str, Any]]:
             confirmed_total = int(data.get("confirmed_total") or 0)
             confirmed_correct = int(data.get("confirmed_correct") or 0)
             confirmed_accuracy = float(data.get("confirmed_accuracy") or 0.0)
-            multiplier = _learned_multiplier(confirmed_accuracy, confirmed_total)
+            multiplier = _effective_multiplier(data)
             detectors[doc.id] = {
                 "total_runs": int(data.get("total_runs") or 0),
                 "correct_count": int(data.get("correct_count") or 0),
@@ -313,6 +331,9 @@ def get_stats() -> Optional[dict[str, Any]]:
                 "confirmed_correct": confirmed_correct,
                 "confirmed_accuracy": confirmed_accuracy,
                 "weight_multiplier": multiplier,
+                "agent_weight_override": _bounded_multiplier(data.get("agent_weight_override")),
+                "agent_override_reason": data.get("agent_override_reason"),
+                "agent_override_updated_at": data.get("agent_override_updated_at"),
                 "avg_latency_seconds": float(data.get("avg_latency_seconds") or 0.0),
                 "last_updated": data.get("last_updated"),
             }
@@ -370,6 +391,126 @@ def get_learned_weights() -> dict[str, float]:
     _learned_weights_cache["ts"] = now
     _learned_weights_cache["value"] = weights
     return weights
+
+
+def clear_learned_weights_cache() -> None:
+    _learned_weights_cache["ts"] = 0.0
+    _learned_weights_cache["value"] = {}
+
+
+def get_detector_reliability(detector_id: str) -> dict[str, Any]:
+    stats = get_stats() or fallback_stats_from_xray()
+    detector = ((stats or {}).get("detectors") or {}).get(detector_id)
+    if not detector:
+        return {
+            "ok": False,
+            "detector_id": detector_id,
+            "error": "Detector reliability not found.",
+            "source": (stats or {}).get("source") or "unavailable",
+        }
+    return {"ok": True, "detector_id": detector_id, "source": stats.get("source"), **detector}
+
+
+def get_similar_past_cases(media_type: str = "image", limit: int = 8) -> dict[str, Any]:
+    rows = trace_rows_from_firestore(max(1, min(limit * 3, 50)))
+    source = "firestore"
+    if rows is None:
+        rows = []
+        source = "unavailable"
+    media = (media_type or "image").lower()
+    cases = [row for row in rows if str(row.get("media_type") or "image").lower() == media][: max(1, min(limit, 20))]
+    return {"ok": True, "source": source, "media_type": media, "count": len(cases), "cases": cases}
+
+
+def detect_accuracy_drift(recent_limit: int = 8, min_confirmed: int = 3, threshold: float = 0.2) -> dict[str, Any]:
+    db = get_db()
+    if db is None:
+        return {"ok": False, "error": "Firebase unavailable.", "detectors": [], "source": "unavailable"}
+    recent_n = max(1, min(int(recent_limit or 8), 50))
+    min_n = max(1, min(int(min_confirmed or 3), recent_n))
+    threshold_val = max(0.01, min(float(threshold or 0.2), 1.0))
+    try:
+        docs = list(db.collection("analyses").order_by("timestamp", direction="DESCENDING").limit(100).stream())
+        per_detector: dict[str, dict[str, Any]] = {}
+        for doc in docs:
+            data = doc.to_dict() or {}
+            feedback = data.get("user_feedback")
+            verdict_direction = _verdict_direction(data.get("verdict"))
+            if feedback not in {"correct", "incorrect"} or verdict_direction not in {"ai_generated", "authentic"}:
+                continue
+            truth = verdict_direction if feedback == "correct" else _opposite(verdict_direction)
+            detectors = data.get("detectors") if isinstance(data.get("detectors"), dict) else {}
+            for detector_id, row in detectors.items():
+                if not isinstance(row, dict):
+                    continue
+                support = _support_direction(row.get("support"))
+                if support not in {"ai_generated", "authentic"}:
+                    continue
+                bucket = per_detector.setdefault(detector_id, {"all": [], "recent": []})
+                correct = 1 if support == truth else 0
+                bucket["all"].append(correct)
+                if len(bucket["recent"]) < recent_n:
+                    bucket["recent"].append(correct)
+
+        out = []
+        for detector_id, bucket in per_detector.items():
+            all_values = bucket["all"]
+            recent_values = bucket["recent"]
+            if len(recent_values) < min_n or not all_values:
+                continue
+            historical = sum(all_values) / len(all_values)
+            recent = sum(recent_values) / len(recent_values)
+            delta = round(recent - historical, 4)
+            drifted = delta <= -threshold_val
+            out.append(
+                {
+                    "detector_id": detector_id,
+                    "historical_accuracy": round(historical, 4),
+                    "recent_accuracy": round(recent, 4),
+                    "delta": delta,
+                    "recent_confirmations": len(recent_values),
+                    "total_confirmations": len(all_values),
+                    "drifted": drifted,
+                    "suggested_multiplier": 0.75 if drifted else 1.0,
+                }
+            )
+        out.sort(key=lambda row: (not row["drifted"], row["delta"]))
+        return {"ok": True, "source": "firestore", "detectors": out, "threshold": threshold_val, "recent_limit": recent_n}
+    except Exception as exc:
+        log.warning("Could not detect accuracy drift: %s", exc)
+        return {"ok": False, "error": "Could not compute drift.", "detectors": [], "source": "firestore"}
+
+
+def recalibrate_detector_weight(detector_id: str, multiplier: float, reason: str = "agent_recalibration") -> dict[str, Any]:
+    db = get_db()
+    if db is None:
+        return {"ok": False, "error": "Firebase unavailable.", "detector_id": detector_id}
+    detector = (detector_id or "").strip()
+    if not detector:
+        return {"ok": False, "error": "detector_id is required."}
+    bounded = _bounded_multiplier(multiplier)
+    if bounded is None:
+        return {"ok": False, "error": "multiplier must be numeric.", "detector_id": detector}
+    try:
+        db.collection("detector_stats").document(detector).set(
+            {
+                "agent_weight_override": bounded,
+                "agent_override_reason": (reason or "agent_recalibration")[:500],
+                "agent_override_updated_at": _now_iso(),
+                "last_updated": _now_iso(),
+            },
+            merge=True,
+        )
+        clear_learned_weights_cache()
+        return {
+            "ok": True,
+            "detector_id": detector,
+            "weight_multiplier": bounded,
+            "reason": (reason or "agent_recalibration")[:500],
+        }
+    except Exception as exc:
+        log.warning("Could not recalibrate detector %s: %s", detector, exc)
+        return {"ok": False, "error": "Could not persist recalibration.", "detector_id": detector}
 
 
 def trace_rows_from_firestore(limit: int = 10) -> Optional[list[dict[str, Any]]]:

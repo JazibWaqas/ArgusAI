@@ -14,6 +14,27 @@ Read `ContextFiles/CurrentHandoff.md` first for the complete deployed state.
 
 ## Agent Builder Tools
 
+Current practical route for the demo: use the repo-local Google ADK agent in `agents/argusai_investigator`. It is code-first, uses Gemini, connects to Phoenix MCP locally through `npx @arizeai/phoenix-mcp`, and calls ArgusAI backend tools. This avoids manual console setup blocking the recording.
+
+Run locally:
+
+```powershell
+uv venv .venv-adk
+uv pip install --python .venv-adk\Scripts\python.exe -r agents\argusai_investigator\requirements.txt
+$env:ARGUSAI_API_BASE="http://127.0.0.1:8000"
+$env:ADK_GEMINI_MODEL="gemini-3.5-flash"
+.\.venv-adk\Scripts\adk.exe run agents\argusai_investigator
+```
+
+Verified locally:
+
+- ADK agent imported successfully with 10 tools.
+- Phoenix MCP server starts over stdio.
+- ADK called `phoenix_list-projects` and `phoenix_list-traces`.
+- Phoenix returned project `argusai-forensics` with internal ID `UHJvamVjdDoy` and real traces/spans.
+
+If Gemini 3.5 returns temporary `503 high demand`, use `ADK_GEMINI_MODEL=gemini-2.5-flash` for the recording fallback.
+
 Create two tools in Google Cloud Agent Builder.
 
 ### Tool 1: analyze_media

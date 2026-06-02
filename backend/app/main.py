@@ -16,8 +16,12 @@ from .core.analysis_store import (
     annotate_phoenix_feedback,
     apply_feedback,
     build_history_context,
+    detect_accuracy_drift,
     fallback_stats_from_xray,
+    get_detector_reliability,
+    get_similar_past_cases,
     get_stats,
+    recalibrate_detector_weight,
     trace_rows_from_firestore,
 )
 from .core.config import settings
@@ -67,6 +71,25 @@ class AgentChatRequest(BaseModel):
 
 class FeedbackRequest(BaseModel):
     verdict_correct: bool
+
+
+class RecalibrateDetectorRequest(BaseModel):
+    detector_id: str = Field(..., min_length=1, max_length=120)
+    multiplier: float = Field(..., ge=0.5, le=1.5)
+    reason: str = Field(default="agent_recalibration", max_length=500)
+
+
+class FactCheckNoteRequest(BaseModel):
+    session_id: str | None = None
+    verdict: str | None = None
+    claim: str | None = None
+    evidence_summary: str | None = None
+
+
+class HumanReviewRequest(BaseModel):
+    session_id: str | None = None
+    reason: str = Field(..., min_length=1, max_length=1000)
+    priority: str = Field(default="normal", max_length=40)
 
 app.add_middleware(
     CORSMiddleware,
@@ -225,6 +248,71 @@ async def stats() -> dict:
     if firestore_stats:
         return firestore_stats
     return fallback_stats_from_xray()
+
+
+@app.get("/agent/tools/detectors/{detector_id}/reliability")
+async def agent_tool_detector_reliability(detector_id: str) -> dict:
+    return get_detector_reliability(detector_id)
+
+
+@app.get("/agent/tools/similar-cases")
+async def agent_tool_similar_cases(media_type: str = "image", limit: int = 8) -> dict:
+    return get_similar_past_cases(media_type=media_type, limit=limit)
+
+
+@app.get("/agent/tools/accuracy-drift")
+async def agent_tool_accuracy_drift(recent_limit: int = 8, min_confirmed: int = 3, threshold: float = 0.2) -> dict:
+    return detect_accuracy_drift(recent_limit=recent_limit, min_confirmed=min_confirmed, threshold=threshold)
+
+
+@app.post("/agent/tools/recalibrate-detector")
+async def agent_tool_recalibrate_detector(body: RecalibrateDetectorRequest) -> dict:
+    return recalibrate_detector_weight(body.detector_id, body.multiplier, body.reason)
+
+
+def _session_report_payload(session_id: str | None) -> dict[str, Any] | None:
+    if not session_id:
+        return None
+    data = session_store.get(session_id)
+    if not data or not data.last_report:
+        return None
+    return data.last_report.model_dump(mode="json")
+
+
+@app.post("/agent/tools/draft-fact-check-note")
+async def agent_tool_draft_fact_check_note(body: FactCheckNoteRequest) -> dict:
+    report = _session_report_payload(body.session_id)
+    verdict = body.verdict or (report or {}).get("verdict") or "inconclusive"
+    summary = body.evidence_summary or (report or {}).get("short_summary") or "Evidence summary unavailable."
+    trace_id = (report or {}).get("phoenix_trace_id")
+    claim = body.claim or "the submitted media authenticity claim"
+    note = (
+        f"Claim reviewed: {claim}\n"
+        f"ArgusAI finding: {verdict}.\n"
+        f"Evidence basis: {summary}\n"
+        f"Audit trail: {'Phoenix trace ' + trace_id if trace_id else 'Phoenix trace unavailable'}.\n"
+        "Recommended action: cite this as an automated forensic screening result and keep human editorial review in the loop."
+    )
+    return {"ok": True, "artifact_type": "fact_check_note", "note": note, "phoenix_trace_id": trace_id}
+
+
+@app.post("/agent/tools/flag-for-human-review")
+async def agent_tool_flag_for_human_review(body: HumanReviewRequest) -> dict:
+    record = {
+        "session_id": body.session_id,
+        "reason": body.reason,
+        "priority": body.priority,
+        "status": "queued_for_human_review",
+    }
+    try:
+        action_dir = Path("logs/agent_actions")
+        action_dir.mkdir(parents=True, exist_ok=True)
+        path = action_dir / f"human_review_{abs(hash(json.dumps(record, sort_keys=True))) & 0xffffffff:x}.json"
+        path.write_text(json.dumps(record, indent=2), encoding="utf-8")
+        record["local_artifact"] = str(path)
+    except Exception:
+        pass
+    return {"ok": True, **record}
 
 
 def _too_large(contents: bytes) -> bool:

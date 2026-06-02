@@ -73,6 +73,7 @@ ipython_config.py
 
 # virtualenv
 .venv/
+.venv-adk/
 venv/
 ENV/
 env/
@@ -96,6 +97,7 @@ argusai_latest.pth
 argusai_best_weights.pth
 spectral_eval_out/
 firebase-key.json
+logs/agent_actions/
 
 # Node/Vite Frontend
 frontend/node_modules/

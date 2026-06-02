@@ -6,7 +6,7 @@ For full details, read `ContextFiles/CurrentHandoff.md`. This file is the concis
 
 ## Status
 
-Backend, frontend, self-hosted Phoenix, and Firestore persistence are deployed on Google Cloud Run. Image, audio, and video analysis have been smoke-tested against the live backend. Arize/Phoenix is receiving live OpenTelemetry traces, `/stats` is Firestore-backed, the admin dashboard is wired to persistent stats plus trace data, and Agent Builder endpoints now receive Firestore history context before responding.
+Backend, frontend, self-hosted Phoenix, Firestore persistence, and a local Google ADK investigator agent are implemented. Image, audio, and video analysis have been smoke-tested against the live backend. Arize/Phoenix is receiving live OpenTelemetry traces, `/stats` is Firestore-backed, the admin dashboard is wired to persistent stats plus trace data, and the ADK agent can call both ArgusAI backend tools and Phoenix MCP tools.
 
 ## Live Services
 
@@ -47,6 +47,9 @@ Google Cloud:
 - Verdict cards show an inline Phoenix audit link, and official PDFs include trace ID/timestamp chain-of-custody footer.
 - Admin panel includes the Firestore/Phoenix explanatory framing copy for judges.
 - Phoenix MCP config fixed to use `PHOENIX_DASHBOARD_URL`.
+- Local ADK agent package added at `agents/argusai_investigator`.
+- ADK agent uses Gemini, ArgusAI backend tools, and Phoenix MCP via `npx @arizeai/phoenix-mcp`.
+- Agent action endpoints added: detector reliability, similar cases, drift detection, detector recalibration, fact-check note, and human-review artifact.
 
 ## Live Verification
 
@@ -80,24 +83,31 @@ Arize/Phoenix:
 - Backend `/arize/health` reports tracing configured/enabled.
 - Backend `/arize/traces` returns Firestore-backed traces.
 - Phoenix Cloud Run logs confirm repeated `POST /v1/traces` HTTP 200.
+- Local ADK Phoenix MCP verification succeeded: the agent called `phoenix_list-projects` and `phoenix_list-traces` against local Phoenix and received the `argusai-forensics` project (`UHJvamVjdDoy`) plus real traces/spans.
 
 Firestore/Gemini:
 
 - Backend `/stats` returns `source: firestore`.
 - Backend `/health` reports `gemini_key_count: 35`.
 - Live `/analyze` returned a `phoenix_trace_id` and persisted an analysis to Firestore.
-- Live backend revision after Agent Builder/chain-of-custody work: `argusai-backend-00016-j7t`.
+- Live backend revision after ADK/agent-action endpoint work: `argusai-backend-00017-bw8`.
 - Live frontend revision after Agent Builder/chain-of-custody work: `argusai-frontend-00004-4h6`.
+- Backend agent action endpoints verified locally on port `8001`; `recalibrate-detector` wrote a bounded `1.0x` no-op override to Firestore for `spectral_artifacts`.
+- Backend agent action endpoints verified on Cloud Run after deploy: `/agent/tools/detectors/spectral_artifacts/reliability` and `/agent/tools/accuracy-drift` returned Firestore-backed responses.
+- ADK default model is `gemini-3.5-flash`; during verification Gemini 3.5 returned temporary `503 high demand`, so `ADK_GEMINI_MODEL=gemini-2.5-flash` was used once to prove tool execution.
 
 ## Remaining
 
-1. Configure Google Cloud Agent Builder tools:
+1. Use the local ADK investigator agent for the demo:
+   - install with `uv pip install --python .venv-adk\Scripts\python.exe -r agents\argusai_investigator\requirements.txt`
+   - run with `adk run agents\argusai_investigator`
+   - set `ARGUSAI_API_BASE` to the local backend port.
+2. Configure Google Cloud Agent Builder tools if you still want console proof:
    - `POST https://argusai-backend-1007754127412.us-central1.run.app/agent/analyze`
    - `POST https://argusai-backend-1007754127412.us-central1.run.app/agent/chat`
    - These endpoints are no longer generic Gemini wrappers; they now query Firestore-backed history context.
-2. Connect Phoenix MCP with `mcp/phoenix-mcp.json`.
 3. Run the Pope puffer demo image end to end and confirm OSINT output.
-4. Prepare or capture a calibration-governor/admin-panel demo moment.
+4. Prepare or capture a calibration/recalibration demo moment.
 5. Record the 3-minute demo.
 6. Complete Devpost submission.
 7. Optionally set backend/Phoenix `min-instances=1` during recording/judging to avoid cold starts and Phoenix data reset.

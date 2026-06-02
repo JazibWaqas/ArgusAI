@@ -18,9 +18,11 @@ from .core.analysis_store import (
     build_history_context,
     detect_accuracy_drift,
     fallback_stats_from_xray,
+    get_agent_actions,
     get_detector_reliability,
     get_similar_past_cases,
     get_stats,
+    log_agent_action,
     recalibrate_detector_weight,
     trace_rows_from_firestore,
 )
@@ -293,6 +295,11 @@ async def agent_tool_draft_fact_check_note(body: FactCheckNoteRequest) -> dict:
         f"Audit trail: {'Phoenix trace ' + trace_id if trace_id else 'Phoenix trace unavailable'}.\n"
         "Recommended action: cite this as an automated forensic screening result and keep human editorial review in the loop."
     )
+    log_agent_action(
+        "fact_check_note",
+        f"Drafted fact-check note ({verdict})",
+        {"claim": claim[:200], "verdict": verdict, "phoenix_trace_id": trace_id},
+    )
     return {"ok": True, "artifact_type": "fact_check_note", "note": note, "phoenix_trace_id": trace_id}
 
 
@@ -312,7 +319,18 @@ async def agent_tool_flag_for_human_review(body: HumanReviewRequest) -> dict:
         record["local_artifact"] = str(path)
     except Exception:
         pass
+    log_agent_action(
+        "flag_review",
+        f"Flagged case for human review ({body.priority})",
+        {"reason": (body.reason or "")[:200], "priority": body.priority},
+    )
     return {"ok": True, **record}
+
+
+@app.get("/agent/activity")
+async def agent_activity(limit: int = 15) -> dict:
+    """Recent autonomous agent actions for the operator console."""
+    return {"actions": get_agent_actions(limit)}
 
 
 def _too_large(contents: bytes) -> bool:

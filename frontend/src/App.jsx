@@ -4,7 +4,7 @@ import {
   ShieldCheck, AlertOctagon, HelpCircle, Search, Camera, Eye,
   ScanSearch, Activity, Target, Database, ChevronDown, ChevronRight,
   Fingerprint, Sparkles, Send, X, Image as ImageIcon, Copy, Check,
-  Zap, Globe, Layers, Cpu, FileDown, Lock, RefreshCw
+  Zap, Globe, Layers, Cpu, FileDown, RefreshCw
 } from "lucide-react";
 import "./styles.css";
 
@@ -174,7 +174,7 @@ const SIGNAL_THEME = {
   noise:     { color: "#10b981", glow: "rgba(16,185,129,0.25)",  label: "Noise"    },
   lighting:  { color: "#f97316", glow: "rgba(249,115,22,0.25)",  label: "Lighting" },
   audio:     { color: "#06b6d4", glow: "rgba(6,182,212,0.25)",   label: "Audio"    },
-  default:   { color: "#00e6ff", glow: "rgba(0,230,255,0.25)",   label: "Signal"   },
+  default:   { color: "#22d3ee", glow: "rgba(34,211,238,0.25)",  label: "Signal"   },
 };
 
 function getSignalTheme(category) {
@@ -518,7 +518,7 @@ function AnimatedSignalCard({ signal, index, mediaType = "image", detectorStats 
             <div className="signal-detail-row signal-detail-row--audit">
               <span className="signal-detail-label">Audit trail</span>
               <a className="phoenix-link" href={traceUrl} target="_blank" rel="noreferrer">
-                View in Phoenix <ChevronRight size={12} />
+                View verification record <ChevronRight size={12} />
               </a>
             </div>
           )}
@@ -716,10 +716,6 @@ function AudioReportCard({ reportData, sessionId, feedbackState, onFeedback, det
   const verdictLabel = isAI ? "AI-Generated Voice" : isAuth ? "Authentic Voice" : "Inconclusive";
   const verdictClass = isAI ? "verdict-ai" : isAuth ? "verdict-authentic" : "verdict-inconclusive";
 
-  const source = reportData.inference_source || "unknown";
-  const sourceLabel = source === "local_wav2vec2" ? "Local wav2vec2 model" : source === "hf_space" ? "Hosted voice model" : source;
-  const sourceColor = source === "local_wav2vec2" ? "#10b981" : "#06b6d4";
-
   const sig = reportData.signal;
   const realStats = sig ? detectorStats?.[sig.id] : null;
   const showRealStats = realStats && Number(realStats.total_runs || 0) >= 5;
@@ -756,13 +752,6 @@ function AudioReportCard({ reportData, sessionId, feedbackState, onFeedback, det
             <span className="verdict-confidence-value">{certaintyPercent}%</span>
             <span className="verdict-confidence-tag">{confidenceLabel}</span>
           </div>
-          {/* Inference source badge */}
-          <span
-            className="arize-badge"
-            style={{ color: sourceColor, borderColor: `${sourceColor}40`, background: `${sourceColor}12`, marginTop: 8 }}
-          >
-            {sourceLabel}
-          </span>
           {reportData.phoenix_trace_id && (
             <a className="verdict-audit-link" href={phoenixTraceUrl(reportData.phoenix_trace_id)} target="_blank" rel="noreferrer">
               Trace {shortHash(reportData.phoenix_trace_id)} · View audit trail <ChevronRight size={12} />
@@ -884,7 +873,7 @@ function AudioReportCard({ reportData, sessionId, feedbackState, onFeedback, det
               <div className="signal-detail-row signal-detail-row--audit" style={{ marginTop: 8 }}>
                 <span className="signal-detail-label">Audit trail</span>
                 <a className="phoenix-link" href={phoenixTraceUrl(reportData.phoenix_trace_id)} target="_blank" rel="noreferrer">
-                  View in Phoenix <ChevronRight size={12} />
+                  View verification record <ChevronRight size={12} />
                 </a>
               </div>
             )}
@@ -961,19 +950,22 @@ function ForensicReportCard({ reportData, showJson, onToggleJson, onDownloadPdf,
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.18, duration: 0.4 }}
       >
-        This verdict reflects how strongly independent forensic signals agree — not a single classifier score.{modelHealth ? ` ${modelHealth}.` : ""}
+        This verdict reflects how strongly the independent forensic signals agree, not a single classifier score.{modelHealth ? ` ${modelHealth}.` : ""}
       </motion.div>
 
-      <motion.div
-        className="narrative"
-        initial={{ opacity: 0, y: 16 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ delay: 0.25, duration: 0.5 }}
-      >
-        {explanationParagraphs.map((paragraph, index) => (
-          <p key={index}>{paragraph}</p>
-        ))}
-      </motion.div>
+      {explanationParagraphs.length > 0 && (
+        <motion.div
+          className="narrative"
+          initial={{ opacity: 0, y: 16 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.25, duration: 0.5 }}
+        >
+          <h3 className="narrative-title">Detailed assessment</h3>
+          {explanationParagraphs.map((paragraph, index) => (
+            <p key={index}>{paragraph}</p>
+          ))}
+        </motion.div>
+      )}
 
       <motion.div
         className="signals-section"
@@ -1047,12 +1039,10 @@ function ForensicReportCard({ reportData, showJson, onToggleJson, onDownloadPdf,
   );
 }
 
-function AdminPanel({ open, onClose, arizeHealth, onHealthUpdate, statsData, onStatsUpdate }) {
-  const [password, setPassword] = useState("");
-  const [authed, setAuthed] = useState(() => localStorage.getItem("argusai_admin") === "1");
-  const [shake, setShake] = useState(false);
+function AdminConsole({ onExit, onLogout, arizeHealth, onHealthUpdate, statsData, onStatsUpdate }) {
   const [traces, setTraces] = useState([]);
   const [health, setHealth] = useState(arizeHealth);
+  const [agentActions, setAgentActions] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -1061,18 +1051,19 @@ function AdminPanel({ open, onClose, arizeHealth, onHealthUpdate, statsData, onS
   }, [arizeHealth]);
 
   const loadAdminData = useCallback(async () => {
-    if (!authed) return;
     setLoading(true);
     setError("");
     try {
-      const [healthRes, tracesRes, statsRes] = await Promise.all([
+      const [healthRes, tracesRes, statsRes, agentRes] = await Promise.all([
         fetch(`${API_BASE}/arize/health`),
         fetch(`${API_BASE}/arize/traces?limit=10`),
         fetch(`${API_BASE}/stats`),
+        fetch(`${API_BASE}/agent/activity?limit=15`),
       ]);
       const healthJson = healthRes.ok ? await healthRes.json() : null;
       const tracesJson = tracesRes.ok ? await tracesRes.json() : { traces: [] };
       const statsJson = statsRes.ok ? await statsRes.json() : null;
+      const agentJson = agentRes.ok ? await agentRes.json() : { actions: [] };
       if (healthJson) {
         if (healthJson.phoenix_link) setPhoenixLinkInfo(healthJson.phoenix_link);
         setHealth(healthJson);
@@ -1080,18 +1071,17 @@ function AdminPanel({ open, onClose, arizeHealth, onHealthUpdate, statsData, onS
       }
       if (statsJson) onStatsUpdate?.(statsJson);
       setTraces(Array.isArray(tracesJson.traces) ? tracesJson.traces : []);
+      setAgentActions(Array.isArray(agentJson.actions) ? agentJson.actions : []);
     } catch {
       setError("Could not load Arize operator data.");
     } finally {
       setLoading(false);
     }
-  }, [authed, onHealthUpdate, onStatsUpdate]);
+  }, [onHealthUpdate, onStatsUpdate]);
 
   useEffect(() => {
-    if (open && authed) loadAdminData();
-  }, [open, authed, loadAdminData]);
-
-  if (!open) return null;
+    loadAdminData();
+  }, [loadAdminData]);
 
   const governor = health?.detector_governor || {};
   const detectorRows = Object.entries(governor.detectors || {});
@@ -1105,66 +1095,74 @@ function AdminPanel({ open, onClose, arizeHealth, onHealthUpdate, statsData, onS
   const aiCount = verdictStats.likely_ai_generated || verdictStats.ai_generated || 0;
   const authCount = verdictStats.likely_authentic || verdictStats.authentic || 0;
   const incCount = verdictStats.inconclusive || 0;
-
-  const submitPassword = (e) => {
-    e.preventDefault();
-    if (password === ADMIN_PASSWORD) {
-      localStorage.setItem("argusai_admin", "1");
-      setAuthed(true);
-      setPassword("");
-      return;
-    }
-    setShake(true);
-    setPassword("");
-    setTimeout(() => setShake(false), 450);
-  };
+  const spansPerRun = traces[0]?.detectors ? Object.keys(traces[0].detectors).length : 7;
+  const phoenixProjectUrl = phoenixLinkInfo.base
+    ? `${phoenixLinkInfo.base.replace(/\/$/, "")}/projects/${phoenixLinkInfo.projectId || phoenixLinkInfo.projectName}`
+    : "";
 
   return (
-    <AnimatePresence>
-      <motion.div className="admin-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
-        <motion.div
-          className="admin-modal"
-          initial={{ opacity: 0, y: 18, scale: 0.98 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: 12, scale: 0.98 }}
-          transition={{ duration: 0.18 }}
-        >
-          <div className="admin-head">
-            <div>
-              <span className="admin-kicker">Operator View</span>
-              <h2>Arize Reliability Console</h2>
-            </div>
-            <button className="admin-icon-btn" onClick={onClose} title="Close">
-              <X size={18} />
-            </button>
+    <div className="console-page">
+      <header className="console-header">
+        <div className="console-title">
+          <span className="console-kicker">Operator console</span>
+          <h1>ArgusAI Reliability and Agent Console</h1>
+          <p className="console-sub">How Arize Phoenix and the investigator agent keep this system honest and improving over time.</p>
+        </div>
+        <div className="console-actions">
+          <div className={`admin-health-pill ${health?.status === "calibration_alert" ? "warn" : health?.status === "anomaly" ? "error" : "ok"}`}>
+            <Activity size={14} />
+            {health?.label || "Arize health unavailable"}
           </div>
-
-          {!authed ? (
-            <form className={`admin-login ${shake ? "admin-shake" : ""}`} onSubmit={submitPassword}>
-              <Lock size={28} />
-              <input
-                type="password"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                placeholder="Password"
-                autoFocus
-              />
-              <button type="submit">Unlock</button>
-            </form>
-          ) : (
-            <div className="admin-dashboard">
-              <div className="admin-toolbar">
-                <div className={`admin-health-pill ${health?.status === "calibration_alert" ? "warn" : health?.status === "anomaly" ? "error" : "ok"}`}>
-                  <Activity size={14} />
-                  {health?.label || "Arize health unavailable"}
-                </div>
-                <button className="admin-refresh" onClick={loadAdminData} disabled={loading}>
-                  <RefreshCw size={14} /> {loading ? "Refreshing" : "Refresh"}
-                </button>
-              </div>
+          <button className="admin-refresh" onClick={loadAdminData} disabled={loading}>
+            <RefreshCw size={14} /> {loading ? "Refreshing" : "Refresh"}
+          </button>
+          <button className="console-btn" onClick={onExit}>Back to app</button>
+          <button className="console-btn ghost" onClick={onLogout} title="Log out">Log out</button>
+        </div>
+      </header>
+      <div className="console-body">
               <p className="admin-framing-copy">
-                Investigation history persisted in Firestore · each verdict's full reasoning recorded as an immutable Phoenix trace.
+                Every investigation is stored in Firestore and recorded as a Phoenix trace, so any verdict can be reopened and inspected later.
               </p>
+
+              <section className="console-arize">
+                <div className="console-arize-head">
+                  <h3>Why Arize Phoenix is in the loop</h3>
+                  {phoenixProjectUrl && (
+                    <a className="phoenix-link" href={phoenixProjectUrl} target="_blank" rel="noreferrer">
+                      Open Phoenix dashboard <ChevronRight size={12} />
+                    </a>
+                  )}
+                </div>
+                <div className="console-arize-cards">
+                  <div className="console-arize-card">
+                    <strong>{globalStats.total_analyses || 0}</strong>
+                    <span>verdicts traced</span>
+                    <p>Each analysis is recorded as a Phoenix trace with its detector spans, so the reasoning behind any verdict stays auditable.</p>
+                  </div>
+                  <div className="console-arize-card">
+                    <strong>{spansPerRun}</strong>
+                    <span>detector spans per run</span>
+                    <p>Phoenix captures each detector's latency and result. That is how we see where time goes and which checks start to misbehave.</p>
+                  </div>
+                  <div className="console-arize-card">
+                    <strong>{agentActions.length}</strong>
+                    <span>autonomous agent actions</span>
+                    <p>The agent reads this telemetry and acts on it, recalibrating detector weights instead of leaving them fixed.</p>
+                  </div>
+                </div>
+              </section>
+
+              <div className="agent-status-strip">
+                <span className="agent-status-item">
+                  <Target size={13} /> Investigator agent
+                </span>
+                <span className={`agent-status-dot ${health?.phoenix_link?.project_id ? "live" : "off"}`}>
+                  {health?.phoenix_link?.project_id ? "Phoenix MCP · live" : "Phoenix MCP · offline"}
+                </span>
+                <span className="agent-status-dot live">Gemini reasoning</span>
+                <span className="agent-status-meta">Recalibrates, flags, and drafts from its own observability</span>
+              </div>
 
               {error && <div className="admin-alert error">{error}</div>}
               {calibration?.active && (
@@ -1201,12 +1199,12 @@ function AdminPanel({ open, onClose, arizeHealth, onHealthUpdate, statsData, onS
               <section className="admin-section">
                 <h3><Target size={14} /> Detector Trust Leaderboard</h3>
                 <p className="admin-section-sub">
-                  Ranked by how often each detector matched <strong>human-confirmed</strong> ground truth. Detectors earn a trust tier after {CONFIRMED_TRUST_MIN} confirmations — and the verdict engine then scales their influence up or down automatically. Observability feeding the decision, not just logging it.
+                  Ranked by how often each detector matched <strong>human-confirmed</strong> ground truth. A detector earns a trust tier after {CONFIRMED_TRUST_MIN} confirmations, and the verdict engine then scales its influence up or down on its own. This is the observability feeding the decision, not just recording it.
                 </p>
                 {Object.keys(statsData?.learned_weights || {}).length > 0 && (
                   <div className="admin-alert calib">
                     <Activity size={15} />
-                    Self-calibration active — ArgusAI has re-weighted {Object.keys(statsData.learned_weights).length} detector{Object.keys(statsData.learned_weights).length > 1 ? "s" : ""} from confirmed outcomes.
+                    Self-calibration is active. ArgusAI has re-weighted {Object.keys(statsData.learned_weights).length} detector{Object.keys(statsData.learned_weights).length > 1 ? "s" : ""} from confirmed outcomes.
                   </div>
                 )}
                 <div className="admin-leaderboard">
@@ -1252,6 +1250,27 @@ function AdminPanel({ open, onClose, arizeHealth, onHealthUpdate, statsData, onS
                     );
                   }) : (
                     <div className="admin-empty">Run a few analyses to build the reliability leaderboard.</div>
+                  )}
+                </div>
+              </section>
+
+              <section className="admin-section">
+                <h3><Activity size={14} /> Agent Activity</h3>
+                <p className="admin-section-sub">
+                  What the investigator agent did on its own: recalibrating detector weights, flagging cases for review, and drafting fact-check notes. This is the agent governing the system, not just reporting on it.
+                </p>
+                <div className="admin-events">
+                  {agentActions.length ? agentActions.map((a) => {
+                    const cls = a.type === "recalibrate" ? "calib" : a.type === "flag_review" ? "warn" : "";
+                    const label = a.type === "recalibrate" ? "Recalibrated" : a.type === "flag_review" ? "Flagged" : a.type === "fact_check_note" ? "Drafted note" : "Action";
+                    return (
+                      <div className={`admin-event ${cls}`} key={a.id}>
+                        <span className="mono">{label}</span>
+                        <p>{a.summary} · {formatTime(a.timestamp)}</p>
+                      </div>
+                    );
+                  }) : (
+                    <div className="admin-empty">No autonomous agent actions yet. The investigator agent logs here when it recalibrates, flags, or drafts.</div>
                   )}
                 </div>
               </section>
@@ -1324,8 +1343,59 @@ function AdminPanel({ open, onClose, arizeHealth, onHealthUpdate, statsData, onS
                   </div>
                 </div>
               </section>
-            </div>
-          )}
+      </div>
+    </div>
+  );
+}
+
+function LoginModal({ open, onClose, onAdminSuccess }) {
+  const [password, setPassword] = useState("");
+  const [shake, setShake] = useState(false);
+
+  if (!open) return null;
+
+  const submit = (e) => {
+    e.preventDefault();
+    if (password === ADMIN_PASSWORD) {
+      localStorage.setItem("argusai_admin", "1");
+      setPassword("");
+      onAdminSuccess();
+      return;
+    }
+    setShake(true);
+    setPassword("");
+    setTimeout(() => setShake(false), 450);
+  };
+
+  return (
+    <AnimatePresence>
+      <motion.div className="admin-backdrop" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} onClick={onClose}>
+        <motion.div
+          className="login-modal"
+          initial={{ opacity: 0, y: 18, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 12, scale: 0.98 }}
+          transition={{ duration: 0.18 }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button className="admin-icon-btn login-close" onClick={onClose} title="Close"><X size={18} /></button>
+          <div className="login-head">
+            <img src="/logo.jpeg" alt="ArgusAI" className="login-logo" />
+            <h2>Sign in to ArgusAI</h2>
+            <p>Investigators and teams sign in for the operator console. You can also continue without an account.</p>
+          </div>
+          <form className={`login-form ${shake ? "admin-shake" : ""}`} onSubmit={submit}>
+            <label className="login-label">Access key</label>
+            <input
+              type="password"
+              value={password}
+              onChange={(e) => setPassword(e.target.value)}
+              placeholder="Enter your access key"
+              autoFocus
+            />
+            <button type="submit" className="login-submit">Sign in</button>
+          </form>
+          <button className="login-guest" onClick={onClose}>Continue without an account</button>
         </motion.div>
       </motion.div>
     </AnimatePresence>
@@ -1455,8 +1525,8 @@ function LandingPage({ fileInputRef, previewUrl, fileType, selectedMediaType, ha
             <h4>Live web fact-checking</h4>
             <p>Searches live news and public databases to see whether the claimed image, footage, recording, or event has public provenance.</p>
           </div>
-          <div className="lp-pipeline-card" style={{"--card-accent":"#00e5ff"}}>
-            <div className="lp-step-num" style={{color:"#00e5ff",borderColor:"rgba(0,229,255,0.3)",background:"rgba(0,229,255,0.07)"}}>04</div>
+          <div className="lp-pipeline-card" style={{"--card-accent":"#22d3ee"}}>
+            <div className="lp-step-num" style={{color:"#22d3ee",borderColor:"rgba(34,211,238,0.3)",background:"rgba(34,211,238,0.07)"}}>04</div>
             <h4>Verdict engine</h4>
             <p>The visible signals are weighed together and a final verdict is issued with a plain-language explanation of exactly what was found and why.</p>
           </div>
@@ -1480,7 +1550,7 @@ function LandingPage({ fileInputRef, previewUrl, fileType, selectedMediaType, ha
           </div>
         </div>
         <div className="lp-diff-card">
-          <div className="lp-diff-icon" style={{background:"rgba(0,229,255,0.08)",borderColor:"rgba(0,229,255,0.2)",color:"#00e5ff"}}><Activity size={18}/></div>
+          <div className="lp-diff-icon" style={{background:"rgba(34,211,238,0.08)",borderColor:"rgba(34,211,238,0.2)",color:"#22d3ee"}}><Activity size={18}/></div>
           <div>
             <h4>Every verdict is auditable</h4>
             <p>Each analysis is recorded as a traceable forensic record — what each detector found, when, and how the verdict was reached. Defensible enough for a newsroom or a court.</p>
@@ -1511,7 +1581,9 @@ export default function App() {
   const [feedbackBySession, setFeedbackBySession] = useState({});
   const [fileType, setFileType]         = useState("");
   const [selectedMediaType, setSelectedMediaType] = useState("");
-  const [adminOpen, setAdminOpen] = useState(false);
+  const [view, setView] = useState("app"); // 'app' | 'admin'
+  const [loginOpen, setLoginOpen] = useState(false);
+  const isAdmin = view === "admin";
 
   const fileInputRef = useRef(null);
   const feedEndRef   = useRef(null);
@@ -1805,8 +1877,20 @@ export default function App() {
 
   const hasReport  = messages.some((m) => m.role === "assistant" && (m.kind === "report" || m.kind === "audio_report"));
   const currentScanSteps = selectedMediaType === "audio" ? AUDIO_SCAN_STEPS : selectedMediaType === "video" ? VIDEO_SCAN_STEPS : SCAN_STEPS;
-  const arizeWarn = arizeHealth?.status === "anomaly" || arizeHealth?.status === "calibration_alert";
   const activeMediaCopy = getMediaCopy(selectedMediaType || "default");
+
+  if (isAdmin) {
+    return (
+      <AdminConsole
+        onExit={() => setView("app")}
+        onLogout={() => { localStorage.removeItem("argusai_admin"); setView("app"); }}
+        arizeHealth={arizeHealth}
+        onHealthUpdate={setArizeHealth}
+        statsData={statsData}
+        onStatsUpdate={setStatsData}
+      />
+    );
+  }
 
   return (
     <div className="app-root">
@@ -1820,14 +1904,8 @@ export default function App() {
           </div>
         </div>
         <div className="header-nav">
-          <button
-            type="button"
-            className={`arize-badge arize-badge-button ${arizeWarn ? "arize-badge-warn" : ""}`}
-            onClick={() => setAdminOpen(true)}
-            title="Open Arize reliability console"
-          >
-            <Activity size={13} />
-            {arizeHealth?.label || "Phoenix monitor ready"}
+          <button type="button" className="header-login-btn" onClick={() => setLoginOpen(true)}>
+            Sign in
           </button>
         </div>
       </header>
@@ -2034,32 +2112,14 @@ export default function App() {
                 : <><Search size={18} />Run Investigation</>
               }
             </motion.button>
-
-            <div className="signal-legend">
-              <p className="legend-title">Signal detectors</p>
-              <div className="legend-grid">
-                {Object.entries(SIGNAL_THEME).filter(([k]) => k !== "default").map(([key, t]) => (
-                  <div key={key} className="legend-item">
-                    <span className="legend-dot" style={{ background: t.color, boxShadow: `0 0 6px ${t.color}` }} />
-                    <span>{t.label}</span>
-                  </div>
-                ))}
-              </div>
-            </div>
           </aside>
         )}
 
       </main>
-      <button className="admin-lock" onClick={() => setAdminOpen(true)} title="Operator view">
-        <Lock size={15} />
-      </button>
-      <AdminPanel
-        open={adminOpen}
-        onClose={() => setAdminOpen(false)}
-        arizeHealth={arizeHealth}
-        onHealthUpdate={setArizeHealth}
-        statsData={statsData}
-        onStatsUpdate={setStatsData}
+      <LoginModal
+        open={loginOpen}
+        onClose={() => setLoginOpen(false)}
+        onAdminSuccess={() => { setLoginOpen(false); setView("admin"); }}
       />
     </div>
   );

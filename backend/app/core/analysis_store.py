@@ -492,7 +492,10 @@ def recalibrate_detector_weight(detector_id: str, multiplier: float, reason: str
     if bounded is None:
         return {"ok": False, "error": "multiplier must be numeric.", "detector_id": detector}
     try:
-        db.collection("detector_stats").document(detector).set(
+        doc_ref = db.collection("detector_stats").document(detector)
+        snap = doc_ref.get()
+        previous = _effective_multiplier(snap.to_dict() or {}) if snap.exists else 1.0
+        doc_ref.set(
             {
                 "agent_weight_override": bounded,
                 "agent_override_reason": (reason or "agent_recalibration")[:500],
@@ -502,15 +505,52 @@ def recalibrate_detector_weight(detector_id: str, multiplier: float, reason: str
             merge=True,
         )
         clear_learned_weights_cache()
+        log_agent_action(
+            "recalibrate",
+            f"Recalibrated {detector}: {previous:.2f}x -> {bounded:.2f}x weight",
+            {"detector_id": detector, "previous": previous, "new": bounded, "reason": (reason or "agent_recalibration")[:300]},
+        )
         return {
             "ok": True,
             "detector_id": detector,
             "weight_multiplier": bounded,
+            "previous_multiplier": previous,
             "reason": (reason or "agent_recalibration")[:500],
         }
     except Exception as exc:
         log.warning("Could not recalibrate detector %s: %s", detector, exc)
         return {"ok": False, "error": "Could not persist recalibration.", "detector_id": detector}
+
+
+def log_agent_action(action_type: str, summary: str, detail: Optional[dict[str, Any]] = None) -> None:
+    """Persist an autonomous agent action so the operator console can show what the
+    investigator agent actually did (recalibrations, flags, drafted notes). Best-effort."""
+    db = get_db()
+    if db is None:
+        return
+    try:
+        db.collection("agent_actions").add(
+            {
+                "type": action_type,
+                "summary": summary[:300],
+                "detail": detail or {},
+                "timestamp": _now_iso(),
+            }
+        )
+    except Exception as exc:
+        log.warning("Could not log agent action %s: %s", action_type, exc)
+
+
+def get_agent_actions(limit: int = 15) -> list[dict[str, Any]]:
+    db = get_db()
+    if db is None:
+        return []
+    try:
+        query = db.collection("agent_actions").order_by("timestamp", direction="DESCENDING").limit(max(1, min(limit, 50)))
+        return [{"id": doc.id, **(doc.to_dict() or {})} for doc in query.stream()]
+    except Exception as exc:
+        log.warning("Could not read agent actions: %s", exc)
+        return []
 
 
 def trace_rows_from_firestore(limit: int = 10) -> Optional[list[dict[str, Any]]]:

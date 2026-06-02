@@ -1,12 +1,12 @@
 {
-  "detectors": {},
-  "events": [],
-  "calibration_streak": 0,
   "last_calibration_observation": {
-    "spectral_support": "authentic",
-    "semantic_support": "inconclusive",
+    "spectral_support": "ai_generated",
+    "semantic_support": "ai_generated",
     "disagreed": false,
-    "recorded_at": "2026-06-01T22:37:06.069561+00:00",
+    "recorded_at": "2026-06-02T12:35:33.259480+00:00",
     "streak": 0
-  }
+  },
+  "calibration_streak": 0,
+  "detectors": {},
+  "events": []
 }

@@ -332,40 +332,23 @@ class ReasoningEngine:
         certainty_pct = int(round(certainty * 100))
         nouns = self._media_words(media_type)
 
-        def _top_finding(signals: List[Dict[str, Any]]) -> str:
-            """Pull the most specific finding from the top signal for the summary."""
-            if not signals:
-                return ""
-            top = signals[0]
-            # Prefer a specific what_found over the summary if it has real content
-            finding = top.get("what_found") or top.get("summary") or ""
-            # If it is a generic fallback phrase, fall back to the summary instead
-            generic_phrases = (
-                "the visual review found visible issues",
-                "the visual review did not find",
-                "the visual review noticed some",
-            )
-            if any(finding.lower().startswith(p) for p in generic_phrases):
-                finding = top.get("summary") or finding
-            return finding.rstrip(".")
-
+        # Keep this a genuine one-line headline. The detailed reasoning lives in the
+        # narrative and the per-signal cards, so the summary should not repeat them.
         if verdict == Verdict.LIKELY_AUTHENTIC:
             top = top_authentic[0] if top_authentic else None
             if top:
-                finding = _top_finding(top_authentic)
                 return (
-                    f"This looks like {nouns['authentic_article']}. Our confidence is {certainty_pct}%. "
-                    f"The strongest reason: {top['name']} found that {finding.lower() if finding else nouns['holds_together']}."
+                    f"This looks like {nouns['authentic_article']}, with {certainty_pct}% confidence. "
+                    f"The strongest signal is {top['name']}."
                 )
             return f"The overall evidence leans toward {nouns['authentic_article']} at {certainty_pct}% confidence, with no strong AI signals detected."
 
         if verdict == Verdict.LIKELY_AI_GENERATED:
             top = top_ai[0] if top_ai else None
             if top:
-                finding = _top_finding(top_ai)
                 return (
-                    f"This looks AI-generated. Our confidence is {certainty_pct}%. "
-                    f"The strongest reason: {top['name']} found that {finding.lower() if finding else nouns['ai_artifacts']}."
+                    f"This looks AI-generated, with {certainty_pct}% confidence. "
+                    f"The strongest signal is {top['name']}."
                 )
             return f"The overall evidence leans toward AI generation at {certainty_pct}% confidence, with multiple signals pointing the same way."
 

@@ -9,6 +9,8 @@ Critical framing:
 - Arize Phoenix must be load-bearing: detector health events affect verdict influence.
 - OSINT is the user-facing showstopper: provenance, sources, dates, research hops.
 - Do not add more detectors or redesign the UI unless explicitly asked.
+- **JUDGES ARE NOT OPENING AND TESTING the admin panel, nor do they get admin access.** They only watch the recorded demo video. At most, they will open the public site and browse standard user flows. Do not suggest adding password hints, exposing admin credentials in the UI, or modifying admin-panel security for judges. Everything they need is shown in the demo.
+
 
 Current implemented hackathon additions:
 

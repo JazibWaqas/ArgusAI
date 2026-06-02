@@ -48,6 +48,8 @@ These were stated by the project owner across working sessions. A fresh session 
 4. **Product purpose:** a genuinely reliable system to expose AI-generated media (images first; audio/video added but secondary) and explain to the user what is or isn't AI, so people can keep trusting media despite AI advances. Audience: journalists, courts, social media users, fact-checkers.
 5. **No AI-slop.** No useless phrasing, no filler, no emoji decoration, nothing unnecessary on screen. Everything purposeful, clean, useful. The PDF was explicitly called out as slop and cleaned up.
 6. **Repo hygiene:** do not clutter the repo or create new markdown files. Update existing docs (this file, `Vision.md`). Implementation workflow: the owner has Codex for heavy implementation; Claude/Opus acts as technical product manager — clear intent and reasoning, protect the framing, review the work. (In recent sessions Claude also implemented directly when asked.)
+7. **Judges do not test or access the admin panel.** They only watch the recorded demo video. At most, they will open the live website and look around as standard public users. Stop proposing edits or security/UI changes (such as exposing admin credentials or password hints in the UI) to bypass/reveal admin security for judges. Everything they need is shown in the demo.
+
 
 ## Live URLs
 

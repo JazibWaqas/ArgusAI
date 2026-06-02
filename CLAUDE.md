@@ -59,6 +59,8 @@ The hackathon is not "build a cool AI app." It is: **build an agent — powered 
 
 > Stage One gate (Agent Builder + Arize MCP) and the public repo are checked, so that one integration must be real; everything else can be creatively staged for the demo.
 
+> **Judges do NOT open and test the admin panel directly, nor do they get admin access.** All they watch is the recorded demo video. At most, they will open the live website and look around as standard public users. Stop proposing edits or security/UI changes to expose admin features or credentials to judges. Everything they need is shown in the demo.
+
 So: stage the *demo narrative* freely, but the **Agent Builder + Phoenix MCP integration must actually exist in the code**, because the public repo is judged and Stage One verifies partner usage. Fake nothing that is checkable in the repo. Everything else (which sample, which order, pre-warmed state) is ours to control.
 
 ## What is already TRUE (current state — don't rebuild these)

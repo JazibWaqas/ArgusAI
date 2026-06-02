@@ -71,7 +71,9 @@ class LLMSettings:
         self.osint_use_grounding = os.getenv("OSINT_USE_GROUNDING", "1") == "1"
         
         self.explanation_provider = os.getenv("LLM_EXPLANATION_PROVIDER", "gemini")
+        self.explanation_model = os.getenv("LLM_EXPLANATION_MODEL", self.gemini_model)
         self.explanation_max_tokens = int(os.getenv("LLM_EXPLANATION_MAX_TOKENS", "900"))
+        self.explanation_timeout_seconds = float(os.getenv("LLM_EXPLANATION_TIMEOUT_SECONDS", "8"))
         self.vision_timeout_seconds = float(os.getenv("LLM_VISION_TIMEOUT_SECONDS", "20"))
 
     def provider_ready(self) -> Optional[str]:
@@ -89,6 +91,8 @@ class LLMSettings:
             "gemini_fallback_model": self.gemini_fallback_model,
             "osint_use_grounding": self.osint_use_grounding,
             "explanation_provider": self.explanation_provider,
+            "explanation_model": self.explanation_model,
+            "explanation_timeout_seconds": self.explanation_timeout_seconds,
             "provider_ready": self.provider_ready(),
         }
 

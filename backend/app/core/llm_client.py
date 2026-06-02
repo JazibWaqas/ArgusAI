@@ -882,7 +882,7 @@ class LLMClient:
 
         async with httpx.AsyncClient(timeout=30) as client:
             try:
-                response = await self._post_with_fallback(client, llm_settings.gemini_model, headers, payload)
+                response = await self._post_with_fallback(client, llm_settings.explanation_model, headers, payload)
                 data = response.json()
                 return data["candidates"][0]["content"]["parts"][0]["text"].strip()
             except Exception as exc:
@@ -890,6 +890,6 @@ class LLMClient:
                 self._note_error(
                     f"Gemini explanation request failed: {detail}",
                     provider="gemini",
-                    model=self.last_model or llm_settings.gemini_model,
+                    model=self.last_model or llm_settings.explanation_model,
                 )
                 return None

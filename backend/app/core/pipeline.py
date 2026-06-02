@@ -14,6 +14,7 @@ from pathlib import Path
 
 from ..detectors.registry import registry
 from ..core.analysis_store import persist_analysis
+from ..core.config import settings
 from ..core.health_governor import DetectorHealthGovernor
 from ..core.llm import llm_settings
 from ..core.observability import set_span_attribute, span_trace_id, start_span, tracing_health
@@ -95,7 +96,7 @@ class AnalysisPipeline:
             try:
                 import cv2
                 from ..core.video import extract_sharpest_frames
-                frames_cv = extract_sharpest_frames(image_bytes, max_frames=3)
+                frames_cv = extract_sharpest_frames(image_bytes, max_frames=max(1, settings.video_max_frames))
                 image = Image.fromarray(cv2.cvtColor(frames_cv[0], cv2.COLOR_BGR2RGB))
                 frames = [Image.fromarray(cv2.cvtColor(f, cv2.COLOR_BGR2RGB)) for f in frames_cv]
             except Exception as exc:
@@ -109,7 +110,7 @@ class AnalysisPipeline:
                 try:
                     import cv2
                     from ..core.video import extract_sharpest_frames
-                    frames_cv = extract_sharpest_frames(image_bytes, max_frames=3)
+                    frames_cv = extract_sharpest_frames(image_bytes, max_frames=max(1, settings.video_max_frames))
                     is_video = True
                     image = Image.fromarray(cv2.cvtColor(frames_cv[0], cv2.COLOR_BGR2RGB))
                     original_format = "VIDEO"
@@ -616,4 +617,3 @@ class AnalysisPipeline:
                 "visible": True,
             }
         )
-

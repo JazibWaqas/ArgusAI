@@ -21,7 +21,8 @@ Current implemented hackathon additions:
 - Audio analysis endpoint now uses `AudioAnalysisPipeline`.
 - Gemini semantic fallback for audio, video, and image when primary detector/model is unavailable or weak.
 - Gemini fallback model behavior: primary `gemini-3.5-flash`, fallback `gemini-2.5-flash`.
-- Cloud Run Gemini rotation is active through Secret Manager `argusai-gemini-api-keys` with 35 unique keys.
+- Cloud Run Gemini rotation is active through Secret Manager `argusai-gemini-api-keys` with 32 sanitized unique keys.
+- Latency optimization pass implemented: final explanation generation is routed to `gemini-3.1-flash-lite` with an 8s hard timeout; audio sub-detectors execute concurrently via `asyncio.create_task`; video frame analysis extracts a default of 2 frames (configurable via `VIDEO_MAX_FRAMES`).
 - Video temporal coherence signal and graceful embedded audio-track signal.
 - Gemini-grounded OSINT research agent and optional public-URL reverse-image enrichment in `backend/app/core/llm_client.py`.
 - Upgraded OSINT detector output in `backend/app/detectors/osint.py`.

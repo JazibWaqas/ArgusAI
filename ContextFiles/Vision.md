@@ -109,15 +109,23 @@ This lets the agent say things like:
 
 That is the requirement-meeting story: Gemini plus Agent Builder acts on a real forensic system with memory and partner observability.
 
+There are two agent surfaces, on purpose:
+- **The ADK + Phoenix MCP agent** (`agents/argusai_investigator/`) is the canonical partner-requirement artifact: Gemini + ArgusAI tools + the `@arizeai/phoenix-mcp` toolset. It runs as its own process (its tools call the backend over HTTP, so it must not run inside the backend). Show it briefly for the Arize MCP beat.
+- **The in-app investigator agent** (`POST /agent/investigate`, triggered from the operator console) is the reliable demo surface: it reviews drift/reliability/Phoenix health, recalibrates drifted detectors, and narrates with Gemini, calling the tool functions directly (no HTTP self-call). This is what makes the website the agent's command center and keeps the Agent Activity feed populated.
+
 ## Current Media Scope
 
 ArgusAI now supports:
 
-- image: full seven-signal investigation
-- video: frame extraction, semantic video review, temporal coherence, OSINT, frame-based spectral/ELA, optional embedded audio track
-- audio: voice authenticity signal, Gemini semantic listening, OSINT context
+- image: full seven-signal investigation (image detector path is fixed — do not change it without an explicit request)
+- video: frame extraction, semantic video review, temporal coherence, **sensor noise coherence** (measured flat-region noise floor across frames), OSINT, frame-based spectral/ELA, optional embedded audio track
+- audio: voice authenticity model, **acoustic micro-signature** (measured jitter/shimmer/HNR/tonality), Gemini semantic listening, OSINT context
 
 The UI and backend must stay media-aware. Do not show image-only noise/lighting signals for audio. Do not describe audio/video as photographs. Use `media_type` and each signal's `visible` field.
+
+### Signal philosophy (why these, honestly)
+
+The learned spectral model and the new measured signals (acoustic micro-signature, sensor noise coherence) target fundamental, hard-to-fake tells. Heuristic signals (metadata, ELA, lighting, basic noise) are kept for breadth but are weak for generation detection and often return inconclusive — the self-calibration loop is expected to surface and down-weight them empirically over real use. No signal is unfakeable; reliability comes from breadth + provenance (OSINT) + honest "inconclusive" + the confirmed-accuracy loop, not from any single check. Genuinely fundamental signals still missing (advice only, not built): diffusion reconstruction error for images, proper PRNU, DCT/quantization forensics, C2PA provenance, and rPPG for face video.
 
 ## Ethical Design
 

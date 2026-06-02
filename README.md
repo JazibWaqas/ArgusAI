@@ -36,7 +36,7 @@ Current implementation:
 - Agent Builder endpoints that use Firestore history context before responding, so the agent can discuss accumulated detector reliability and recent same-media cases.
 - Phoenix chain-of-custody links surfaced in verdict cards, signal details, admin trace rows, Agent Builder responses, and official PDFs.
 - Repo-local Google ADK investigator agent in `agents/argusai_investigator`, with ArgusAI backend tools and Phoenix MCP tools.
-- Cloud Run Gemini rotation across 35 keys through Secret Manager.
+- Cloud Run Gemini rotation across 32 sanitized keys through Secret Manager.
 - OSINT research agent output: research hops, earliest appearance candidate, fact-check sources, timeline contradiction, search queries, and optional reverse-image matches when the user provides a public image URL.
 
 Current cloud state:
@@ -51,7 +51,7 @@ Current cloud state:
 - Runtime region: `us-central1`.
 - Backend Cloud Run settings: `4Gi` memory, `2` CPU, `300s` timeout, concurrency `1`, `min-instances=0`, `max-instances=1`.
 - Gemini single-key fallback is stored in Secret Manager as `argusai-gemini-api-key`.
-- Gemini multi-key rotation is stored in Secret Manager as `argusai-gemini-api-keys` and currently contains 35 unique keys.
+- Gemini multi-key rotation is stored in Secret Manager as `argusai-gemini-api-keys` and currently contains 32 sanitized unique keys.
 - Firebase project: `argusai-8d9fe`; service account secret: `argusai-firebase-service-account`.
 - Spectral weights are stored in Cloud Storage at `gs://argusai-497719-models/models/argusai_best_weights.pth`.
 - The backend health endpoint is live at `https://argusai-backend-1007754127412.us-central1.run.app/health`.

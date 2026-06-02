@@ -21,7 +21,7 @@ Google Cloud:
 - Project number: `1007754127412`
 - Region: `us-central1`
 - Gemini secret: `argusai-gemini-api-key`
-- Gemini multi-key secret: `argusai-gemini-api-keys` (35 unique keys)
+- Gemini multi-key secret: `argusai-gemini-api-keys` (32 sanitized unique keys)
 - Firebase project: `argusai-8d9fe`
 - Firebase service account secret: `argusai-firebase-service-account`
 - Spectral weights: `gs://argusai-497719-models/models/argusai_best_weights.pth`
@@ -40,7 +40,8 @@ Google Cloud:
 - Agent Builder `/agent/analyze` and `/agent/chat` include Firestore history context, current detector reliability stats, recent same-media cases, and Phoenix trace IDs.
 - Gemini semantic prompts for image, video, and audio.
 - Gemini fallback path from `gemini-3.5-flash` to `gemini-2.5-flash` for quota/high-demand/transient failures.
-- Deployed Gemini key rotation across 35 keys via Secret Manager `argusai-gemini-api-keys`.
+- Deployed Gemini key rotation across 32 sanitized keys via Secret Manager `argusai-gemini-api-keys`.
+- Latency pass: final explanation generation now uses `gemini-3.1-flash-lite`, has a 30s timeout, audio sub-checks run concurrently, and video frame-heavy checks default to 2 frames.
 - `/arize/traces` endpoint reading Firestore first and x-ray logs as fallback for admin dashboard.
 - Frontend Cloud Run deployment via `frontend/Dockerfile`.
 - Frontend empirical reliability display, verdict feedback widget, admin global stats row, and Phoenix trace links.
@@ -88,9 +89,9 @@ Arize/Phoenix:
 Firestore/Gemini:
 
 - Backend `/stats` returns `source: firestore`.
-- Backend `/health` reports `gemini_key_count: 35`.
+- Backend `/health` reports `gemini_key_count: 32`.
 - Live `/analyze` returned a `phoenix_trace_id` and persisted an analysis to Firestore.
-- Live backend revision after ADK/agent-action endpoint work: `argusai-backend-00017-bw8`.
+- Live backend revision after latency/model-routing work: `argusai-backend-00020-742`.
 - Live frontend revision after Agent Builder/chain-of-custody work: `argusai-frontend-00004-4h6`.
 - Backend agent action endpoints verified locally on port `8001`; `recalibrate-detector` wrote a bounded `1.0x` no-op override to Firestore for `spectral_artifacts`.
 - Backend agent action endpoints verified on Cloud Run after deploy: `/agent/tools/detectors/spectral_artifacts/reliability` and `/agent/tools/accuracy-drift` returned Firestore-backed responses.

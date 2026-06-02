@@ -189,7 +189,7 @@ Demo line:
 - Backend deploy command is in `ContextFiles/CurrentHandoff.md`.
 - Frontend deploy command is in `ContextFiles/CurrentHandoff.md`.
 - Phoenix deploy command is in `ContextFiles/CurrentHandoff.md`.
-- Gemini multi-key rotation is deployed through Secret Manager secret `argusai-gemini-api-keys` with 35 keys.
+- Gemini multi-key rotation is deployed through Secret Manager secret `argusai-gemini-api-keys` with 32 sanitized keys.
 - Firebase service account is deployed through Secret Manager secret `argusai-firebase-service-account`.
 - Spectral model weights are downloaded from `gs://argusai-497719-models/models/argusai_best_weights.pth`.
 

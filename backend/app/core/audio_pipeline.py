@@ -41,16 +41,24 @@ class AudioAnalysisPipeline:
         ) as root_span:
             trace_id = span_trace_id(root_span)
 
+            model_task = asyncio.create_task(analyze_audio(audio_bytes))
+            gemini_task = asyncio.create_task(self._gemini_audio_signal(audio_bytes, user_context))
+            acoustic_task = asyncio.create_task(self._acoustic_signal(audio_bytes))
+            osint_task = (
+                asyncio.create_task(self._osint_audio_signal(audio_bytes, user_context))
+                if (user_context or "").strip()
+                else None
+            )
+
             # Voice authenticity model (wav2vec2 / HF) always runs and is always shown.
-            model_signal = await analyze_audio(audio_bytes)
+            model_signal = await model_task
             try:
                 model_signal.name = "Voice Authenticity Model"
                 model_signal.category = "audio"
             except Exception:
                 pass
 
-            # Gemini semantic listening runs in parallel and is shown as its own card.
-            gemini_signal = await self._gemini_audio_signal(audio_bytes, user_context)
+            gemini_signal = await self._await_optional_signal(gemini_task)
 
             # The verdict is driven by the stronger of the two acoustic signals.
             primary = (
@@ -60,11 +68,8 @@ class AudioAnalysisPipeline:
             )
 
             # Public-context (OSINT) only runs when the user gives a claim to investigate.
-            osint_signal = None
-            if (user_context or "").strip():
-                osint_signal = await self._osint_audio_signal(audio_bytes, user_context)
-
-            acoustic_signal = await self._acoustic_signal(audio_bytes)
+            osint_signal = await self._await_optional_signal(osint_task) if osint_task else None
+            acoustic_signal = await self._await_optional_signal(acoustic_task)
 
             signals = [model_signal]
             if acoustic_signal is not None:
@@ -147,6 +152,12 @@ class AudioAnalysisPipeline:
             persist_analysis(report)
 
             return report
+
+    async def _await_optional_signal(self, task: "asyncio.Task[Optional[EvidenceSignal]]") -> Optional[EvidenceSignal]:
+        try:
+            return await task
+        except Exception:
+            return None
 
     def _should_use_gemini(self, detector_signal: EvidenceSignal, gemini_signal: Optional[EvidenceSignal]) -> bool:
         if gemini_signal is None or gemini_signal.status != SignalStatus.OK:

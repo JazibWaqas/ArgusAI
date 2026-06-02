@@ -38,7 +38,7 @@ Current live state:
 - Agent action tools now exist: detector reliability, similar cases, accuracy drift, detector recalibration, draft fact-check note, and human-review flagging.
 - Verdict cards and official PDFs now surface Phoenix chain-of-custody audit links/trace IDs.
 - Admin panel now explains the Firestore persistence + Phoenix immutable trace story directly for judges.
-- Backend revision with ADK/agent-action endpoints deployed: `argusai-backend-00017-bw8`.
+- Backend revision with latency fixes and Flash-Lite explanations deployed: `argusai-backend-00020-742`.
 
 ---
 
@@ -79,8 +79,14 @@ So: stage the *demo narrative* freely, but the **Agent Builder + Phoenix MCP int
 - Backend agent action endpoints exist under `/agent/tools/*`.
 - `detect_accuracy_drift()` computes recent-vs-historical confirmed accuracy from Firestore analysis feedback.
 - `recalibrate_detector_weight()` writes a bounded Firestore override consumed by `get_learned_weights()`, so the agent can causally affect future verdict weighting.
+- In-app investigator agent (`POST /agent/investigate`) drives the agent from the operator console (not the terminal): reviews drift/reliability/Phoenix health, recalibrates drifted detectors, narrates via Gemini, and logs a `review` action every run. The ADK + Phoenix MCP agent stays as the canonical partner artifact (run as its own process).
+- Operator console rebuilt as a full-page dashboard behind a soft-gate login modal; agent activity feed + drift arrows + real-world accuracy + trust leaderboard.
+- Two new measured fundamental signals added (audio `audio_acoustics`, video `temporal_noise_coherence`); image detector path untouched.
+- Consumer-side de-AI polish: audit/Phoenix links removed from consumer view, one-line summary, de-neoned palette, three-zone header.
 
 ### What is still not fully proven
+
+- The full local stack run + seeding pass before recording: verify image/video/audio analyses, feedback returns 200 (Firebase connected), audio shows 4 cards, video shows Sensor Noise Coherence, "Run investigator agent" populates the feed, and traces land in local Phoenix.
 
 - The money-shot conversation should be rehearsed end to end on the final sample.
 - Gemini 3.5 Flash returned temporary high-demand `503` during one ADK verification run. Keep it as the default, but use `ADK_GEMINI_MODEL=gemini-2.5-flash` if the recording needs a stable fallback.

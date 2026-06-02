@@ -79,14 +79,14 @@ The deployed frontend bundle is verified to use the deployed backend URL, not `l
 - Artifact Registry repo: `cloud-run-source-deploy`
 - Spectral weights: `gs://argusai-497719-models/models/argusai_best_weights.pth`
 - Gemini API key secret: `argusai-gemini-api-key`
-- Gemini multi-key secret: `argusai-gemini-api-keys` (35 unique keys, one per line)
+- Gemini multi-key secret: `argusai-gemini-api-keys` (32 sanitized unique keys, one per line; leaked keys removed June 3, 2026)
 - Firebase project: `argusai-8d9fe`
 - Firebase service account secret: `argusai-firebase-service-account`
 
 Cloud Run services:
 
 ```text
-argusai-backend   latest verified revision: argusai-backend-00017-bw8
+argusai-backend   latest verified revision: argusai-backend-00020-742
 argusai-frontend  latest verified revision: argusai-frontend-00004-4h6
 argusai-phoenix   latest verified revision: argusai-phoenix-00001-dlc
 ```
@@ -114,7 +114,11 @@ SPECTRAL_INPUT_SIZE=224
 SPECTRAL_NORMALIZE=1
 OSINT_USE_GROUNDING=1
 LLM_EXPLANATION_PROVIDER=gemini
+LLM_EXPLANATION_MODEL=gemini-3.1-flash-lite
 LLM_EXPLANATION_MAX_TOKENS=900
+LLM_EXPLANATION_TIMEOUT_SECONDS=30
+LLM_VISION_TIMEOUT_SECONDS=20
+VIDEO_MAX_FRAMES=2
 MAX_UPLOAD_MB=20
 ARIZE_HEALTH_GOVERNOR=1
 GEMINI_MODEL=gemini-3.5-flash
@@ -130,14 +134,14 @@ FIREBASE_PROJECT_ID=argusai-8d9fe
 FIREBASE_SERVICE_ACCOUNT_JSON=Secret Manager argusai-firebase-service-account:latest
 ```
 
-Why fallback is `gemini-2.5-flash`: `gemini-3.5-flash` exists for the key but hit quota/high-demand errors during live testing. The code now rotates across 35 deployed Gemini keys and falls back to `gemini-2.5-flash` for HTTP 429/503/transient failures and generic request exceptions.
+Why fallback is `gemini-2.5-flash`: `gemini-3.5-flash` exists for the key but hit quota/high-demand errors during live testing. The code now rotates across 32 deployed Gemini keys and falls back to `gemini-2.5-flash` for HTTP 429/503/transient failures and generic request exceptions. Final report explanation prose uses `gemini-3.1-flash-lite` with a 30s timeout; semantic vision/audio/video reasoning stays on `gemini-3.5-flash`.
 
 ## Deploy Commands
 
 Backend deploy command used:
 
 ```powershell
-& "C:\Program Files (x86)\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd" run deploy argusai-backend --source . --region us-central1 --platform managed --allow-unauthenticated --memory 4Gi --cpu 2 --timeout 300 --concurrency 1 --max-instances 1 --update-env-vars "SPECTRAL_MODEL_PATH=/tmp/argusai_best_weights.pth,SPECTRAL_MODEL_GCS_URI=gs://argusai-497719-models/models/argusai_best_weights.pth,SPECTRAL_AI_INDEX=1,SPECTRAL_INPUT_SIZE=224,SPECTRAL_NORMALIZE=1,OSINT_USE_GROUNDING=1,LLM_EXPLANATION_PROVIDER=gemini,LLM_EXPLANATION_MAX_TOKENS=900,MAX_UPLOAD_MB=20,ARIZE_HEALTH_GOVERNOR=1,GEMINI_MODEL=gemini-3.5-flash,GEMINI_VISION_MODEL=gemini-3.5-flash,GEMINI_GROUNDING_MODEL=gemini-3.5-flash,GEMINI_FALLBACK_MODEL=gemini-2.5-flash,PHOENIX_COLLECTOR_ENDPOINT=https://argusai-phoenix-ddmxiumrdq-uc.a.run.app/v1/traces,PHOENIX_DASHBOARD_URL=https://argusai-phoenix-ddmxiumrdq-uc.a.run.app,PHOENIX_PROJECT_NAME=argusai-forensics,FIREBASE_PROJECT_ID=argusai-8d9fe" --set-secrets "GEMINI_API_KEY=argusai-gemini-api-key:latest,GEMINI_API_KEYS=argusai-gemini-api-keys:latest,FIREBASE_SERVICE_ACCOUNT_JSON=argusai-firebase-service-account:latest"
+& "C:\Program Files (x86)\Google\Cloud SDK\google-cloud-sdk\bin\gcloud.cmd" run deploy argusai-backend --source . --region us-central1 --platform managed --allow-unauthenticated --memory 4Gi --cpu 2 --timeout 300 --concurrency 1 --max-instances 1 --update-env-vars "SPECTRAL_MODEL_PATH=/tmp/argusai_best_weights.pth,SPECTRAL_MODEL_GCS_URI=gs://argusai-497719-models/models/argusai_best_weights.pth,SPECTRAL_AI_INDEX=1,SPECTRAL_INPUT_SIZE=224,SPECTRAL_NORMALIZE=1,OSINT_USE_GROUNDING=1,LLM_EXPLANATION_PROVIDER=gemini,LLM_EXPLANATION_MODEL=gemini-3.1-flash-lite,LLM_EXPLANATION_MAX_TOKENS=900,LLM_EXPLANATION_TIMEOUT_SECONDS=30,LLM_VISION_TIMEOUT_SECONDS=20,VIDEO_MAX_FRAMES=2,MAX_UPLOAD_MB=20,ARIZE_HEALTH_GOVERNOR=1,GEMINI_MODEL=gemini-3.5-flash,GEMINI_VISION_MODEL=gemini-3.5-flash,GEMINI_GROUNDING_MODEL=gemini-3.5-flash,GEMINI_FALLBACK_MODEL=gemini-2.5-flash,PHOENIX_COLLECTOR_ENDPOINT=https://argusai-phoenix-ddmxiumrdq-uc.a.run.app/v1/traces,PHOENIX_DASHBOARD_URL=https://argusai-phoenix-ddmxiumrdq-uc.a.run.app,PHOENIX_PROJECT_NAME=argusai-forensics,FIREBASE_PROJECT_ID=argusai-8d9fe" --set-secrets "GEMINI_API_KEY=argusai-gemini-api-key:latest,GEMINI_API_KEYS=argusai-gemini-api-keys:latest,FIREBASE_SERVICE_ACCOUNT_JSON=argusai-firebase-service-account:latest"
 ```
 
 Phoenix deploy command used:
@@ -214,11 +218,11 @@ Frontend:
 Cloud/Arize:
 
 - Backend deployed to Cloud Run.
-- Backend revision `argusai-backend-00017-bw8` is live with `/agent/tools/*` agent-action endpoints.
+- Backend revision `argusai-backend-00020-742` is live with `/agent/tools/*` agent-action endpoints and latency fixes.
 - Frontend deployed to Cloud Run.
 - Phoenix deployed to Cloud Run using `arizephoenix/phoenix:latest`.
 - Firestore is active on Cloud Run. `/stats` returns `source: firestore`.
-- Cloud Run `/health` reports `gemini_key_count: 35`.
+- Cloud Run `/health` reports `gemini_key_count: 32`, `explanation_model: gemini-3.1-flash-lite`, and `explanation_timeout_seconds: 30`.
 - Backend points to Phoenix collector at `https://argusai-phoenix-ddmxiumrdq-uc.a.run.app/v1/traces`.
 - Phoenix logs confirm repeated live `POST /v1/traces HTTP/1.1" 200 OK`.
 - Admin trace feed confirms image/audio/video analysis summaries are being recorded.
@@ -276,6 +280,31 @@ Frontend (`App.jsx`, `styles.css`):
 
 PDF (`reports/pdf_official.py`): media-type-aware title and language (no more hardcoded "Image"/"camera-captured" on video/audio), video reports note frame-based analysis, fixed chain-of-custody trace link, tightened limitations.
 
+## UX, Login, New Signals, In-App Agent (June 3, 2026 — latest session)
+
+All verified with `vite build` (passes) and backend syntax/import checks. The image detector path was left untouched on purpose; only video/audio signals were added.
+
+Login + console as the command center:
+- Soft-gate **login modal** (header "Sign in"). Admin credential (`argusai2026`) routes to a separate full-page **operator console**; everyone else uses the product as guest. Demo-grade credential check in localStorage. The old floating-lock entry and modal admin panel were removed.
+- The console is now a real dashboard page (own header, Arize "why it's in the loop" band, agent status strip, trust leaderboard, drift arrows, agent activity, recent investigations, calibration events).
+- **In-app investigator agent**: `POST /agent/investigate` reviews drift + reliability + Phoenix health, recalibrates drifted detectors (real, logged), and narrates via Gemini. Triggered by a "Run investigator agent" button in the console; logs a `review` action every run so the Agent Activity feed always populates. This drives the agent from the website, not the terminal. It calls the tool functions directly to avoid an HTTP self-call deadlock (the ADK agent's tools hit the backend over HTTP, so the ADK agent must run as its own process).
+- `GET /agent/activity` + Firestore `agent_actions` logging behind every agent tool action (recalibrate/flag/draft/review) with before→after detail.
+
+Two new measured, fundamental signals (additive, fully guarded — failure just hides the card):
+- **Audio: Acoustic Micro-Signature** (`audio_acoustics`, librosa) — jitter, shimmer, HNR, spectral flatness. Real vocal folds vary; TTS/clones are smoother. Audio reports now show up to 4 cards (Voice Model, Acoustic Micro-Signature, Gemini Listening, OSINT-with-context), rendered through the same rich card grid as image/video.
+- **Video: Sensor Noise Coherence** (`temporal_noise_coherence`) — flat-region sensor-noise floor consistency across frames. Real footage keeps a steady floor; AI video is too smooth or flickers.
+- Both are tracked in Firestore and weighted in `SIGNAL_IMPORTANCE`, so the self-calibration loop will prove or down-weight them over time.
+
+Consumer-side cleanup:
+- `short_summary` is now a true one-liner (the verbose version duplicated the narrative); the narrative is reframed as "Detailed assessment".
+- **Audit-trail / Phoenix links removed from the consumer side entirely** (verdict card, signal cards, audio card). Phoenix naming/links live only in the operator console now.
+
+De-AI visual polish:
+- Neutral near-black base, de-neoned brand (`#22d3ee`, was `#00e5ff`), softened background gradients, de-rainbowed hero headline, naturalized copy (removed em-dashes / filler).
+- Header rebuilt as a three-zone layout: logo left, working center nav (How it works / Why ArgusAI / Sample media, anchor-scroll on the landing), Sign in (with icon) right.
+
+Note: a later edit parallelized the audio pipeline signals with `asyncio.create_task` and added a `settings.video_max_frames` config for frame extraction.
+
 ## Firebase Status
 
 Firestore integration is implemented and active on Cloud Run.
@@ -293,14 +322,14 @@ Local dev uses `GOOGLE_APPLICATION_CREDENTIALS=C:\Users\OMNIBOOK\Documents\GitHu
 
 If Firebase is not configured, the app still works and falls back to local x-ray logs for `/stats` and `/arize/traces`.
 
-Verified on June 2, 2026:
+Verified on June 3, 2026:
 
 ```text
 GET /stats -> source: firestore
-GET /health -> gemini_key_count: 35
+GET /health -> gemini_key_count: 32
 POST /analyze -> returned phoenix_trace_id and persisted an analysis to Firestore
 GET /arize/traces?limit=3 -> source: firestore, returned the persisted analysis
-Backend deployed revision -> argusai-backend-00016-j7t
+Backend deployed revision -> argusai-backend-00020-742
 Frontend deployed revision -> argusai-frontend-00004-4h6
 ```
 
@@ -463,7 +492,7 @@ These need user/browser interaction or product judgment.
 - The deployed video test had no usable embedded audio track, so `audio_track` was `unavailable`; that is graceful behavior, not a failure.
 - A Node Playwright browser check was attempted through the Node REPL, but Playwright was not installed there. HTTP bundle checks passed.
 - **OSINT is prompt-activated by design.** `osint_verification` shows `unavailable` when no context prompt is given — this is intended, not a bug. With a context prompt it works (e.g., the PSL/Lahore Qalanders image run found Hamariweb, March 18 2023, 32% influence).
-- **OPEN ISSUE — latency.** A full analysis takes ~90–180s. Detectors are fast (~20s, dominated by semantic/Gemini); the bottleneck is the reasoning/LLM-explanation phase (observed ~78s, varies). Root cause not yet confirmed — strongly suspected to be Gemini calls erroring and cycling through the 35 keys / 2.5 fallback with timeouts. To diagnose, capture backend console output *during* a Run Investigation (not just `/arize/health` polling) and inspect the reasoning-phase Gemini timing/retries.
+- **RESOLVED ISSUE — latency.** A latency optimization pass was completed on June 3, 2026: final explanation generation is routed to `gemini-3.1-flash-lite` with a 30s timeout; audio sub-detectors execute concurrently via `asyncio.create_task`; video frame analysis extracts a default of 2 frames (configurable via `VIDEO_MAX_FRAMES`). This successfully resolved the reasoning-phase timeout/hanging issue.
 - Self-calibration is demo-safe by design: a detector's weight stays exactly 1.0x until it has `LEARNED_WEIGHT_MIN_CONFIRMATIONS` confirmations. To demo the loop quickly without confirming 8 analyses, set `LEARNED_WEIGHT_MIN_CONFIRMATIONS=3` in `.env`.
 
 ## Best Next Tasks

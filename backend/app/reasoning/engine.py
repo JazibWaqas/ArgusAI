@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import asyncio
 from typing import Any, Dict, List, Optional
 
+from ..core.llm import llm_settings
 from ..core.llm_client import LLMClient
 from ..models.evidence import EvidenceProfile, EvidenceSignal, SignalStatus, SignalSupport
 from ..models.report import ScoreBreakdown, Verdict
@@ -117,11 +119,19 @@ class ReasoningEngine:
         fallback_explanation = self._build_fallback_explanation(summary_payload, media_type)
 
         client = LLMClient()
-        llm_explanation = await client.generate_explanation(
-            verdict=verdict.value,
-            evidence=evidence.model_dump(),
-            reasoning_summary=summary_payload,
-        )
+        llm_explanation = None
+        if llm_settings.explanation_provider == "gemini":
+            try:
+                llm_explanation = await asyncio.wait_for(
+                    client.generate_explanation(
+                        verdict=verdict.value,
+                        evidence=evidence.model_dump(),
+                        reasoning_summary=summary_payload,
+                    ),
+                    timeout=max(1.0, llm_settings.explanation_timeout_seconds),
+                )
+            except asyncio.TimeoutError:
+                llm_explanation = None
 
         return ReasoningOutcome(
             verdict=verdict,

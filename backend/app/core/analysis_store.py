@@ -93,6 +93,11 @@ def _report_sha(report: Any) -> Optional[str]:
 
 
 def _report_signals(report: Any) -> list[Any]:
+    # Audio reports carry a `signals` list (voice model, semantic, OSINT); prefer it
+    # so every audio detector is tracked, not just the primary one.
+    direct = getattr(report, "signals", None)
+    if direct:
+        return list(direct)
     signal = getattr(report, "signal", None)
     if signal is not None:
         return [signal]

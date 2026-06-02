@@ -65,6 +65,7 @@ SIGNAL_VISIBILITY = {
         "error_level_analysis",
         "osint_verification",
         "temporal_coherence",
+        "temporal_noise_coherence",
         "audio_track",
     },
 }
@@ -309,7 +310,7 @@ class AnalysisPipeline:
             tasks = [run_detector_tracked(detector) for detector in detectors]
             signals = await asyncio.gather(*tasks)
             if is_video:
-                extra_video_signals = await self._video_extra_signals(image_bytes, signals)
+                extra_video_signals = await self._video_extra_signals(image_bytes, signals, frames)
                 signals = [*signals, *extra_video_signals]
                 for sig in extra_video_signals:
                     xray_metrics[sig.id] = {
@@ -445,11 +446,101 @@ class AnalysisPipeline:
             return f"{', '.join(offline)} offline - verdict based on remaining signals"
         return "All detector health gates operational"
 
-    async def _video_extra_signals(self, video_bytes: bytes, base_signals: List[EvidenceSignal]) -> List[EvidenceSignal]:
+    async def _video_extra_signals(self, video_bytes: bytes, base_signals: List[EvidenceSignal], frames: Optional[list] = None) -> List[EvidenceSignal]:
         semantic = next((sig for sig in base_signals if sig.id == "semantic_inconsistencies"), None)
         temporal = self._temporal_signal_from_semantic(semantic)
+        temporal_noise = self._temporal_noise_signal(frames or [])
         audio_track = await self._analyze_video_audio_track(video_bytes)
-        return [temporal, audio_track]
+        return [temporal, temporal_noise, audio_track]
+
+    def _temporal_noise_unavailable(self, reason: str) -> EvidenceSignal:
+        return EvidenceSignal(
+            id="temporal_noise_coherence",
+            name="Sensor Noise Coherence",
+            category="noise",
+            status=SignalStatus.UNAVAILABLE,
+            reliability=0.0,
+            summary="Cross-frame sensor noise could not be measured for this clip.",
+            what_checked="We measure the sensor-noise floor in flat regions of each frame and check whether it stays consistent across the clip.",
+            what_found=reason,
+            why_it_matters="Real cameras leave a steady noise floor in every frame. AI video often has little real noise or noise that flickers between frames.",
+            caveat="This is a measurement availability issue, not evidence about the clip.",
+            observations=[reason],
+            supports=SignalSupport.UNKNOWN,
+            visible=True,
+        )
+
+    def _temporal_noise_signal(self, frames: list) -> EvidenceSignal:
+        """Measured cross-frame sensor-noise coherence. Fundamental video tell:
+        real footage carries a steady noise floor in flat regions of every frame;
+        AI video tends to be over-smooth or to flicker. Fully guarded."""
+        try:
+            import numpy as np
+            from PIL import ImageFilter
+        except Exception:
+            return self._temporal_noise_unavailable("Image libraries were unavailable in this runtime.")
+
+        valid = [f for f in (frames or []) if f is not None]
+        if len(valid) < 2:
+            return self._temporal_noise_unavailable("At least two clear frames are needed to compare noise across time.")
+
+        try:
+            floors = []
+            for f in valid:
+                gray = f.convert("L")
+                residual = np.asarray(gray, dtype=np.float32) - np.asarray(gray.filter(ImageFilter.GaussianBlur(radius=2)), dtype=np.float32)
+                h, w = residual.shape
+                blocks = [residual[i:i + 32, j:j + 32] for i in range(0, h - 32, 32) for j in range(0, w - 32, 32)]
+                if blocks:
+                    block_stds = np.array([float(np.std(b)) for b in blocks])
+                    floors.append(float(np.percentile(block_stds, 20)))  # flat-region noise floor
+                else:
+                    floors.append(float(np.std(residual)))
+            floors_arr = np.asarray(floors, dtype=np.float32)
+            noise_floor = float(np.mean(floors_arr))
+            cv = float(np.std(floors_arr) / noise_floor) if noise_floor > 1e-6 else 0.0
+        except Exception:
+            return self._temporal_noise_unavailable("Cross-frame noise computation failed.")
+
+        observations = [
+            f"Flat-region noise floor per frame: {', '.join(f'{x:.2f}' for x in floors)}",
+            f"Mean noise floor: {noise_floor:.2f} | Frame-to-frame variation: {cv * 100:.0f}%",
+            "Real footage keeps a steady sensor-noise floor in smooth areas of every frame. AI video often has almost none, or a floor that jumps between frames.",
+        ]
+        supports = SignalSupport.INCONCLUSIVE
+        reliability = 0.3
+        summary = "The cross-frame noise floor was measured but did not point strongly either way."
+
+        if noise_floor < 0.5:
+            supports = SignalSupport.AI_GENERATED
+            reliability = 0.55
+            summary = f"The frames carry almost no real sensor noise (floor {noise_floor:.2f}), which is unusual for genuine camera footage."
+        elif cv > 0.6:
+            supports = SignalSupport.AI_GENERATED
+            reliability = 0.5
+            summary = f"The noise floor jumps between frames ({cv * 100:.0f}% variation), which a single real sensor does not do."
+        elif noise_floor >= 0.8 and cv < 0.3:
+            supports = SignalSupport.AUTHENTIC
+            reliability = 0.5
+            summary = f"The frames share a consistent sensor-noise floor ({noise_floor:.2f}, {cv * 100:.0f}% variation), consistent with a real camera."
+
+        return EvidenceSignal(
+            id="temporal_noise_coherence",
+            name="Sensor Noise Coherence",
+            category="noise",
+            status=SignalStatus.OK,
+            reliability=reliability,
+            summary=summary,
+            what_checked="We measured the sensor-noise floor in the flat regions of each frame and checked whether it stays consistent across the clip.",
+            what_found=summary,
+            why_it_matters="A real camera leaves a steady noise floor in every frame. AI video generators rarely model true sensor noise, so it is often missing or flickers across frames, which is hard to fake.",
+            caveat="Heavy compression, denoising, and very detailed scenes affect this measurement, so it is weighed with the other signals.",
+            observations=observations,
+            metrics={"noise_floor": noise_floor, "frame_variation": cv, "frames_measured": len(valid)},
+            supports=supports,
+            notes="Measured cross-frame sensor-noise coherence.",
+            visible=True,
+        )
 
     def _temporal_signal_from_semantic(self, semantic: Optional[EvidenceSignal]) -> EvidenceSignal:
         if not semantic or semantic.status in {SignalStatus.ERROR, SignalStatus.UNAVAILABLE}:

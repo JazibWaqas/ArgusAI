@@ -17,8 +17,10 @@ SIGNAL_IMPORTANCE = {
     "error_level_analysis": 0.35,
     "osint_verification": 0.75,
     "temporal_coherence": 0.75,
+    "temporal_noise_coherence": 0.7,
     "audio_track": 0.7,
     "audio_deepfake": 0.82,
+    "audio_acoustics": 0.6,
 }
 
 STATUS_FACTOR = {

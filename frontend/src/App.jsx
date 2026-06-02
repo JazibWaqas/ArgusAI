@@ -4,7 +4,7 @@ import {
   ShieldCheck, AlertOctagon, HelpCircle, Search, Camera, Eye,
   ScanSearch, Activity, Target, Database, ChevronDown, ChevronRight,
   Fingerprint, Sparkles, Send, X, Image as ImageIcon, Copy, Check,
-  Zap, Globe, Layers, Cpu, FileDown, RefreshCw
+  Zap, Globe, Layers, Cpu, FileDown, RefreshCw, LogIn
 } from "lucide-react";
 import "./styles.css";
 
@@ -391,6 +391,12 @@ const SIGNAL_DESCRIPTIONS = {
   temporal_coherence: {
     video: "Checks whether objects, faces, text, lighting, and motion remain stable across time. AI video often fails between frames even when individual frames look plausible.",
   },
+  temporal_noise_coherence: {
+    video: "Measures the sensor-noise floor in flat regions of each frame and checks whether it stays consistent across the clip. Real cameras leave steady noise everywhere; AI video is often too smooth or flickers.",
+  },
+  audio_acoustics: {
+    audio: "Measures the physical micro-variation of the voice: pitch jitter, amplitude shimmer, harmonic-to-noise ratio, and tonality. Real vocal folds never repeat a cycle perfectly; synthetic voices tend to be smoother.",
+  },
   audio_track: {
     video: "Extracts the video's embedded audio track, when present, and checks whether speech or production patterns suggest cloning or synthesis.",
   },
@@ -430,7 +436,6 @@ function AnimatedSignalCard({ signal, index, mediaType = "image", detectorStats 
   const barPct = hasInfluence ? signal.verdict_influence_percent : Math.round((signal.reliability || 0) * 100);
   const realStats = detectorStats?.[signal.id];
   const showRealStats = realStats && Number(realStats.total_runs || 0) >= 5;
-  const traceUrl = phoenixTraceUrl(phoenixTraceId);
 
   const statsBlock = (
     <div className={`signal-stats ${wide ? "signal-stats-osint" : ""}`}>
@@ -512,14 +517,6 @@ function AnimatedSignalCard({ signal, index, mediaType = "image", detectorStats 
                   <li key={idx}>{obs}</li>
                 ))}
               </ul>
-            </div>
-          )}
-          {traceUrl && (
-            <div className="signal-detail-row signal-detail-row--audit">
-              <span className="signal-detail-label">Audit trail</span>
-              <a className="phoenix-link" href={traceUrl} target="_blank" rel="noreferrer">
-                View verification record <ChevronRight size={12} />
-              </a>
             </div>
           )}
         </motion.div>
@@ -715,26 +712,20 @@ function AudioReportCard({ reportData, sessionId, feedbackState, onFeedback, det
   const isAuth = (reportData.verdict || "").toLowerCase().includes("authentic");
   const verdictLabel = isAI ? "AI-Generated Voice" : isAuth ? "Authentic Voice" : "Inconclusive";
   const verdictClass = isAI ? "verdict-ai" : isAuth ? "verdict-authentic" : "verdict-inconclusive";
-
-  const sig = reportData.signal;
-  const realStats = sig ? detectorStats?.[sig.id] : null;
-  const showRealStats = realStats && Number(realStats.total_runs || 0) >= 5;
   const confidenceLabel = reportData.confidence_label || "Guarded";
-  const observations = sig?.observations || [];
-  const probFake = sig?.metrics?.prob_fake ?? null;
-  const probReal = sig?.metrics?.prob_real ?? null;
+
+  const signals = (Array.isArray(reportData.signals) && reportData.signals.length)
+    ? reportData.signals
+    : (reportData.signal ? [reportData.signal] : []);
+  const voiceSig = signals.find((s) => s?.metrics?.prob_fake != null) || signals.find((s) => s?.id === "audio_deepfake");
+  const probFake = voiceSig?.metrics?.prob_fake ?? null;
+  const probReal = voiceSig?.metrics?.prob_real ?? null;
 
   return (
-    <motion.div
-      className="forensic-report-card"
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ type: "spring", stiffness: 300, damping: 24 }}
-    >
-      {/* Verdict banner */}
+    <div className="report-inner">
       <motion.div
-        className={`verdict-banner ${verdictClass}`}
-        initial={{ opacity: 0, scale: 0.97 }}
+        className={`verdict-stamp ${verdictClass}`}
+        initial={{ opacity: 0, scale: 0.92 }}
         animate={{ opacity: 1, scale: 1 }}
         transition={{ type: "spring", stiffness: 300, damping: 20 }}
       >
@@ -742,145 +733,79 @@ function AudioReportCard({ reportData, sessionId, feedbackState, onFeedback, det
         <div className="verdict-text-wrap">
           <span className="verdict-label">Audio Verdict</span>
           <span className="verdict-value">{verdictLabel}</span>
-          {reportData.explanation && (
-            <p className="verdict-summary">{reportData.explanation}</p>
-          )}
+          {reportData.explanation && <p className="verdict-summary">{reportData.explanation}</p>}
         </div>
         <div className="verdict-meta">
           <div className="verdict-confidence">
-            <span className="verdict-confidence-label">Certainty</span>
+            <span className="verdict-confidence-label">How sure we are</span>
             <span className="verdict-confidence-value">{certaintyPercent}%</span>
             <span className="verdict-confidence-tag">{confidenceLabel}</span>
           </div>
-          {reportData.phoenix_trace_id && (
-            <a className="verdict-audit-link" href={phoenixTraceUrl(reportData.phoenix_trace_id)} target="_blank" rel="noreferrer">
-              Trace {shortHash(reportData.phoenix_trace_id)} · View audit trail <ChevronRight size={12} />
-            </a>
-          )}
+          <span className="report-ts">{new Date(reportData.generated_at).toLocaleString()}</span>
         </div>
       </motion.div>
 
       <FeedbackWidget sessionId={sessionId} feedbackState={feedbackState} onFeedback={onFeedback} />
 
-      {/* Waveform probability bar */}
       <motion.div
         className="report-helper"
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.15, duration: 0.4 }}
       >
-        Voice authenticity from a dedicated deepfake model, with Gemini listening when the call is borderline.
+        This recording was checked by a dedicated voice-authenticity model, a Gemini semantic listen, and public-context research when a claim was provided.
       </motion.div>
 
-      {/* Signal card */}
-      {sig && (
+      {probFake !== null && probReal !== null && (
         <motion.div
-          className="signals-section"
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.35 }}
+          className="audio-prob-panel"
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ delay: 0.2, duration: 0.4 }}
         >
-          <h3 className="signals-section-title">
-            <Activity size={14} /> Audio Evidence
-          </h3>
-
-          <div className="signal-card" style={{ "--signal-color": "#06b6d4", "--signal-glow": "rgba(6,182,212,0.25)" }}>
-            <div className="signal-card-header">
-              <div className="signal-icon-wrap" style={{ color: "#06b6d4", background: "rgba(6,182,212,0.12)" }}>
-                <Zap size={14} />
+          <span className="audio-prob-title">Voice model probability</span>
+          <div className="stat-item">
+            <span className="stat-label">AI-generated / cloned</span>
+            <div className="reliability-bar-wrap">
+              <span className="stat-value" style={{ color: isAI ? "#f87171" : "inherit" }}>{Math.round(probFake * 100)}%</span>
+              <div className="reliability-bar">
+                <motion.div className="reliability-fill" style={{ background: isAI ? "#f87171" : "#22d3ee" }} initial={{ width: 0 }} animate={{ width: `${Math.round(probFake * 100)}%` }} transition={{ duration: 0.9, ease: "easeOut" }} />
               </div>
-              <div className="signal-title-group">
-                <span className="signal-name">{sig.name || "Audio Authenticity"}</span>
-                <span className="signal-category-badge" style={{ color: "#06b6d4", background: "rgba(6,182,212,0.12)" }}>
-                  Audio
-                </span>
-              </div>
-              <span className={`status-badge ${sig.status === "ok" ? "status-pass" : sig.status === "error" ? "status-error" : "status-info"}`}>
-                {sig.status === "ok" ? "Completed" : sig.status === "error" ? "Error" : sig.status}
-              </span>
             </div>
-
-            <p className="signal-summary">{sig.summary}</p>
-            {showRealStats && (
-              <div className="signal-real-stats audio-real-stats">
-                Based on {realStats.total_runs} analyses · {formatPercent(realStats.accuracy_rate)} accuracy
+          </div>
+          <div className="stat-item">
+            <span className="stat-label">Authentic human voice</span>
+            <div className="reliability-bar-wrap">
+              <span className="stat-value" style={{ color: isAuth ? "#34d399" : "inherit" }}>{Math.round(probReal * 100)}%</span>
+              <div className="reliability-bar">
+                <motion.div className="reliability-fill" style={{ background: isAuth ? "#34d399" : "#22d3ee" }} initial={{ width: 0 }} animate={{ width: `${Math.round(probReal * 100)}%` }} transition={{ duration: 0.9, delay: 0.1, ease: "easeOut" }} />
               </div>
-            )}
-
-            {/* Probability bars */}
-            {probFake !== null && probReal !== null && (
-              <div className="signal-stats" style={{ marginTop: 12 }}>
-                <div className="stat-item">
-                  <span className="stat-label">AI-generated probability</span>
-                  <div className="reliability-bar-wrap">
-                    <span className="stat-value" style={{ color: isAI ? "#f87171" : "inherit" }}>
-                      {Math.round(probFake * 100)}%
-                    </span>
-                    <div className="reliability-bar">
-                      <motion.div
-                        className="reliability-fill"
-                        style={{ background: isAI ? "#f87171" : "#06b6d4" }}
-                        initial={{ width: 0 }}
-                        animate={{ width: `${Math.round(probFake * 100)}%` }}
-                        transition={{ duration: 0.9, ease: "easeOut" }}
-                      />
-                    </div>
-                  </div>
-                </div>
-                <div className="stat-item">
-                  <span className="stat-label">Real human probability</span>
-                  <div className="reliability-bar-wrap">
-                    <span className="stat-value" style={{ color: isAuth ? "#34d399" : "inherit" }}>
-                      {Math.round(probReal * 100)}%
-                    </span>
-                    <div className="reliability-bar">
-                      <motion.div
-                        className="reliability-fill"
-                        style={{ background: isAuth ? "#34d399" : "#06b6d4" }}
-                        initial={{ width: 0 }}
-                        animate={{ width: `${Math.round(probReal * 100)}%` }}
-                        transition={{ duration: 0.9, delay: 0.1, ease: "easeOut" }}
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Observations */}
-            {observations.length > 0 && (
-              <ul className="signal-observations" style={{ marginTop: 12 }}>
-                {observations.map((obs, i) => (
-                  <li key={i} className="signal-obs-item">{obs}</li>
-                ))}
-              </ul>
-            )}
-
-            {/* What checked / why it matters */}
-            {sig.what_checked && (
-              <div className="signal-detail-row signal-detail-row--purpose" style={{ marginTop: 12 }}>
-                <span className="signal-detail-label">What this check does</span>
-                <p className="signal-detail-text">{sig.what_checked}</p>
-              </div>
-            )}
-            {sig.caveat && (
-              <div className="signal-detail-row" style={{ marginTop: 8 }}>
-                <span className="signal-detail-label">Caveat</span>
-                <p className="signal-detail-text">{sig.caveat}</p>
-              </div>
-            )}
-            {reportData.phoenix_trace_id && (
-              <div className="signal-detail-row signal-detail-row--audit" style={{ marginTop: 8 }}>
-                <span className="signal-detail-label">Audit trail</span>
-                <a className="phoenix-link" href={phoenixTraceUrl(reportData.phoenix_trace_id)} target="_blank" rel="noreferrer">
-                  View verification record <ChevronRight size={12} />
-                </a>
-              </div>
-            )}
+            </div>
           </div>
         </motion.div>
       )}
-    </motion.div>
+
+      <motion.div
+        className="signals-section"
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        transition={{ delay: 0.3 }}
+      >
+        <h3 className="signals-section-title">
+          <Layers size={14} /> Evidence signals
+        </h3>
+        <p className="signals-section-copy">
+          Each card explains what that check looked for, what it found in this recording, and why it matters.
+        </p>
+        <div className="signals-grid">
+          {signals.length > 0
+            ? signals.map((signal, i) => (
+                <AnimatedSignalCard key={signal.id || i} signal={signal} index={i} mediaType="audio" detectorStats={detectorStats} />
+              ))
+            : <p style={{ color: "var(--text-muted)" }}>No audio signals were produced.</p>}
+        </div>
+      </motion.div>
+    </div>
   );
 }
 
@@ -932,11 +857,6 @@ function ForensicReportCard({ reportData, showJson, onToggleJson, onDownloadPdf,
               <span className="verdict-confidence-label">Current lean</span>
               <span className="verdict-leaning-value">{formatVerdict(reportData.leaning)}</span>
             </div>
-          )}
-          {reportData.phoenix_trace_id && (
-            <a className="verdict-audit-link" href={phoenixTraceUrl(reportData.phoenix_trace_id)} target="_blank" rel="noreferrer">
-              Trace {shortHash(reportData.phoenix_trace_id)} · View audit trail <ChevronRight size={12} />
-            </a>
           )}
           <span className="report-ts">{new Date(reportData.generated_at).toLocaleString()}</span>
         </div>
@@ -1043,8 +963,11 @@ function AdminConsole({ onExit, onLogout, arizeHealth, onHealthUpdate, statsData
   const [traces, setTraces] = useState([]);
   const [health, setHealth] = useState(arizeHealth);
   const [agentActions, setAgentActions] = useState([]);
+  const [drift, setDrift] = useState({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [agentRunning, setAgentRunning] = useState(false);
+  const [agentResult, setAgentResult] = useState(null);
 
   useEffect(() => {
     setHealth(arizeHealth);
@@ -1054,16 +977,21 @@ function AdminConsole({ onExit, onLogout, arizeHealth, onHealthUpdate, statsData
     setLoading(true);
     setError("");
     try {
-      const [healthRes, tracesRes, statsRes, agentRes] = await Promise.all([
+      const [healthRes, tracesRes, statsRes, agentRes, driftRes] = await Promise.all([
         fetch(`${API_BASE}/arize/health`),
         fetch(`${API_BASE}/arize/traces?limit=10`),
         fetch(`${API_BASE}/stats`),
         fetch(`${API_BASE}/agent/activity?limit=15`),
+        fetch(`${API_BASE}/agent/tools/accuracy-drift`),
       ]);
       const healthJson = healthRes.ok ? await healthRes.json() : null;
       const tracesJson = tracesRes.ok ? await tracesRes.json() : { traces: [] };
       const statsJson = statsRes.ok ? await statsRes.json() : null;
       const agentJson = agentRes.ok ? await agentRes.json() : { actions: [] };
+      const driftJson = driftRes.ok ? await driftRes.json() : { detectors: [] };
+      const driftMap = {};
+      (Array.isArray(driftJson.detectors) ? driftJson.detectors : []).forEach((row) => { driftMap[row.detector_id] = row; });
+      setDrift(driftMap);
       if (healthJson) {
         if (healthJson.phoenix_link) setPhoenixLinkInfo(healthJson.phoenix_link);
         setHealth(healthJson);
@@ -1081,6 +1009,21 @@ function AdminConsole({ onExit, onLogout, arizeHealth, onHealthUpdate, statsData
 
   useEffect(() => {
     loadAdminData();
+  }, [loadAdminData]);
+
+  const runInvestigatorAgent = useCallback(async () => {
+    setAgentRunning(true);
+    setAgentResult(null);
+    try {
+      const res = await fetch(`${API_BASE}/agent/investigate`, { method: "POST" });
+      const data = res.ok ? await res.json() : null;
+      setAgentResult(data || { error: "Agent run failed." });
+      loadAdminData();
+    } catch {
+      setAgentResult({ error: "Could not reach the agent endpoint." });
+    } finally {
+      setAgentRunning(false);
+    }
   }, [loadAdminData]);
 
   const governor = health?.detector_governor || {};
@@ -1209,9 +1152,11 @@ function AdminConsole({ onExit, onLogout, arizeHealth, onHealthUpdate, statsData
                 )}
                 <div className="admin-leaderboard">
                   {leaderboard.length ? leaderboard.map((d, i) => {
-                    const wPct = Math.round(d.weightMultiplier * 100);
                     const wUp = d.weightMultiplier > 1.001;
                     const wDown = d.weightMultiplier < 0.999;
+                    const dr = drift[d.id];
+                    const driftDelta = dr ? Number(dr.delta) : null;
+                    const showDrift = dr && Math.abs(driftDelta) >= 0.05;
                     return (
                       <div className="lb-row" key={d.id}>
                         <div className="lb-rank">{i + 1}</div>
@@ -1219,6 +1164,11 @@ function AdminConsole({ onExit, onLogout, arizeHealth, onHealthUpdate, statsData
                           <div className="lb-head">
                             <span className="lb-name mono">{d.label}</span>
                             <div className="lb-tags">
+                              {showDrift && (
+                                <span className="lb-drift" style={{ color: driftDelta < 0 ? "#f87171" : "#34d399" }} title="Recent confirmed accuracy vs historical">
+                                  {driftDelta < 0 ? "↘" : "↗"} {Math.abs(Math.round(driftDelta * 100))}% recent
+                                </span>
+                              )}
                               {(wUp || wDown) && (
                                 <span className="lb-weight" style={{ color: wUp ? "#34d399" : "#f87171", borderColor: `${wUp ? "#34d399" : "#f87171"}55` }}>
                                   {wUp ? "↑" : "↓"} {d.weightMultiplier.toFixed(2)}× weight
@@ -1255,14 +1205,37 @@ function AdminConsole({ onExit, onLogout, arizeHealth, onHealthUpdate, statsData
               </section>
 
               <section className="admin-section">
-                <h3><Activity size={14} /> Agent Activity</h3>
+                <div className="admin-section-head">
+                  <h3><Activity size={14} /> Investigator Agent</h3>
+                  <button className="agent-run-btn" onClick={runInvestigatorAgent} disabled={agentRunning}>
+                    {agentRunning ? <><div className="spin-ring" /> Running…</> : <><Target size={14} /> Run investigator agent</>}
+                  </button>
+                </div>
                 <p className="admin-section-sub">
-                  What the investigator agent did on its own: recalibrating detector weights, flagging cases for review, and drafting fact-check notes. This is the agent governing the system, not just reporting on it.
+                  The agent reviews detector reliability against human-confirmed outcomes and Phoenix health, then recalibrates any detector that has drifted. It governs the system, it does not just report on it.
                 </p>
+
+                {agentResult && (
+                  <div className="agent-run-result">
+                    {agentResult.error ? (
+                      <div className="admin-alert error">{agentResult.error}</div>
+                    ) : (
+                      <>
+                        {agentResult.narration && <p className="agent-narration">{agentResult.narration}</p>}
+                        <ol className="agent-steps">
+                          {(agentResult.steps || []).map((s, i) => (
+                            <li key={i}><span className="mono">{s.tool}</span> {s.summary}</li>
+                          ))}
+                        </ol>
+                      </>
+                    )}
+                  </div>
+                )}
+
                 <div className="admin-events">
                   {agentActions.length ? agentActions.map((a) => {
                     const cls = a.type === "recalibrate" ? "calib" : a.type === "flag_review" ? "warn" : "";
-                    const label = a.type === "recalibrate" ? "Recalibrated" : a.type === "flag_review" ? "Flagged" : a.type === "fact_check_note" ? "Drafted note" : "Action";
+                    const label = a.type === "recalibrate" ? "Recalibrated" : a.type === "flag_review" ? "Flagged" : a.type === "fact_check_note" ? "Drafted note" : a.type === "review" ? "Reviewed" : "Action";
                     return (
                       <div className={`admin-event ${cls}`} key={a.id}>
                         <span className="mono">{label}</span>
@@ -1270,7 +1243,7 @@ function AdminConsole({ onExit, onLogout, arizeHealth, onHealthUpdate, statsData
                       </div>
                     );
                   }) : (
-                    <div className="admin-empty">No autonomous agent actions yet. The investigator agent logs here when it recalibrates, flags, or drafts.</div>
+                    <div className="admin-empty">No agent actions yet. Run the investigator agent above, and its actions will appear here.</div>
                   )}
                 </div>
               </section>
@@ -1490,7 +1463,7 @@ function LandingPage({ fileInputRef, previewUrl, fileType, selectedMediaType, ha
       </section>
 
       {/* ── EVIDENCE STRIP ── */}
-      <section className="lp-evidence">
+      <section className="lp-evidence" id="sample-media">
         <p className="lp-section-eyebrow">Sample investigation media</p>
         <div className="lp-carousel-wrapper">
           <div className="lp-carousel-track">
@@ -1504,7 +1477,7 @@ function LandingPage({ fileInputRef, previewUrl, fileType, selectedMediaType, ha
       </section>
 
       {/* ── HOW IT WORKS — 2×2 grid ── */}
-      <section className="lp-how">
+      <section className="lp-how" id="how-it-works">
         <div className="lp-how-head">
           <p className="lp-section-eyebrow">How it works</p>
           <h3 className="lp-section-title">Four lenses. One verdict.</h3>
@@ -1534,7 +1507,7 @@ function LandingPage({ fileInputRef, previewUrl, fileType, selectedMediaType, ha
       </section>
 
       {/* ── WHY DIFFERENT ── */}
-      <section className="lp-diff">
+      <section className="lp-diff" id="why-argus">
         <div className="lp-diff-card">
           <div className="lp-diff-icon" style={{background:"rgba(168,85,247,0.08)",borderColor:"rgba(168,85,247,0.2)",color:"#a855f7"}}><Layers size={18}/></div>
           <div>
@@ -1903,9 +1876,16 @@ export default function App() {
             <span className="logo-sub">Forensic media investigation</span>
           </div>
         </div>
+        {messages.length === 0 && !status && (
+          <nav className="header-center-nav">
+            <a href="#how-it-works">How it works</a>
+            <a href="#why-argus">Why ArgusAI</a>
+            <a href="#sample-media">Sample media</a>
+          </nav>
+        )}
         <div className="header-nav">
           <button type="button" className="header-login-btn" onClick={() => setLoginOpen(true)}>
-            Sign in
+            <LogIn size={15} /> Sign in
           </button>
         </div>
       </header>

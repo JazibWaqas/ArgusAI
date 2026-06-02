@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .evidence import EvidenceSignal
 
@@ -25,7 +25,10 @@ class AudioForensicReport(BaseModel):
     """Plain-language explanation for the UI."""
 
     signal: EvidenceSignal
-    """The full EvidenceSignal from the detector (mirrors image signals)."""
+    """Primary EvidenceSignal that drives the verdict (kept for compatibility)."""
+
+    signals: List[EvidenceSignal] = Field(default_factory=list)
+    """All audio evidence signals shown as cards (voice model, semantic listening, OSINT)."""
 
     inference_source: str
     """'local_wav2vec2' or 'hf_space' — tells the UI which backend ran."""

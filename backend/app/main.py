@@ -333,6 +333,85 @@ async def agent_activity(limit: int = 15) -> dict:
     return {"actions": get_agent_actions(limit)}
 
 
+@app.post("/agent/investigate")
+async def agent_investigate() -> dict:
+    """In-app investigator agent: reviews reliability from Firestore + Phoenix health,
+    recalibrates any detector that has drifted, and narrates what it did. Triggered from
+    the operator console so the agent is driven from the website, not the terminal."""
+    steps: list[dict[str, Any]] = []
+    actions: list[dict[str, Any]] = []
+
+    health = pipeline.health_governor.snapshot()
+    link = phoenix_link_info()
+    steps.append({
+        "tool": "get_arize_health",
+        "summary": f"Read Arize/Phoenix health (status: {health.get('status', 'ok')}, project: {link.get('project_name')}).",
+    })
+
+    drift = detect_accuracy_drift()
+    drift_rows = drift.get("detectors", []) if isinstance(drift, dict) else []
+    drifted = [d for d in drift_rows if d.get("drifted")]
+    steps.append({
+        "tool": "detect_accuracy_drift",
+        "summary": f"Checked confirmed-accuracy drift across {len(drift_rows)} detector(s) with enough human feedback; {len(drifted)} drifting.",
+    })
+
+    stats = get_stats() or {}
+    feedback = stats.get("feedback") or {}
+    steps.append({
+        "tool": "get_stats",
+        "summary": f"Read running intelligence: {int((stats.get('global') or {}).get('total_analyses') or 0)} analyses, {int(feedback.get('total_feedback') or 0)} human-confirmed verdicts.",
+    })
+
+    for d in drifted:
+        det = d.get("detector_id")
+        mult = d.get("suggested_multiplier", 0.75)
+        delta_pct = abs(round((d.get("delta") or 0) * 100))
+        res = recalibrate_detector_weight(det, mult, reason=f"Recent confirmed accuracy fell {delta_pct}% vs historical")
+        if res.get("ok"):
+            actions.append({"type": "recalibrate", "detector_id": det, "summary": f"Recalibrated {det} to {res.get('weight_multiplier')}x"})
+            steps.append({
+                "tool": "recalibrate_detector_weight",
+                "summary": f"Recalibrated {det}: {res.get('previous_multiplier')}x -> {res.get('weight_multiplier')}x weight.",
+            })
+
+    findings = {
+        "phoenix_status": health.get("status", "ok"),
+        "total_analyses": int((stats.get("global") or {}).get("total_analyses") or 0),
+        "confirmed_feedback": int(feedback.get("total_feedback") or 0),
+        "real_world_accuracy": feedback.get("accuracy_rate"),
+        "drifted_detectors": [{"id": d.get("detector_id"), "recent": d.get("recent_accuracy"), "historical": d.get("historical_accuracy")} for d in drifted],
+        "recalibrations": actions,
+    }
+    client = LLMClient()
+    narration = await client.followup_answer(
+        "You are the ArgusAI reliability agent. In 3 to 5 sentences, summarize what you checked across Arize/Phoenix and Firestore, what you found about detector reliability and drift, and what action you took. Plain professional language, no em dashes.",
+        "reliability_review",
+        findings,
+    )
+    if not narration:
+        if actions:
+            names = ", ".join(a["detector_id"] for a in actions)
+            narration = (
+                f"I reviewed detector reliability against human-confirmed outcomes and Phoenix health. "
+                f"{len(drifted)} detector(s) had drifted, so I recalibrated their verdict weight: {names}. "
+                "Future verdicts will trust those detectors less until their confirmed accuracy recovers."
+            )
+        else:
+            narration = (
+                "I reviewed detector reliability against human-confirmed outcomes and Phoenix health. "
+                "No detector has drifted beyond tolerance, so no recalibration was needed. The current weighting stands."
+            )
+
+    log_agent_action(
+        "review",
+        f"Ran reliability review: {len(drift_rows)} detectors checked, {len(actions)} recalibrated",
+        {"drifted": len(drifted), "recalibrated": len(actions)},
+    )
+
+    return {"ok": True, "steps": steps, "actions": actions, "narration": narration, "drifted": len(drifted)}
+
+
 def _too_large(contents: bytes) -> bool:
     return len(contents) > settings.max_upload_mb * 1024 * 1024
 

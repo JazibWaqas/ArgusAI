@@ -21,6 +21,7 @@ SIGNAL_IMPORTANCE = {
     "temporal_coherence": 0.75,
     "temporal_noise_coherence": 0.7,
     "audio_track": 0.7,
+    "audio_track_acoustics": 0.6,
     "audio_deepfake": 0.82,
     "audio_acoustics": 0.6,
 }

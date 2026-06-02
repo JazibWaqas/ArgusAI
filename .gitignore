@@ -93,6 +93,7 @@ active/
 .env.local
 .env.*.local
 argusai_fuse_best/
+backend/models/wav2vec2-deepfake/
 argusai_latest.pth
 argusai_best_weights.pth
 spectral_eval_out/

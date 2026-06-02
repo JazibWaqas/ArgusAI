@@ -607,8 +607,15 @@ html { scroll-behavior: smooth; }
 
 .signals-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
+}
+/* A lone last card in an odd count spans full width instead of leaving a gap. */
+.signals-grid > .signal-card:last-child:nth-child(odd) {
+  grid-column: 1 / -1;
+}
+@media (max-width: 720px) {
+  .signals-grid { grid-template-columns: 1fr; }
 }
 
 .signal-card {
@@ -633,6 +640,9 @@ html { scroll-behavior: smooth; }
   grid-column: 1 / -1;
   padding: 16px 20px;
   gap: 10px;
+}
+.signal-card.signal-card-wide {
+  grid-column: 1 / -1;
 }
 
 .signal-osint-layout {

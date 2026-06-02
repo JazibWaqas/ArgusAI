@@ -400,6 +400,9 @@ const SIGNAL_DESCRIPTIONS = {
   audio_track: {
     video: "Extracts the video's embedded audio track, when present, and checks whether speech or production patterns suggest cloning or synthesis.",
   },
+  audio_track_acoustics: {
+    video: "Measures the embedded audio's physical micro-variation (pitch jitter, amplitude shimmer, harmonic-to-noise ratio). Real voices vary cycle to cycle; synthetic ones are smoother.",
+  },
   audio_deepfake: {
     audio: "Checks the recording with audio authenticity models and Gemini listening for cloned voice, text-to-speech, missing breathing, metallic artifacts, or synthetic production.",
   },
@@ -431,6 +434,9 @@ function AnimatedSignalCard({ signal, index, mediaType = "image", detectorStats 
   const [showDetails, setShowDetails] = useState(false);
   const theme = getSignalTheme(signal.category);
   const wide = isOsintSignal(signal);
+  // Standalone audio cards in the video report span full width so they read as a
+  // distinct "embedded audio" band instead of leaving an orphaned half-row.
+  const fullWidth = wide || signal.id === "audio_track" || signal.id === "audio_track_acoustics";
 
   const hasInfluence = typeof signal.verdict_influence_percent === "number";
   const barPct = hasInfluence ? signal.verdict_influence_percent : Math.round((signal.reliability || 0) * 100);
@@ -534,7 +540,7 @@ function AnimatedSignalCard({ signal, index, mediaType = "image", detectorStats 
   return (
     <motion.div
       ref={ref}
-      className={`signal-card${wide ? " signal-card-osint" : ""}`}
+      className={`signal-card${wide ? " signal-card-osint" : ""}${(fullWidth && !wide) ? " signal-card-wide" : ""}`}
       style={{ "--signal-color": theme.color, "--signal-glow": theme.glow }}
       initial={{ opacity: 0, y: 30 }}
       animate={isInView ? { opacity: 1, y: 0 } : {}}

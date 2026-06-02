@@ -253,10 +253,13 @@ def _parse_hf_result(result: Any, latency: float) -> EvidenceSignal:
     try:
         if isinstance(result, dict):
             # e.g. {"label": "Fake", "confidences": [{"label": "Real", "confidence": 0.08}, ...]}
-            label = (result.get("label") or "").lower()
-            for item in result.get("confidences", []):
-                if str(item.get("label", "")).lower() == label:
-                    confidence = float(item.get("confidence", 0.5))
+            label = (result.get("label") or result.get("prediction") or result.get("class") or "").lower()
+            if result.get("confidence") is not None:
+                confidence = float(result.get("confidence", 0.5))
+            else:
+                for item in result.get("confidences", []):
+                    if str(item.get("label", "")).lower() == label:
+                        confidence = float(item.get("confidence", 0.5))
         elif isinstance(result, (list, tuple)) and len(result) >= 1:
             label = str(result[0]).lower()
             if len(result) >= 2:

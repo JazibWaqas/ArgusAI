@@ -451,8 +451,8 @@ class AnalysisPipeline:
         semantic = next((sig for sig in base_signals if sig.id == "semantic_inconsistencies"), None)
         temporal = self._temporal_signal_from_semantic(semantic)
         temporal_noise = self._temporal_noise_signal(frames or [])
-        audio_track = await self._analyze_video_audio_track(video_bytes)
-        return [temporal, temporal_noise, audio_track]
+        audio_signals = await self._analyze_video_audio_track(video_bytes)
+        return [temporal, temporal_noise, *audio_signals]
 
     def _temporal_noise_unavailable(self, reason: str) -> EvidenceSignal:
         return EvidenceSignal(
@@ -579,7 +579,7 @@ class AnalysisPipeline:
             visible=True,
         )
 
-    async def _analyze_video_audio_track(self, video_bytes: bytes) -> EvidenceSignal:
+    async def _analyze_video_audio_track(self, video_bytes: bytes) -> List[EvidenceSignal]:
         start = time.perf_counter()
         try:
             from ..core.video import extract_audio_track
@@ -588,7 +588,7 @@ class AnalysisPipeline:
             audio_bytes = None
 
         if not audio_bytes:
-            return EvidenceSignal(
+            return [EvidenceSignal(
                 id="audio_track",
                 name="Audio Track",
                 category="audio",
@@ -603,11 +603,11 @@ class AnalysisPipeline:
                 metrics={"latency_seconds": round(time.perf_counter() - start, 4)},
                 supports=SignalSupport.UNKNOWN,
                 visible=True,
-            )
+            )]
 
         from ..detectors.audio import analyze_audio
         sig = await analyze_audio(audio_bytes)
-        return sig.model_copy(
+        audio_track = sig.model_copy(
             update={
                 "id": "audio_track",
                 "name": "Audio Track",
@@ -617,3 +617,18 @@ class AnalysisPipeline:
                 "visible": True,
             }
         )
+
+        signals = [audio_track]
+        # Embedded-audio acoustic micro-signature (measured), best-effort.
+        try:
+            from .audio_pipeline import AudioAnalysisPipeline
+            acoustic = await AudioAnalysisPipeline()._acoustic_signal(audio_bytes)
+            if acoustic is not None:
+                signals.append(acoustic.model_copy(update={
+                    "id": "audio_track_acoustics",
+                    "name": "Embedded Audio Micro-Signature",
+                    "visible": True,
+                }))
+        except Exception:
+            pass
+        return signals

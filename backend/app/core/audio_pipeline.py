@@ -170,6 +170,8 @@ class AudioAnalysisPipeline:
             return True
         detector_conf = detector_signal.confidence or 0.0
         gemini_conf = gemini_signal.confidence or 0.0
+        if gemini_signal.supports == SignalSupport.AI_GENERATED and gemini_conf >= 0.90:
+            return True
         return gemini_conf >= 0.75 and gemini_conf > detector_conf + 0.15
 
     async def _gemini_audio_signal(self, audio_bytes: bytes, user_context: Optional[str]) -> Optional[EvidenceSignal]:

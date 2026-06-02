@@ -139,6 +139,46 @@ def _detector_rows(report: Any, detector_metrics: Optional[dict[str, Any]] = Non
     return rows
 
 
+def _global_stats_from_analyses(db: Any, fallback: Optional[dict[str, Any]] = None) -> dict[str, Any]:
+    """Rebuild global counters from persisted analysis docs.
+
+    Firestore transform writes into nested maps can drift by SDK/version and merge
+    semantics. The `/analyses` collection is the source of truth for the admin
+    console, so read it directly for global counts.
+    """
+    fallback = fallback or {}
+    by_media_type = {"image": 0, "video": 0, "audio": 0}
+    by_verdict: dict[str, int] = {}
+    total = 0
+    last_updated = fallback.get("last_updated")
+    try:
+        docs = db.collection("analyses").stream()
+        for doc in docs:
+            data = doc.to_dict() or {}
+            total += 1
+            media = str(data.get("media_type") or "image").lower()
+            by_media_type[media] = by_media_type.get(media, 0) + 1
+            verdict = str(data.get("verdict") or "unknown")
+            by_verdict[verdict] = by_verdict.get(verdict, 0) + 1
+            ts = data.get("timestamp")
+            if ts and (not last_updated or str(ts) > str(last_updated)):
+                last_updated = ts
+    except Exception as exc:
+        log.warning("Could not rebuild global stats from analyses: %s", exc)
+        return {
+            "total_analyses": int(fallback.get("total_analyses") or 0),
+            "by_media_type": {"image": 0, "video": 0, "audio": 0, **(fallback.get("by_media_type") or {})},
+            "by_verdict": fallback.get("by_verdict") or {},
+            "last_updated": fallback.get("last_updated"),
+        }
+    return {
+        "total_analyses": total,
+        "by_media_type": by_media_type,
+        "by_verdict": by_verdict,
+        "last_updated": last_updated,
+    }
+
+
 def build_analysis_record(report: Any, detector_metrics: Optional[dict[str, Any]] = None) -> dict[str, Any]:
     sha = _report_sha(report)
     verdict = getattr(getattr(report, "verdict", None), "value", getattr(report, "verdict", None))
@@ -320,6 +360,14 @@ def get_stats() -> Optional[dict[str, Any]]:
                 by_media_type[str(key).split(".", 1)[1]] = value
             if str(key).startswith("by_verdict."):
                 by_verdict[str(key).split(".", 1)[1]] = value
+        global_stats = _global_stats_from_analyses(
+            db,
+            {
+                **(global_stats or {}),
+                "by_media_type": by_media_type,
+                "by_verdict": by_verdict,
+            },
+        )
         detectors: dict[str, Any] = {}
         learned_weights: dict[str, Any] = {}
         for doc in db.collection("detector_stats").stream():
@@ -360,8 +408,8 @@ def get_stats() -> Optional[dict[str, Any]]:
         return {
             "global": {
                 "total_analyses": int((global_stats or {}).get("total_analyses") or 0),
-                "by_media_type": {"image": 0, "video": 0, "audio": 0, **by_media_type},
-                "by_verdict": by_verdict,
+                "by_media_type": {"image": 0, "video": 0, "audio": 0, **((global_stats or {}).get("by_media_type") or {})},
+                "by_verdict": (global_stats or {}).get("by_verdict") or {},
                 "last_updated": (global_stats or {}).get("last_updated"),
             },
             "detectors": detectors,

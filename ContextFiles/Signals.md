@@ -1,6 +1,6 @@
 # ArgusAI Signals
 
-Last updated: June 2, 2026.
+Last updated: June 3, 2026.
 
 ArgusAI uses media-specific evidence signals. The goal is not to make every signal perfect. The goal is to make every signal explicit, weighted, auditable, and honest about applicability.
 
@@ -136,7 +136,11 @@ Hidden/not scored:
 
 ### Audio Deepfake / Voice Authenticity
 
-Uses local wav2vec2 model when available and a fallback path when the local model is missing. Gemini semantic audio can identify obvious synthetic speech patterns such as unnatural cadence, missing breathing, overly consistent pitch, or production artifacts.
+Uses local wav2vec2 model when available and an HF Space fallback path when the local model is missing. The HF parser handles the observed `prediction`/`confidence` response shape so real model confidences are shown instead of silently defaulting to 50/50.
+
+Important caveat: wav2vec2/HF is a dedicated voice-authenticity signal, but modern generated audio can fool it. On the current Gemini-generated test clip, wav2vec2/HF marked the voice authentic while Gemini semantic listening identified synthetic cadence, missing breathing, and sterile production patterns. That disagreement is not a product failure; it is exactly why ArgusAI is a multi-signal evidence trail. High-confidence Gemini semantic audio can drive the final verdict while the voice model remains visible as a dissenting evidence card.
+
+For local demos, wav2vec2 weights can live at `backend/models/wav2vec2-deepfake`. That folder is ignored by git because the model is large.
 
 ## Aggregation
 

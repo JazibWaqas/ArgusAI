@@ -1015,6 +1015,8 @@ function AdminConsole({ onExit, onLogout, arizeHealth, onHealthUpdate, statsData
 
   useEffect(() => {
     loadAdminData();
+    const id = setInterval(loadAdminData, 15000);
+    return () => clearInterval(id);
   }, [loadAdminData]);
 
   const runInvestigatorAgent = useCallback(async () => {
@@ -1767,6 +1769,7 @@ export default function App() {
 
       setStatus("");
       setContextText("");
+      loadStats();
     } catch {
       setStatus(
         API_BASE.includes("localhost")

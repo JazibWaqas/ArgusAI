@@ -1,6 +1,6 @@
 # CLAUDE.md — ArgusAI Hackathon Source of Truth
 
-Last updated: June 2, 2026.
+Last updated: June 3, 2026.
 
 This file is the master alignment document. Every implementation decision, open question, bug, UX decision, and todo lives here. Codex reads this and uses it as a senior technical supervisor handoff — not micromanagement, but full clarity so implementation can proceed without ambiguity.
 
@@ -38,7 +38,10 @@ Current live state:
 - Agent action tools now exist: detector reliability, similar cases, accuracy drift, detector recalibration, draft fact-check note, and human-review flagging.
 - Verdict cards and official PDFs now surface Phoenix chain-of-custody audit links/trace IDs.
 - Admin panel now explains the Firestore persistence + Phoenix immutable trace story directly for judges.
-- Backend revision with latency fixes and Flash-Lite explanations deployed: `argusai-backend-00020-742`.
+- Backend revision with latency fixes and Flash-Lite explanations deployed: `argusai-backend-00023-mtw`.
+- Frontend revision with admin polling/stat refresh fixes deployed: `argusai-frontend-00005-r54`.
+- Admin stats are now consistent: `/stats` rebuilds global totals from Firestore `/analyses`, the admin console polls every 15s, and the main app refreshes stats after analysis.
+- Audio voice-model parser and fusion were hardened: HF `prediction`/`confidence` responses parse correctly, local wav2vec2 weights can run from `backend/models/wav2vec2-deepfake`, and high-confidence Gemini semantic listening can drive the final audio verdict when wav2vec2/HF disagrees.
 
 ---
 
@@ -65,7 +68,7 @@ So: stage the *demo narrative* freely, but the **Agent Builder + Phoenix MCP int
 
 ## What is already TRUE (current state — don't rebuild these)
 
-- Forensic pipeline works: image (7 signals), video (temporal + frames), audio (wav2vec2 + Gemini).
+- Forensic pipeline works: image (7 signals), video (temporal + frames), audio (wav2vec2/HF + acoustic micro-signature + Gemini semantic listening + optional OSINT).
 - **Self-calibration loop is real and causal:** human feedback → per-detector confirmed accuracy in Firestore → `get_learned_weights()` → verdict engine `_score_signal` multiplies detector influence (gated `LEARNED_WEIGHT_MIN_CONFIRMATIONS`, bounded 0.5x–1.5x). *The verdict engine already reads learned weights from Firestore* — this is the hook the agent will write to.
 - Firestore persistence works (`source: firestore`); Firebase lru_cache bug fixed (restart backend to apply).
 - Phoenix tracing works **locally**: project `argusai-forensics`, internal id `UHJvamVjdDoy`. Cloud Phoenix is empty/ephemeral — ignore it for the demo.
@@ -162,7 +165,7 @@ Expose these as OpenAPI tools (new thin backend endpoints over existing `analysi
 
 ## After this plan: polish + demo ONLY (no new features)
 
-1. Latency workaround for recording (`min-instances=1`, pre-warm, or pre-run + show cached) — do NOT root-cause the 78s reasoning phase now.
+1. Latency workaround for recording (`min-instances=1`, pre-warm, or pre-run + show cached). A June 3 pass already routed final explanations to `gemini-3.1-flash-lite`, set a 30s explanation timeout, parallelized audio checks, and reduced default video frames to 2.
 2. Pick the 3 demo assets (image confirmed: Pope-puffer / PSL; need clean audio + video).
 3. Record the 3-minute video: Investigator Agent flow → Phoenix MCP moment → self-recalibration → admin console → verdict/fact-check artifact.
 4. Devpost copy: emphasize forensic investigator *agent*, Gemini + Agent Builder, Arize/Phoenix MCP observability that the agent reasons with and acts on.
@@ -179,7 +182,7 @@ It is not a classifier. It does not output a single number. It produces an **evi
 The system now handles three media types:
 - **Image**: The original use case. Seven signals, full pipeline.
 - **Video**: Frame extraction, temporal analysis, optionally audio track extraction.
-- **Audio**: Wav2Vec2 voice authenticity + Gemini semantic + OSINT.
+- **Audio**: Wav2Vec2/HF voice authenticity + acoustic micro-signature + Gemini semantic listening + OSINT when context is supplied.
 
 Core product phrase to preserve everywhere in code, copy, and prompts:
 > Forensic investigation platform, not classifier. Evidence trail, not score.
@@ -236,7 +239,7 @@ AnalysisPipeline (pipeline.py)
 └── Records detector health via DetectorHealthGovernor
 
 AudioAnalysisPipeline (audio_pipeline.py)
-└── Standalone audio: wav2vec2 + OSINT + Gemini semantic
+└── Standalone audio: wav2vec2/HF + acoustic micro-signature + Gemini semantic + optional OSINT
 
 DetectorHealthGovernor (health_governor.py)
 ├── Persists health state to logs/arize/detector_health.json
@@ -305,7 +308,7 @@ This is the source of truth for which signals run and which display. The backend
 ### Audio (standalone)
 | Signal | Runs | Displayed | Notes |
 |---|---|---|---|
-| audio_deepfake | ✅ | ✅ | wav2vec2 — the real detector |
+| audio_deepfake | ✅ | ✅ | wav2vec2/HF voice-authenticity signal; useful but not always decisive |
 | semantic_inconsistencies | ✅ | ✅ | Gemini listens for AI cadence/artifacts |
 | osint_verification | ✅ | ✅ | Investigate claimed speaker/context |
 | Everything else | ❌ | ❌ | Not applicable, do not show |
@@ -544,7 +547,7 @@ When running with fewer signals (audio: 3 signals, video: 5-7 signals), the exis
 
 ### Demo — Done When:
 - [ ] Pope puffer image analysis runs cleanly: OSINT names Snopes or equivalent, verdict is AI-generated, Phoenix trace visible in admin panel
-- [ ] Known AI voice clip runs cleanly: wav2vec2 gives high confidence, audio report language is correct
+- [ ] Known AI voice clip runs cleanly: final verdict is AI-generated, audio report language is correct, and any wav2vec2/Gemini disagreement is presented as honest evidence rather than a failure
 - [ ] Known AI deepfake video runs cleanly: temporal coherence signal appears, audio track signal appears if video has audio
 - [ ] Calibration divergence can be triggered: run 3 analyses where spectral and semantic disagree, admin panel shows the alert, badge turns amber
 - [ ] Admin panel visually looks polished enough for a 30-second screen-recording segment
@@ -588,7 +591,7 @@ Emphasize: "This isn't a score. It's an explanation."
 
 **[1:15–1:45] — Multi-Modal: Audio**
 "Now, the same investigation, but for audio."
-Upload known AI voice clip (have it ready). Show 3-signal audio report. Language says "recording" and "voice." OSINT checks if the speaker ever said this publicly.
+Upload known AI voice clip (have it ready). Show the audio evidence cards: voice-authenticity model, acoustic micro-signature, Gemini listening, and OSINT if a claim is supplied. Language says "recording" and "voice." If wav2vec2 disagrees with Gemini, frame it as the evidence-trail advantage: the final verdict does not blindly trust one detector.
 
 **[1:45–2:15] — The Arize Layer**
 Click the admin toggle. Show the admin panel.

@@ -22,7 +22,8 @@ Current implemented hackathon additions:
 - Gemini semantic fallback for audio, video, and image when primary detector/model is unavailable or weak.
 - Gemini fallback model behavior: primary `gemini-3.5-flash`, fallback `gemini-2.5-flash`.
 - Cloud Run Gemini rotation is active through Secret Manager `argusai-gemini-api-keys` with 32 sanitized unique keys.
-- Latency optimization pass implemented: final explanation generation is routed to `gemini-3.1-flash-lite` with an 8s hard timeout; audio sub-detectors execute concurrently via `asyncio.create_task`; video frame analysis extracts a default of 2 frames (configurable via `VIDEO_MAX_FRAMES`).
+- Latency optimization pass implemented: final explanation generation is routed to `gemini-3.1-flash-lite` with a 30s timeout; audio sub-detectors execute concurrently via `asyncio.create_task`; video frame analysis extracts a default of 2 frames (configurable via `VIDEO_MAX_FRAMES`).
+- Audio voice model handling was hardened: the HF Space parser now reads `prediction`/`confidence` responses, local wav2vec2 weights can run from `backend/models/wav2vec2-deepfake` for local demos, and high-confidence Gemini semantic listening can drive the final audio verdict when wav2vec2/HF disagrees.
 - Video temporal coherence signal and graceful embedded audio-track signal.
 - Gemini-grounded OSINT research agent and optional public-URL reverse-image enrichment in `backend/app/core/llm_client.py`.
 - Upgraded OSINT detector output in `backend/app/detectors/osint.py`.
@@ -31,6 +32,7 @@ Current implemented hackathon additions:
 - Arize trace feed in `backend/app/main.py`: `/arize/traces`.
 - Firestore intelligence layer in `backend/app/core/firebase.py` and `backend/app/core/analysis_store.py`.
 - Firestore-backed `/stats`, Firestore-backed `/arize/traces`, and `/sessions/{id}/feedback`.
+- Admin dashboard stats are live and consistent: `/stats` derives global counts from Firestore `/analyses`, the admin console polls every 15s, and the main app refreshes stats after each completed analysis.
 - Firestore is active on Cloud Run with Firebase project `argusai-8d9fe`.
 - Agent Builder endpoints now query Firestore history context before responding, including total analyses, same-media counts, detector reliability, recent same-media cases, and `phoenix_trace_id`.
 - Verdict cards and official PDFs surface Phoenix chain-of-custody links/trace IDs.
@@ -63,3 +65,7 @@ Cloud Run uses `min-instances=0` to avoid idle spend, so first requests may cold
 Backend `max-instances=1` is intentional because sessions are in memory. Do not raise it until session state is externalized.
 
 Cloud Run cannot use `http://localhost:6006` for Phoenix. That local URL only works on the laptop. Cloud Run currently uses public self-hosted Phoenix at `https://argusai-phoenix-ddmxiumrdq-uc.a.run.app`.
+
+Audio caveat: wav2vec2/HF is a real dedicated voice-authenticity signal, but it can misclassify modern Gemini-generated audio as authentic. Treat disagreement between wav2vec2, acoustic micro-signature, and Gemini semantic listening as honest evidence-trail behavior. For demos, pick audio where the final verdict is clear and explain the disagreement if it appears.
+
+Stats caveat: analyses are persisted under `/analyses/{sha256}`. Re-uploading the exact same file updates that document rather than creating a new unique global analysis count.

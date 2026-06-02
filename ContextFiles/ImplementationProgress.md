@@ -1,6 +1,6 @@
 # ArgusAI Implementation Progress
 
-Last updated: June 2, 2026.
+Last updated: June 3, 2026.
 
 For full details, read `ContextFiles/CurrentHandoff.md`. This file is the concise progress tracker.
 
@@ -42,9 +42,12 @@ Google Cloud:
 - Gemini fallback path from `gemini-3.5-flash` to `gemini-2.5-flash` for quota/high-demand/transient failures.
 - Deployed Gemini key rotation across 32 sanitized keys via Secret Manager `argusai-gemini-api-keys`.
 - Latency pass: final explanation generation now uses `gemini-3.1-flash-lite`, has a 30s timeout, audio sub-checks run concurrently, and video frame-heavy checks default to 2 frames.
+- Audio model hardening: HF Space parser now reads the observed `prediction`/`confidence` response shape; local wav2vec2 weights were downloaded to `backend/models/wav2vec2-deepfake` for local demos and are ignored by git.
+- Audio fusion now lets very high-confidence Gemini semantic listening drive the final audio verdict when wav2vec2/HF says authentic, while still showing the disagreement as evidence.
 - `/arize/traces` endpoint reading Firestore first and x-ray logs as fallback for admin dashboard.
 - Frontend Cloud Run deployment via `frontend/Dockerfile`.
 - Frontend empirical reliability display, verdict feedback widget, admin global stats row, and Phoenix trace links.
+- Admin stats consistency fixed: global totals now derive from Firestore `/analyses`, and the admin console polls every 15 seconds while open.
 - Verdict cards show an inline Phoenix audit link, and official PDFs include trace ID/timestamp chain-of-custody footer.
 - Admin panel includes the Firestore/Phoenix explanatory framing copy for judges.
 - Phoenix MCP config fixed to use `PHOENIX_DASHBOARD_URL`.
@@ -69,6 +72,7 @@ Audio AI sample:
 - Certainty: `0.95`
 - Signal: Gemini semantic audio fallback
 - Finding: missing breathing and overly consistent synthetic production patterns
+- Local follow-up: the downloaded wav2vec2 model and HF Space both marked this exact clip authentic with high confidence, so the correct final verdict depends on the multi-signal fusion giving Gemini semantic listening priority when it is highly confident.
 
 Video AI sample:
 
@@ -91,8 +95,9 @@ Firestore/Gemini:
 - Backend `/stats` returns `source: firestore`.
 - Backend `/health` reports `gemini_key_count: 32`.
 - Live `/analyze` returned a `phoenix_trace_id` and persisted an analysis to Firestore.
-- Live backend revision after latency/model-routing work: `argusai-backend-00020-742`.
-- Live frontend revision after Agent Builder/chain-of-custody work: `argusai-frontend-00004-4h6`.
+- Live backend revision after latency/model-routing work: `argusai-backend-00023-mtw`.
+- Live frontend revision after Agent Builder/chain-of-custody work: `argusai-frontend-00005-r54`.
+- Live `/stats` after the admin consistency fix returned matching Firestore global totals and media/verdict breakdowns; admin dashboard now polls every 15 seconds while open.
 - Backend agent action endpoints verified locally on port `8001`; `recalibrate-detector` wrote a bounded `1.0x` no-op override to Firestore for `spectral_artifacts`.
 - Backend agent action endpoints verified on Cloud Run after deploy: `/agent/tools/detectors/spectral_artifacts/reliability` and `/agent/tools/accuracy-drift` returned Firestore-backed responses.
 - ADK default model is `gemini-3.5-flash`; during verification Gemini 3.5 returned temporary `503 high demand`, so `ADK_GEMINI_MODEL=gemini-2.5-flash` was used once to prove tool execution.
@@ -119,7 +124,9 @@ Firestore/Gemini:
 - Phoenix Cloud Run is unauthenticated and ephemeral. It is acceptable for hackathon/demo, not production.
 - Firestore is active on Cloud Run. The code still falls back to x-ray logs if Firebase is unavailable.
 - Gemini 3.5 may rate-limit; Gemini 2.5 fallback is intentional.
-- Gemini Cloud Run key rotation is active with 35 keys.
+- Gemini Cloud Run key rotation is active with 32 sanitized keys.
+- Audio voice authenticity is one signal, not the verdict. Modern generated audio can fool wav2vec2/HF; use Gemini semantic listening plus acoustic evidence for the final demo story when they disagree.
+- Firestore global totals count unique analysis documents keyed by SHA-256. Re-uploading the exact same file may not increase the global total.
 - Local browser automation via Node REPL could not run because Playwright was not installed there; HTTP-level frontend checks passed.
 
 ## Validation Commands

@@ -1,6 +1,6 @@
 # ArgusAI Current Handoff
 
-Last updated: June 2, 2026.
+Last updated: June 3, 2026.
 
 This is the current source of truth for the next LLM/session. Read this before making new implementation decisions.
 
@@ -86,8 +86,8 @@ The deployed frontend bundle is verified to use the deployed backend URL, not `l
 Cloud Run services:
 
 ```text
-argusai-backend   latest verified revision: argusai-backend-00020-742
-argusai-frontend  latest verified revision: argusai-frontend-00004-4h6
+argusai-backend   latest verified revision: argusai-backend-00023-mtw
+argusai-frontend  latest verified revision: argusai-frontend-00005-r54
 argusai-phoenix   latest verified revision: argusai-phoenix-00001-dlc
 ```
 
@@ -174,7 +174,9 @@ Backend:
 - Video hides still-photo-only noise and lighting cards.
 - Video includes `temporal_coherence`.
 - Video attempts embedded audio extraction with graceful `unavailable` if no audio/ffmpeg issue.
-- Audio uses wav2vec/HF when possible and Gemini semantic fallback when the model is missing, weak, or inconclusive.
+- Audio uses wav2vec/HF when possible and Gemini semantic fallback when the model is missing, weak, inconclusive, or contradicted by very high-confidence semantic evidence.
+- Audio HF Space parsing now handles the observed `prediction`/`confidence` response shape, so the UI no longer silently falls back to a fake-looking 50/50 when the Space returns a real confidence.
+- Local wav2vec2 weights were downloaded to `backend/models/wav2vec2-deepfake` for laptop demos; that directory is gitignored because the model is large.
 - Gemini prompts are media-aware for image, video, and audio.
 - Gemini 3.5 primary now falls back to Gemini 2.5 on quota/high-demand/transient failures.
 - `DetectorHealthGovernor` tracks spectral-vs-semantic calibration divergence.
@@ -208,6 +210,7 @@ Frontend:
 - Admin dashboard pulls `/arize/health` and `/arize/traces`.
 - Admin dashboard shows recent investigations, detector health, latency, and calibration events.
 - Admin dashboard also pulls `/stats` and shows global analysis counts.
+- Admin dashboard stats fix (June 3): `/stats` now rebuilds global totals from persisted `/analyses` documents so total, media breakdown, and verdict breakdown stay consistent. The admin console polls every 15 seconds while open, and the main app refreshes stats after each completed analysis.
 - Signal cards can show empirical reliability once a detector has at least 5 recorded runs.
 - Verdict feedback widget posts user confirmation to `/sessions/{session_id}/feedback`.
 - Trace rows and expanded signal cards can link to the Phoenix trace when `phoenix_trace_id` exists.
@@ -218,8 +221,8 @@ Frontend:
 Cloud/Arize:
 
 - Backend deployed to Cloud Run.
-- Backend revision `argusai-backend-00020-742` is live with `/agent/tools/*` agent-action endpoints and latency fixes.
-- Frontend deployed to Cloud Run.
+- Backend revision `argusai-backend-00023-mtw` is live with `/agent/tools/*` agent-action endpoints and latency fixes.
+- Frontend deployed to Cloud Run; frontend revision `argusai-frontend-00005-r54` is live with admin polling/stat refresh fixes.
 - Phoenix deployed to Cloud Run using `arizephoenix/phoenix:latest`.
 - Firestore is active on Cloud Run. `/stats` returns `source: firestore`.
 - Cloud Run `/health` reports `gemini_key_count: 32`, `explanation_model: gemini-3.1-flash-lite`, and `explanation_timeout_seconds: 30`.
@@ -305,6 +308,16 @@ De-AI visual polish:
 
 Note: a later edit parallelized the audio pipeline signals with `asyncio.create_task` and added a `settings.video_max_frames` config for frame extraction.
 
+## Audio Model Reality Check (June 3, 2026)
+
+The voice-authenticity model is real, but it should not be treated as the single source of truth.
+
+- Local torch is installed and the wav2vec2 model folder was downloaded locally with `python -m backend.scripts.download_audio_model`.
+- The local model path is `backend/models/wav2vec2-deepfake`; it is intentionally ignored by git.
+- On `Images Dataset/AI audio/Coral_and_Turquoise.mp3`, local wav2vec2 predicted `authentic` with about `0.998` confidence. The HF Space returned the same class/confidence shape.
+- The final audio verdict is still correctly `ai_generated` because Gemini semantic listening identifies synthetic-speech evidence with high confidence. The audio fusion now allows high-confidence Gemini synthetic evidence to drive the final verdict while keeping the wav2vec2 disagreement visible as an evidence card.
+- This is acceptable and useful for the evidence-trail story: one detector can be wrong, and the system shows why the final verdict did not blindly follow it.
+
 ## Firebase Status
 
 Firestore integration is implemented and active on Cloud Run.
@@ -329,8 +342,8 @@ GET /stats -> source: firestore
 GET /health -> gemini_key_count: 32
 POST /analyze -> returned phoenix_trace_id and persisted an analysis to Firestore
 GET /arize/traces?limit=3 -> source: firestore, returned the persisted analysis
-Backend deployed revision -> argusai-backend-00020-742
-Frontend deployed revision -> argusai-frontend-00004-4h6
+Backend deployed revision -> argusai-backend-00023-mtw
+Frontend deployed revision -> argusai-frontend-00005-r54
 ```
 
 ## Live Verification Results
@@ -364,6 +377,7 @@ source: gemini_semantic
 model: gemini-2.5-flash
 fallback_used: true
 finding: missing natural breathing, unnaturally consistent pitch/rhythm/pronunciation
+local follow-up: wav2vec2/HF may mark this exact sample authentic; final verdict should be driven by Gemini semantic listening if confidence remains high.
 ```
 
 Video:
@@ -489,6 +503,8 @@ These need user/browser interaction or product judgment.
 - Backend sessions are in-memory. Keep `max-instances=1` until session storage is externalized.
 - Gemini 3.5 quota/high demand can happen. The fallback to Gemini 2.5 is intentional and verified.
 - Audio reports have a different schema (`AudioForensicReport`) than image/video reports. Frontend handles this.
+- The dedicated wav2vec2/HF voice model can misclassify modern Gemini-generated audio as authentic. Do not demo it as a guaranteed standalone detector. Keep it as one evidence card and let the multi-signal verdict explain any disagreement.
+- `/stats` global analysis count is based on unique Firestore analysis documents keyed by SHA-256. Re-uploading the exact same file updates/reuses that document and may not increase `total_analyses`.
 - The deployed video test had no usable embedded audio track, so `audio_track` was `unavailable`; that is graceful behavior, not a failure.
 - A Node Playwright browser check was attempted through the Node REPL, but Playwright was not installed there. HTTP bundle checks passed.
 - **OSINT is prompt-activated by design.** `osint_verification` shows `unavailable` when no context prompt is given — this is intended, not a bug. With a context prompt it works (e.g., the PSL/Lahore Qalanders image run found Hamariweb, March 18 2023, 32% influence).

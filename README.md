@@ -30,6 +30,7 @@ Current implementation:
 - React/Vite frontend with image/video/audio upload flow, animated analysis, signal cards, OSINT research details, Arize health badge, admin dashboard, and PDF export.
 - Media-specific forensic signals: spectral, metadata, noise/lighting for images, semantic reasoning, ELA, OSINT, temporal coherence for video, and audio authenticity for recordings.
 - Gemini-only AI stack for semantic analysis, OSINT synthesis, grounded research, report narratives, and chat follow-ups.
+- Audio analysis is intentionally multi-signal: wav2vec2/HF voice authenticity, acoustic micro-signatures, Gemini semantic listening, and optional OSINT. A dedicated voice model can disagree with Gemini on modern generated audio; the evidence trail shows that disagreement instead of hiding it.
 - Arize Phoenix/OpenTelemetry instrumentation for root analysis traces and detector child spans.
 - Arize reliability governor: circuit-breaker and calibration events are not passive logs. They affect detector influence and are visible in the admin panel.
 - Firestore persistence layer for accumulated analysis history, detector reliability stats, global stats, verdict feedback, and health governor state.
@@ -56,6 +57,7 @@ Current cloud state:
 - Spectral weights are stored in Cloud Storage at `gs://argusai-497719-models/models/argusai_best_weights.pth`.
 - The backend health endpoint is live at `https://argusai-backend-1007754127412.us-central1.run.app/health`.
 - Backend `/stats` is live and returns Firestore-backed stats.
+- Admin/dashboard stats derive global totals from Firestore `/analyses`; exact duplicate file uploads are keyed by SHA-256 and may not increase the unique global analysis count.
 - Backend `/agent/analyze` and `/agent/chat` are live and history-aware; they still need to be configured in the Agent Builder console.
 - Phoenix trace intake is confirmed through Cloud Run logs showing `POST /v1/traces` HTTP 200.
 - Admin dashboard password: `argusai2026`.

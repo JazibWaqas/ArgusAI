@@ -1,0 +1,139 @@
+{
+  "timestamp": "2026-06-03T21:08:12.074994+00:00",
+  "sha256": "db0a1f75e588e5276bde6ea04e35f7b84ed3ba44bb7a0323fde8838e94194ae8",
+  "media_type": "audio",
+  "verdict": "ai_generated",
+  "certainty": 0.95,
+  "inference_source": "gemini_semantic",
+  "latency_seconds": 9.79,
+  "phoenix_trace_id": "a1fdd24ce2e915b8ad39ca5f3c01c391",
+  "signal": {
+    "id": "audio_semantic",
+    "name": "Gemini Semantic Listening",
+    "category": "semantic",
+    "status": "ok",
+    "reliability": 0.78,
+    "summary": "The audio exhibits a highly consistent, almost metronomic cadence with no natural breathing sounds, strongly indicating AI generation. The voice quality is overly polished and smooth, lacking the organic variations and physiological cues of human speech. This sounds like a well-produced text-to-speech output.",
+    "what_checked": "Gemini listened for synthetic speech, cloned-voice artifacts, unnatural cadence, missing breathing, and generated-audio production patterns.",
+    "what_found": "The audio exhibits a highly consistent, almost metronomic cadence with no natural breathing sounds, strongly indicating AI generation. The voice quality is overly polished and smooth, lacking the organic variations and physiological cues of human speech. This sounds like a well-produced text-to-speech output.",
+    "why_it_matters": "When the dedicated wav2vec2 detector is missing or uncertain, Gemini gives the product a direct semantic audio review instead of stopping at an inconclusive model score.",
+    "caveat": "Gemini is an expert semantic judge, not a calibrated audio classifier. Treat this as one evidence signal in the trail.",
+    "observations": [
+      "{'timestamp': '0:00-0:09', 'description': 'The overall cadence and flow are unnaturally consistent and metronomic, lacking the natural variations in speed, emphasis, and pauses typical of human speech. Words are delivered with a very even rhythm.'}",
+      "{'timestamp': '0:00-0:09', 'description': 'There are no discernible natural breathing sounds or physiological cues throughout the entire recording. The speech flows continuously without any indication of a speaker inhaling.'}",
+      "{'timestamp': '0:01-0:02', 'description': \"The word 'thrilled' sounds slightly stretched and has a subtle artificial resonance.\"}",
+      "{'timestamp': '0:06-0:07', 'description': \"The word 'overlean' sounds somewhat elongated and unnaturally smooth.\"}",
+      "{'timestamp': '0:00-0:09', 'description': 'The voice has a very clean, almost overly polished quality, with a subtle synthetic or metallic undertone, particularly noticeable in the sustained vowel sounds. It lacks the natural warmth and imperfections of a human voice.'}"
+    ],
+    "metrics": {
+      "confidence_raw": 0.95,
+      "confidence_label": "High",
+      "inference_source": "gemini_semantic",
+      "provider": "gemini",
+      "model": "gemini-2.5-flash",
+      "fallback_used": true
+    },
+    "confidence": 0.95,
+    "supports": "ai_generated",
+    "notes": "Gemini semantic audio fallback.",
+    "visible": true,
+    "verdict_influence_percent": null
+  },
+  "signals": [
+    {
+      "id": "audio_deepfake",
+      "name": "Voice Authenticity Model",
+      "category": "audio",
+      "status": "ok",
+      "reliability": 0.82,
+      "summary": "This audio appears to be authentic human speech. Confidence: 97%. Inference via local wav2vec2.",
+      "what_checked": "A fine-tuned Wav2Vec2-XLSR transformer (160M params) was used to classify whether this audio was recorded from a real human voice or synthesised by a text-to-speech / voice cloning system (ElevenLabs, Amazon Polly, Kokoro, etc.).",
+      "what_found": "The model classified this audio as a authentic human voice with 97% directional confidence. Probability real: 97% | Probability fake: 3%.",
+      "why_it_matters": "AI voice cloning is increasingly used to fabricate statements by public figures. This check catches spectral artifacts in the audio that TTS models leave behind.",
+      "caveat": "The model was fine-tuned on 6 TTS engines. Novel cloning systems not in its training set may evade detection. Short clips (<2.5 s) or heavily compressed audio may reduce accuracy.",
+      "observations": [
+        "Probability of AI-generated speech: 3%",
+        "Probability of real human speech: 97%",
+        "Confidence level: Very High",
+        "Inference source: \ud83d\udda5 Local wav2vec2 model",
+        "Inference latency: 3.84s"
+      ],
+      "metrics": {
+        "prob_real": 0.9654,
+        "prob_fake": 0.0346,
+        "inference_source": "local_wav2vec2",
+        "source_label": "\ud83d\udda5 Local wav2vec2 model",
+        "confidence_label": "Very High",
+        "latency_seconds": 3.842
+      },
+      "confidence": 0.9654,
+      "supports": "authentic",
+      "notes": null,
+      "visible": true,
+      "verdict_influence_percent": null
+    },
+    {
+      "id": "audio_acoustics",
+      "name": "Acoustic Micro-Signature",
+      "category": "spectral",
+      "status": "ok",
+      "reliability": 0.5,
+      "summary": "The voice shows natural micro-variation (jitter 4.65%, shimmer 18.23%), consistent with real vocal-fold behaviour.",
+      "what_checked": "We measured the physical micro-variation of the voice: pitch jitter, amplitude shimmer, harmonic-to-noise ratio, and spectral tonality.",
+      "what_found": "The voice shows natural micro-variation (jitter 4.65%, shimmer 18.23%), consistent with real vocal-fold behaviour.",
+      "why_it_matters": "Real vocal folds never repeat a cycle perfectly. Text-to-speech and voice clones tend to be smoother and more regular, so this measured signature is hard for a generator to fake without modelling true vocal physics.",
+      "caveat": "Heavy compression, noise reduction, and short or noisy clips can distort these measurements, so this is weighed with the other audio signals.",
+      "observations": [
+        "Pitch jitter (cycle-to-cycle F0 variation): 4.65%",
+        "Amplitude shimmer (loudness micro-variation): 18.23%",
+        "Spectral flatness (tonality): 0.029 | Harmonic-to-noise ratio: -3.4 dB",
+        "Voiced fraction: 49.17%",
+        "Real human speech carries small, irregular variation from cycle to cycle. Synthetic and cloned voices are often smoother and more regular than a real vocal tract."
+      ],
+      "metrics": {
+        "jitter": 0.0464502839815397,
+        "shimmer": 0.18234390020370483,
+        "spectral_flatness": 0.02945750392973423,
+        "hnr_db": -3.416947892564858,
+        "voiced_ratio": 0.49169435215946844
+      },
+      "confidence": null,
+      "supports": "authentic",
+      "notes": "Measured acoustic micro-signature (librosa).",
+      "visible": true,
+      "verdict_influence_percent": null
+    },
+    {
+      "id": "audio_semantic",
+      "name": "Gemini Semantic Listening",
+      "category": "semantic",
+      "status": "ok",
+      "reliability": 0.78,
+      "summary": "The audio exhibits a highly consistent, almost metronomic cadence with no natural breathing sounds, strongly indicating AI generation. The voice quality is overly polished and smooth, lacking the organic variations and physiological cues of human speech. This sounds like a well-produced text-to-speech output.",
+      "what_checked": "Gemini listened for synthetic speech, cloned-voice artifacts, unnatural cadence, missing breathing, and generated-audio production patterns.",
+      "what_found": "The audio exhibits a highly consistent, almost metronomic cadence with no natural breathing sounds, strongly indicating AI generation. The voice quality is overly polished and smooth, lacking the organic variations and physiological cues of human speech. This sounds like a well-produced text-to-speech output.",
+      "why_it_matters": "When the dedicated wav2vec2 detector is missing or uncertain, Gemini gives the product a direct semantic audio review instead of stopping at an inconclusive model score.",
+      "caveat": "Gemini is an expert semantic judge, not a calibrated audio classifier. Treat this as one evidence signal in the trail.",
+      "observations": [
+        "{'timestamp': '0:00-0:09', 'description': 'The overall cadence and flow are unnaturally consistent and metronomic, lacking the natural variations in speed, emphasis, and pauses typical of human speech. Words are delivered with a very even rhythm.'}",
+        "{'timestamp': '0:00-0:09', 'description': 'There are no discernible natural breathing sounds or physiological cues throughout the entire recording. The speech flows continuously without any indication of a speaker inhaling.'}",
+        "{'timestamp': '0:01-0:02', 'description': \"The word 'thrilled' sounds slightly stretched and has a subtle artificial resonance.\"}",
+        "{'timestamp': '0:06-0:07', 'description': \"The word 'overlean' sounds somewhat elongated and unnaturally smooth.\"}",
+        "{'timestamp': '0:00-0:09', 'description': 'The voice has a very clean, almost overly polished quality, with a subtle synthetic or metallic undertone, particularly noticeable in the sustained vowel sounds. It lacks the natural warmth and imperfections of a human voice.'}"
+      ],
+      "metrics": {
+        "confidence_raw": 0.95,
+        "confidence_label": "High",
+        "inference_source": "gemini_semantic",
+        "provider": "gemini",
+        "model": "gemini-2.5-flash",
+        "fallback_used": true
+      },
+      "confidence": 0.95,
+      "supports": "ai_generated",
+      "notes": "Gemini semantic audio fallback.",
+      "visible": true,
+      "verdict_influence_percent": null
+    }
+  ]
+}

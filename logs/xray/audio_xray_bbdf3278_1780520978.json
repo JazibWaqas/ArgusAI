@@ -1,0 +1,135 @@
+{
+  "timestamp": "2026-06-03T21:09:38.603079+00:00",
+  "sha256": "bbdf32782f1c06c0361328fb21524981ead98d94f9cfca4f81aee036e7cb6f3c",
+  "media_type": "audio",
+  "verdict": "authentic",
+  "certainty": 0.9942,
+  "inference_source": "local_wav2vec2",
+  "latency_seconds": 5.653,
+  "phoenix_trace_id": "641aa093a40492e12f7a2dbd2e92bf4e",
+  "signal": {
+    "id": "audio_deepfake",
+    "name": "Voice Authenticity Model",
+    "category": "audio",
+    "status": "ok",
+    "reliability": 0.82,
+    "summary": "This audio appears to be authentic human speech. Confidence: 99%. Inference via local wav2vec2.",
+    "what_checked": "A fine-tuned Wav2Vec2-XLSR transformer (160M params) was used to classify whether this audio was recorded from a real human voice or synthesised by a text-to-speech / voice cloning system (ElevenLabs, Amazon Polly, Kokoro, etc.).",
+    "what_found": "The model classified this audio as a authentic human voice with 99% directional confidence. Probability real: 99% | Probability fake: 1%.",
+    "why_it_matters": "AI voice cloning is increasingly used to fabricate statements by public figures. This check catches spectral artifacts in the audio that TTS models leave behind.",
+    "caveat": "The model was fine-tuned on 6 TTS engines. Novel cloning systems not in its training set may evade detection. Short clips (<2.5 s) or heavily compressed audio may reduce accuracy.",
+    "observations": [
+      "Probability of AI-generated speech: 1%",
+      "Probability of real human speech: 99%",
+      "Confidence level: Very High",
+      "Inference source: \ud83d\udda5 Local wav2vec2 model",
+      "Inference latency: 3.25s"
+    ],
+    "metrics": {
+      "prob_real": 0.9942,
+      "prob_fake": 0.0058,
+      "inference_source": "local_wav2vec2",
+      "source_label": "\ud83d\udda5 Local wav2vec2 model",
+      "confidence_label": "Very High",
+      "latency_seconds": 3.253
+    },
+    "confidence": 0.9942,
+    "supports": "authentic",
+    "notes": null,
+    "visible": true,
+    "verdict_influence_percent": null
+  },
+  "signals": [
+    {
+      "id": "audio_deepfake",
+      "name": "Voice Authenticity Model",
+      "category": "audio",
+      "status": "ok",
+      "reliability": 0.82,
+      "summary": "This audio appears to be authentic human speech. Confidence: 99%. Inference via local wav2vec2.",
+      "what_checked": "A fine-tuned Wav2Vec2-XLSR transformer (160M params) was used to classify whether this audio was recorded from a real human voice or synthesised by a text-to-speech / voice cloning system (ElevenLabs, Amazon Polly, Kokoro, etc.).",
+      "what_found": "The model classified this audio as a authentic human voice with 99% directional confidence. Probability real: 99% | Probability fake: 1%.",
+      "why_it_matters": "AI voice cloning is increasingly used to fabricate statements by public figures. This check catches spectral artifacts in the audio that TTS models leave behind.",
+      "caveat": "The model was fine-tuned on 6 TTS engines. Novel cloning systems not in its training set may evade detection. Short clips (<2.5 s) or heavily compressed audio may reduce accuracy.",
+      "observations": [
+        "Probability of AI-generated speech: 1%",
+        "Probability of real human speech: 99%",
+        "Confidence level: Very High",
+        "Inference source: \ud83d\udda5 Local wav2vec2 model",
+        "Inference latency: 3.25s"
+      ],
+      "metrics": {
+        "prob_real": 0.9942,
+        "prob_fake": 0.0058,
+        "inference_source": "local_wav2vec2",
+        "source_label": "\ud83d\udda5 Local wav2vec2 model",
+        "confidence_label": "Very High",
+        "latency_seconds": 3.253
+      },
+      "confidence": 0.9942,
+      "supports": "authentic",
+      "notes": null,
+      "visible": true,
+      "verdict_influence_percent": null
+    },
+    {
+      "id": "audio_acoustics",
+      "name": "Acoustic Micro-Signature",
+      "category": "spectral",
+      "status": "ok",
+      "reliability": 0.3,
+      "summary": "The acoustic micro-signature was measured but did not point strongly either way.",
+      "what_checked": "We measured the physical micro-variation of the voice: pitch jitter, amplitude shimmer, harmonic-to-noise ratio, and spectral tonality.",
+      "what_found": "The acoustic micro-signature was measured but did not point strongly either way.",
+      "why_it_matters": "Real vocal folds never repeat a cycle perfectly. Text-to-speech and voice clones tend to be smoother and more regular, so this measured signature is hard for a generator to fake without modelling true vocal physics.",
+      "caveat": "Heavy compression, noise reduction, and short or noisy clips can distort these measurements, so this is weighed with the other audio signals.",
+      "observations": [
+        "Pitch jitter (cycle-to-cycle F0 variation): n/a",
+        "Amplitude shimmer (loudness micro-variation): 7.96%",
+        "Spectral flatness (tonality): 0.045 | Harmonic-to-noise ratio: -5.1 dB",
+        "Voiced fraction: 0.00%",
+        "Real human speech carries small, irregular variation from cycle to cycle. Synthetic and cloned voices are often smoother and more regular than a real vocal tract."
+      ],
+      "metrics": {
+        "jitter": null,
+        "shimmer": 0.079571932554245,
+        "spectral_flatness": 0.044949695467948914,
+        "hnr_db": -5.111596619576487,
+        "voiced_ratio": 0.0
+      },
+      "confidence": null,
+      "supports": "inconclusive",
+      "notes": "Measured acoustic micro-signature (librosa).",
+      "visible": true,
+      "verdict_influence_percent": null
+    },
+    {
+      "id": "audio_semantic",
+      "name": "Gemini Semantic Listening",
+      "category": "semantic",
+      "status": "ok",
+      "reliability": 0.42,
+      "summary": "The audio is the authentic, declassified cockpit recording of US Navy pilots observing a UAP (the 'Gimbal' video). The voices exhibit natural human emotion, realistic overlapping dialogue, breathing, and military jargon, with no signs of AI synthesis or cloning.",
+      "what_checked": "Gemini listened for synthetic speech, cloned-voice artifacts, unnatural cadence, missing breathing, and generated-audio production patterns.",
+      "what_found": "The audio is the authentic, declassified cockpit recording of US Navy pilots observing a UAP (the 'Gimbal' video). The voices exhibit natural human emotion, realistic overlapping dialogue, breathing, and military jargon, with no signs of AI synthesis or cloning.",
+      "why_it_matters": "When the dedicated wav2vec2 detector is missing or uncertain, Gemini gives the product a direct semantic audio review instead of stopping at an inconclusive model score.",
+      "caveat": "Gemini is an expert semantic judge, not a calibrated audio classifier. Treat this as one evidence signal in the trail.",
+      "observations": [
+        "Gemini did not list specific audio anomalies."
+      ],
+      "metrics": {
+        "confidence_raw": 0.0,
+        "confidence_label": "Guarded",
+        "inference_source": "gemini_semantic",
+        "provider": "gemini",
+        "model": "gemini-3.5-flash",
+        "fallback_used": false
+      },
+      "confidence": 0.0,
+      "supports": "authentic",
+      "notes": "Gemini semantic audio fallback.",
+      "visible": true,
+      "verdict_influence_percent": null
+    }
+  ]
+}

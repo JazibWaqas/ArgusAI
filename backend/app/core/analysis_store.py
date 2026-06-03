@@ -570,6 +570,105 @@ def detect_accuracy_drift(recent_limit: int = 8, min_confirmed: int = 3, thresho
         return {"ok": False, "error": "Could not compute drift.", "detectors": [], "source": "firestore"}
 
 
+def compute_detector_roi() -> dict[str, Any]:
+    """Fuse Firestore outcome truth with Phoenix behavioral telemetry into a
+    per-detector value-for-cost ranking.
+
+    Firestore answers "how often was this detector right" (confirmed accuracy,
+    applied weight). Phoenix answers "how did it behave" (run count, error rate,
+    latency). Combined, the reliability agent can tell which detectors earn their
+    place and which are an expensive way to be wrong. No single deepfake detector
+    reasons across both axes; this is what makes the agent a reliability analyst
+    rather than a logger.
+    """
+    from .observability import get_phoenix_telemetry
+
+    stats = get_stats() or {}
+    detector_stats = stats.get("detectors") or {}
+    telemetry = get_phoenix_telemetry()
+    phx_detectors = (telemetry or {}).get("detectors") or {}
+    phx_available = bool((telemetry or {}).get("available"))
+
+    rows: list[dict[str, Any]] = []
+    for detector_id, row in detector_stats.items():
+        confirmed_total = int(row.get("confirmed_total") or 0)
+        accuracy = float(row.get("confirmed_accuracy") or 0.0)
+        weight = float(row.get("weight_multiplier") or 1.0)
+        fs_latency = float(row.get("avg_latency_seconds") or 0.0)
+        phx = phx_detectors.get(detector_id) or {}
+        phx_latency = phx.get("avg_latency_seconds")
+        latency = fs_latency or (float(phx_latency) if phx_latency else 0.0)
+        phx_runs = int(phx.get("runs") or 0)
+        error_rate = float(phx.get("error_rate") or 0.0)
+
+        efficiency = round(accuracy / (1.0 + latency / 5.0), 4) if accuracy else 0.0
+
+        if confirmed_total < LEARNED_WEIGHT_MIN_CONFIRMATIONS:
+            tier = "calibrating"
+        elif accuracy >= 0.75:
+            tier = "earning"
+        elif accuracy < 0.45:
+            tier = "low_value"
+        else:
+            tier = "watch"
+
+        acc_pct = round(accuracy * 100)
+        lat_str = f"{latency:.1f}s" if latency >= 0.1 else "sub-second"
+        if tier == "calibrating":
+            insight = (
+                f"Still gathering confirmations ({confirmed_total}/{LEARNED_WEIGHT_MIN_CONFIRMATIONS}). "
+                f"Weight held at 1.0x until it earns a tier."
+            )
+        elif tier == "earning":
+            insight = f"Strong {acc_pct}% confirmed accuracy at {lat_str} per run. Carrying full weight."
+        elif tier == "watch":
+            insight = f"Mixed {acc_pct}% confirmed accuracy. Holding near {weight:.2f}x while it proves out."
+        else:
+            if latency >= 10:
+                insight = f"Only {acc_pct}% confirmed accuracy at {lat_str} per run, the most expensive way to be wrong. Down-weighted to {weight:.2f}x."
+            else:
+                insight = f"Only {acc_pct}% confirmed accuracy for limited verdict value. Down-weighted to {weight:.2f}x."
+        if phx_available and error_rate > 0 and phx_runs:
+            insight += f" Phoenix shows a {round(error_rate * 100)}% error rate across {phx_runs} recent runs."
+
+        rows.append(
+            {
+                "detector_id": detector_id,
+                "confirmed_accuracy": round(accuracy, 4),
+                "confirmed_total": confirmed_total,
+                "weight_multiplier": round(weight, 2),
+                "avg_latency_seconds": round(latency, 2),
+                "phoenix_runs": phx_runs,
+                "phoenix_error_rate": round(error_rate, 4),
+                "efficiency": efficiency,
+                "tier": tier,
+                "insight": insight,
+            }
+        )
+
+    # Rank: graded tiers by efficiency; calibrating detectors trail behind.
+    tier_order = {"earning": 0, "watch": 1, "low_value": 2, "calibrating": 3}
+    rows.sort(key=lambda r: (tier_order.get(r["tier"], 9), -r["efficiency"]))
+
+    graded = [r for r in rows if r["tier"] != "calibrating"]
+    slowest = max(graded, key=lambda r: r["avg_latency_seconds"], default=None)
+    least_efficient = min(graded, key=lambda r: r["efficiency"], default=None) if graded else None
+    llm = (telemetry or {}).get("llm") or {}
+
+    return {
+        "ok": True,
+        "detectors": rows,
+        "phoenix_available": phx_available,
+        "system": {
+            "total_tokens": int(llm.get("total_tokens") or 0),
+            "llm_calls": int(llm.get("calls") or 0),
+            "fallback_rate": float(llm.get("fallback_rate") or 0.0),
+            "slowest_detector": (slowest or {}).get("detector_id") if slowest else None,
+            "least_efficient_detector": (least_efficient or {}).get("detector_id") if least_efficient else None,
+        },
+    }
+
+
 def recalibrate_detector_weight(detector_id: str, multiplier: float, reason: str = "agent_recalibration") -> dict[str, Any]:
     db = get_db()
     if db is None:
@@ -835,18 +934,20 @@ def apply_feedback(report: Any, verdict_correct: bool) -> dict[str, Any]:
     return {"ok": True, "feedback": feedback}
 
 
-async def annotate_phoenix_feedback(trace_id: Optional[str], verdict_correct: bool) -> None:
-    if not trace_id or not settings.phoenix_dashboard_url:
+def annotate_phoenix_feedback(span_id_hex: Optional[str], verdict_correct: bool) -> None:
+    """Record a human verdict confirmation as a Phoenix span evaluation.
+
+    This is what fills the Annotation scores panel and makes confirmed accuracy
+    a first-class Phoenix evaluation, not just a Firestore counter. Best effort.
+    """
+    if not span_id_hex:
         return
-    url = f"{settings.phoenix_dashboard_url.rstrip('/')}/api/v1/evaluations"
-    payload = {
-        "label": "correct" if verdict_correct else "incorrect",
-        "score": 1.0 if verdict_correct else 0.0,
-        "trace_id": trace_id,
-        "name": "user_verdict_feedback",
-    }
-    try:
-        async with httpx.AsyncClient(timeout=8) as client:
-            await client.post(url, json=payload)
-    except Exception:
-        return
+    from .observability import log_span_annotation
+
+    log_span_annotation(
+        span_id_hex,
+        "verdict_accuracy",
+        label="correct" if verdict_correct else "incorrect",
+        score=1.0 if verdict_correct else 0.0,
+        explanation="Human reviewer confirmed the verdict." if verdict_correct else "Human reviewer marked the verdict wrong.",
+    )

@@ -34,6 +34,7 @@ class ForensicReport(BaseModel):
     evidence: EvidenceProfile
     pipeline_health: dict[str, Any] = Field(default_factory=dict)
     phoenix_trace_id: Optional[str] = None
+    phoenix_span_id: Optional[str] = None
     generated_at: datetime
 
     @staticmethod

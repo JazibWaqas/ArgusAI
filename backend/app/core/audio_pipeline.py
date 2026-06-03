@@ -13,7 +13,7 @@ from typing import Optional
 
 from ..core.analysis_store import persist_analysis
 from ..core.llm_client import LLMClient
-from ..core.observability import set_span_attribute, span_trace_id, start_span
+from ..core.observability import set_span_attribute, span_id, span_trace_id, start_span
 from ..detectors.audio import analyze_audio
 from ..models.evidence import EvidenceSignal, SignalStatus, SignalSupport
 from ..models.audio_report import AudioForensicReport
@@ -37,9 +37,12 @@ class AudioAnalysisPipeline:
 
         with start_span(
             "argusai.audio_analysis",
-            {"media.type": "audio", "audio.sha256": sha},
+            {"media.type": "audio", "audio.sha256": sha, "input.value": f"audio investigation ({sha[:12]})"},
+            kind="CHAIN",
+            session_id=sha,
         ) as root_span:
             trace_id = span_trace_id(root_span)
+            root_span_id = span_id(root_span)
 
             model_task = asyncio.create_task(analyze_audio(audio_bytes))
             gemini_task = asyncio.create_task(self._gemini_audio_signal(audio_bytes, user_context))
@@ -121,6 +124,7 @@ class AudioAnalysisPipeline:
                 inference_source=inference_source,
                 pipeline_health={"latency_seconds": duration, "sha256": sha},
                 phoenix_trace_id=trace_id,
+                phoenix_span_id=root_span_id,
                 generated_at=AudioForensicReport.now(),
             )
 

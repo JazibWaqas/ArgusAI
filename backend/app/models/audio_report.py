@@ -37,6 +37,7 @@ class AudioForensicReport(BaseModel):
     """Latency and other diagnostic metadata."""
 
     phoenix_trace_id: Optional[str] = None
+    phoenix_span_id: Optional[str] = None
 
     generated_at: datetime
 

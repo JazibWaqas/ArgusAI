@@ -17,7 +17,7 @@ from ..core.analysis_store import persist_analysis
 from ..core.config import settings
 from ..core.health_governor import DetectorHealthGovernor
 from ..core.llm import llm_settings
-from ..core.observability import set_span_attribute, span_trace_id, start_span, tracing_health
+from ..core.observability import set_span_attribute, set_tool_span, span_id, span_trace_id, start_span, tracing_health
 from ..models.evidence import EvidenceProfile, ImageInfo
 from ..models.evidence import EvidenceSignal, SignalStatus, SignalSupport
 from ..models.report import ForensicReport
@@ -139,9 +139,13 @@ class AnalysisPipeline:
                 "image.height": image_info.height,
                 "media.type": media_type,
                 "pipeline.detector_count": len(registry.all()),
+                "input.value": f"{media_type} investigation ({image_info.sha256[:12]})",
             },
+            kind="CHAIN",
+            session_id=image_info.sha256,
         ) as root_span:
             trace_id = span_trace_id(root_span)
+            root_span_id = span_id(root_span)
             context: Dict[str, Any] = {
                 "image_info": image_info,
                 "image_bytes": image_bytes,
@@ -249,7 +253,9 @@ class AnalysisPipeline:
                 with start_span(
                     f"detector.{detector.id}",
                     {"detector.id": detector.id, "detector.name": detector.name, "detector.category": detector.category},
+                    kind="TOOL",
                 ) as span:
+                    set_tool_span(span, name=detector.id, description=f"{detector.name} forensic detector")
                     try:
                         if is_video and detector.id not in ("semantic_inconsistencies", "osint_verification") and frames:
                             sigs = []
@@ -284,6 +290,7 @@ class AnalysisPipeline:
                         set_span_attribute(span, "detector.reliability", sig.reliability)
                         set_span_attribute(span, "detector.latency_seconds", round(duration, 4))
                         set_span_attribute(span, "detector.signal_support", sig.supports.value)
+                        set_span_attribute(span, "output.value", f"{sig.supports.value} | {sig.summary or ''}")
                         set_span_attribute(span, "detector.circuit_breaker", bool((sig.metrics or {}).get("circuit_breaker")))
                         set_span_attribute(span, "detector.circuit_breaker.reason", (sig.metrics or {}).get("circuit_breaker_reason"))
                         set_span_attribute(span, "detector.circuit_breaker.gap_score", (sig.metrics or {}).get("gap_score"))
@@ -403,6 +410,7 @@ class AnalysisPipeline:
                 evidence=evidence,
                 pipeline_health=pipeline_health,
                 phoenix_trace_id=trace_id,
+                phoenix_span_id=root_span_id,
                 generated_at=ForensicReport.now(),
             )
 

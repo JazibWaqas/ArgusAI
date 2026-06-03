@@ -11,6 +11,7 @@ from PIL import Image
 
 from .config import settings
 from .llm import llm_settings
+from .observability import set_llm_span, start_span
 
 
 def _redact_secrets(text: str) -> str:
@@ -146,6 +147,28 @@ class LLMClient:
         }.get(fmt, "image/png")
 
 
+    @staticmethod
+    def _payload_text(payload: dict) -> str:
+        """Pull the text prompt out of a Gemini payload, skipping inline media bytes."""
+        try:
+            texts: list[str] = []
+            for content in payload.get("contents", []) or []:
+                for part in content.get("parts", []) or []:
+                    if isinstance(part, dict) and isinstance(part.get("text"), str):
+                        texts.append(part["text"])
+            joined = "\n".join(texts).strip()
+            return joined or "[multimodal input]"
+        except Exception:
+            return "[gemini request]"
+
+    @staticmethod
+    def _response_text(data: dict) -> Optional[str]:
+        try:
+            parts = (data.get("candidates") or [{}])[0].get("content", {}).get("parts", []) or []
+            return "\n".join(p.get("text", "") for p in parts if isinstance(p, dict)).strip() or None
+        except Exception:
+            return None
+
     async def _post_model(
         self,
         client: httpx.AsyncClient,
@@ -156,9 +179,24 @@ class LLMClient:
     ) -> httpx.Response:
         url = f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
         req_headers = {**headers, "x-goog-api-key": key}
-        response = await client.post(url, headers=req_headers, json=payload)
-        response.raise_for_status()
-        return response
+        with start_span(f"gemini.{model}", kind="LLM") as span:
+            set_llm_span(span, model=model, input_text=self._payload_text(payload))
+            response = await client.post(url, headers=req_headers, json=payload)
+            response.raise_for_status()
+            try:
+                data = response.json()
+                usage = data.get("usageMetadata") or {}
+                set_llm_span(
+                    span,
+                    model=model,
+                    prompt_tokens=usage.get("promptTokenCount"),
+                    completion_tokens=usage.get("candidatesTokenCount"),
+                    total_tokens=usage.get("totalTokenCount"),
+                    output_text=self._response_text(data),
+                )
+            except Exception:
+                pass
+            return response
 
     async def _try_fallback_model(
         self,

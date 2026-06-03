@@ -2123,6 +2123,10 @@ audio {
   gap: 12px;
   align-items: center;
 }
+.lb-row-roi {
+  grid-template-columns: minmax(0, 1fr);
+  align-items: stretch;
+}
 .lb-rank {
   display: flex;
   align-items: center;

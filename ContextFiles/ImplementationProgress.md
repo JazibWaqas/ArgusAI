@@ -1,6 +1,6 @@
 # ArgusAI Implementation Progress
 
-Last updated: June 3, 2026.
+Last updated: June 4, 2026.
 
 For full details, read `ContextFiles/CurrentHandoff.md`. This file is the concise progress tracker.
 
@@ -54,6 +54,13 @@ Google Cloud:
 - Local ADK agent package added at `agents/argusai_investigator`.
 - ADK agent uses Gemini, ArgusAI backend tools, and Phoenix MCP via `npx @arizeai/phoenix-mcp`.
 - Agent action endpoints added: detector reliability, similar cases, drift detection, detector recalibration, fact-check note, and human-review artifact.
+- Fused Firestore outcomes with Phoenix telemetry for causal system self-calibration (June 4):
+  - Advanced OpenInference tracing: mapped `CHAIN`, `LLM`, and `TOOL` span kinds, captured inputs/outputs, tracked `session.id`, and tagged LLM model names + prompt/completion/total tokens.
+  - Span evaluations: Feedback widget writes real human-evaluation annotations to `/v1/span_annotations` of Phoenix by capturing and mapping `phoenix_span_id`.
+  - Scraped Phoenix telemetry: Scrapes spans REST API to compute detector run counts, average latency, error rates, and model-fallback rates.
+  - Cross-Store ROI Synthesis: `/agent/detector-roi` fuses Phoenix behavioral telemetry (latency, errors, runs) with Firestore outcome truth (confirmed accuracy, weight overrides) to rank detector efficiency and generate agent insights.
+  - Upgraded Operator Console UI: Monospace styled Detector ROI Panel showing average tokens, latency, cost-efficiency tier, and custom agent insights. Activity feed scoped to system-level governance events; empty cards hide dynamically.
+  - Upgraded Investigator Agent: `/agent/investigate` reads Phoenix telemetry, checks accuracy drift, recalibrates drifted detector weights (writes to Firestore), and narrates a reliability summary with concrete cost/latency/accuracy metrics.
 
 ## Live Verification
 

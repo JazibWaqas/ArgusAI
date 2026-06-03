@@ -16,6 +16,7 @@ from .core.analysis_store import (
     annotate_phoenix_feedback,
     apply_feedback,
     build_history_context,
+    compute_detector_roi,
     detect_accuracy_drift,
     fallback_stats_from_xray,
     get_agent_actions,
@@ -29,7 +30,7 @@ from .core.analysis_store import (
 from .core.config import settings
 from .core.llm import llm_settings
 from .core.llm_client import LLMClient
-from .core.observability import phoenix_link_info, tracing_health
+from .core.observability import get_phoenix_telemetry, phoenix_link_info, tracing_health
 from .core.pipeline import AnalysisPipeline
 from .core.audio_pipeline import AudioAnalysisPipeline
 
@@ -333,11 +334,21 @@ async def agent_activity(limit: int = 15) -> dict:
     return {"actions": get_agent_actions(limit)}
 
 
+@app.get("/agent/detector-roi")
+async def agent_detector_roi() -> dict:
+    """Per-detector value-for-cost ranking fusing Firestore outcomes with Phoenix
+    telemetry. Powers the Detector ROI panel in the operator console."""
+    return compute_detector_roi()
+
+
 @app.post("/agent/investigate")
 async def agent_investigate() -> dict:
-    """In-app investigator agent: reviews reliability from Firestore + Phoenix health,
-    recalibrates any detector that has drifted, and narrates what it did. Triggered from
-    the operator console so the agent is driven from the website, not the terminal."""
+    """In-app reliability analyst: fuses Firestore outcome truth (confirmed accuracy,
+    applied weights) with Phoenix behavioral telemetry (run counts, error rate,
+    latency, token usage) to judge which detectors earn their place, recalibrates
+    any that have drifted, and narrates the reasoning with evidence from both
+    stores. Triggered from the operator console so the agent is driven from the
+    website, not the terminal."""
     steps: list[dict[str, Any]] = []
     actions: list[dict[str, Any]] = []
 
@@ -345,7 +356,33 @@ async def agent_investigate() -> dict:
     link = phoenix_link_info()
     steps.append({
         "tool": "get_arize_health",
-        "summary": f"Read Arize/Phoenix health (status: {health.get('status', 'ok')}, project: {link.get('project_name')}).",
+        "summary": f"Read Arize Phoenix health (status: {health.get('status', 'ok')}, project: {link.get('project_name')}).",
+    })
+
+    # Behavioral truth from Phoenix: this is the partner observability the agent
+    # reasons over, not just records.
+    telemetry = get_phoenix_telemetry()
+    llm_tel = (telemetry or {}).get("llm") or {}
+    if telemetry.get("available"):
+        steps.append({
+            "tool": "query_phoenix_telemetry",
+            "summary": (
+                f"Queried Phoenix spans for behavioral telemetry: {int(llm_tel.get('calls') or 0)} model calls, "
+                f"{int(llm_tel.get('total_tokens') or 0)} tokens, "
+                f"{round(float(llm_tel.get('fallback_rate') or 0) * 100)}% fell back to the lighter model."
+            ),
+        })
+
+    # Fuse both stores into a value-for-cost ranking.
+    roi = compute_detector_roi()
+    roi_rows = roi.get("detectors", []) if isinstance(roi, dict) else []
+    low_value = [r for r in roi_rows if r.get("tier") == "low_value"]
+    steps.append({
+        "tool": "compute_detector_roi",
+        "summary": (
+            f"Fused confirmed accuracy with Phoenix latency and error rate across {len(roi_rows)} detector(s); "
+            f"{len(low_value)} are low value for their cost."
+        ),
     })
 
     drift = detect_accuracy_drift()
@@ -358,10 +395,6 @@ async def agent_investigate() -> dict:
 
     stats = get_stats() or {}
     feedback = stats.get("feedback") or {}
-    steps.append({
-        "tool": "get_stats",
-        "summary": f"Read running intelligence: {int((stats.get('global') or {}).get('total_analyses') or 0)} analyses, {int(feedback.get('total_feedback') or 0)} human-confirmed verdicts.",
-    })
 
     for d in drifted:
         det = d.get("detector_id")
@@ -372,7 +405,7 @@ async def agent_investigate() -> dict:
             actions.append({"type": "recalibrate", "detector_id": det, "summary": f"Recalibrated {det} to {res.get('weight_multiplier')}x"})
             steps.append({
                 "tool": "recalibrate_detector_weight",
-                "summary": f"Recalibrated {det}: {res.get('previous_multiplier')}x -> {res.get('weight_multiplier')}x weight.",
+                "summary": f"Recalibrated {det}: {res.get('previous_multiplier')}x to {res.get('weight_multiplier')}x weight.",
             })
 
     findings = {
@@ -380,12 +413,29 @@ async def agent_investigate() -> dict:
         "total_analyses": int((stats.get("global") or {}).get("total_analyses") or 0),
         "confirmed_feedback": int(feedback.get("total_feedback") or 0),
         "real_world_accuracy": feedback.get("accuracy_rate"),
+        "phoenix_telemetry": {
+            "model_calls": int(llm_tel.get("calls") or 0),
+            "total_tokens": int(llm_tel.get("total_tokens") or 0),
+            "fallback_rate": float(llm_tel.get("fallback_rate") or 0.0),
+            "available": bool(telemetry.get("available")),
+        },
+        "detector_roi": [
+            {"id": r.get("detector_id"), "tier": r.get("tier"), "confirmed_accuracy": r.get("confirmed_accuracy"),
+             "avg_latency_seconds": r.get("avg_latency_seconds"), "weight": r.get("weight_multiplier"), "insight": r.get("insight")}
+            for r in roi_rows[:6]
+        ],
+        "least_efficient_detector": (roi.get("system") or {}).get("least_efficient_detector"),
         "drifted_detectors": [{"id": d.get("detector_id"), "recent": d.get("recent_accuracy"), "historical": d.get("historical_accuracy")} for d in drifted],
         "recalibrations": actions,
     }
     client = LLMClient()
     narration = await client.followup_answer(
-        "You are the ArgusAI reliability agent. In 3 to 5 sentences, summarize what you checked across Arize/Phoenix and Firestore, what you found about detector reliability and drift, and what action you took. Plain professional language, no em dashes.",
+        "You are the ArgusAI reliability analyst. You have just fused human-confirmed "
+        "accuracy from Firestore with behavioral telemetry from Arize Phoenix (model "
+        "calls, token usage, fallback rate, detector latency and error rate). In 3 to 5 "
+        "sentences, explain what you checked across both Phoenix and Firestore, which "
+        "detectors are earning their place versus costing more than they are worth, and "
+        "what action you took. Cite specific numbers. Plain professional language, no em dashes, no lists.",
         "reliability_review",
         findings,
     )
@@ -393,23 +443,36 @@ async def agent_investigate() -> dict:
         if actions:
             names = ", ".join(a["detector_id"] for a in actions)
             narration = (
-                f"I reviewed detector reliability against human-confirmed outcomes and Phoenix health. "
-                f"{len(drifted)} detector(s) had drifted, so I recalibrated their verdict weight: {names}. "
+                f"I fused confirmed accuracy from Firestore with Phoenix telemetry across {len(roi_rows)} detectors. "
+                f"{len(drifted)} had drifted, so I recalibrated their verdict weight: {names}. "
                 "Future verdicts will trust those detectors less until their confirmed accuracy recovers."
             )
         else:
+            worst = (roi.get("system") or {}).get("least_efficient_detector")
+            tail = f" The weakest on value for cost right now is {worst}, which I am keeping on watch." if worst else ""
             narration = (
-                "I reviewed detector reliability against human-confirmed outcomes and Phoenix health. "
-                "No detector has drifted beyond tolerance, so no recalibration was needed. The current weighting stands."
+                f"I fused confirmed accuracy from Firestore with Phoenix latency, error rate, and token telemetry across {len(roi_rows)} detectors. "
+                f"No detector has drifted beyond tolerance, so the current weighting stands.{tail}"
             )
 
+    review_summary = f"Fused Firestore accuracy with Phoenix telemetry across {len(roi_rows)} detectors; {len(actions)} recalibrated"
+    if low_value:
+        review_summary += f", {len(low_value)} flagged low value"
     log_agent_action(
         "review",
-        f"Ran reliability review: {len(drift_rows)} detectors checked, {len(actions)} recalibrated",
-        {"drifted": len(drifted), "recalibrated": len(actions)},
+        review_summary,
+        {"detectors_reviewed": len(roi_rows), "drifted": len(drifted), "recalibrated": len(actions), "low_value": len(low_value)},
     )
 
-    return {"ok": True, "steps": steps, "actions": actions, "narration": narration, "drifted": len(drifted)}
+    return {
+        "ok": True,
+        "steps": steps,
+        "actions": actions,
+        "narration": narration,
+        "drifted": len(drifted),
+        "roi": roi_rows,
+        "system": roi.get("system"),
+    }
 
 
 def _too_large(contents: bytes) -> bool:
@@ -800,7 +863,7 @@ async def session_feedback(session_id: str, body: FeedbackRequest):
     if not result.get("ok"):
         return JSONResponse(status_code=503, content={"error": result.get("error") or "Feedback persistence unavailable."})
 
-    await annotate_phoenix_feedback(getattr(data.last_report, "phoenix_trace_id", None), body.verdict_correct)
+    annotate_phoenix_feedback(getattr(data.last_report, "phoenix_span_id", None), body.verdict_correct)
     return {"status": "ok", "feedback": result.get("feedback"), "session_id": session_id}
 
 

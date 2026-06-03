@@ -1,6 +1,6 @@
 # ArgusAI Current Handoff
 
-Last updated: June 3, 2026.
+Last updated: June 4, 2026.
 
 This is the current source of truth for the next LLM/session. Read this before making new implementation decisions.
 
@@ -339,6 +339,31 @@ Honest caveats a fresh session should know:
 - The media-importance numbers (0.95 / 0.5 / 0.4 / 0.35) are reasonable hand-set *priors*, not empirically optimized; the calibration loop adjusts around them. Importance (relevance) and learned weight (accuracy) compose, so a signal can be down-weighted on both axes.
 - The C2PA generator-name byte scan can in rare cases false-positive (a generator name present in a caption/screenshot rather than provenance); the `trainedAlgorithmicMedia` marker is the reliable one.
 - The audio Gemini-override is an intentional asymmetric bias toward catching fakes; a real clip where Gemini wrongly calls AI at >= 0.7 would false-positive.
+
+## Advanced Phoenix Telemetry & ROI (June 4, 2026 — latest session)
+
+This session brought advanced instrumentation, OpenInference telemetry gathering, and a custom ROI calculation that directly drives the Investigator Agent's reasoning:
+
+- **Advanced OpenInference Instrumentation (`observability.py`):**
+  - Mapped `CHAIN`, `LLM`, and `TOOL` span kinds.
+  - Attached standard span attributes (`session.id`, `input.value`, `output.value`).
+  - Wrapped Gemini client model calls to log `llm.model_name` and usage metadata (`llm.token_count.prompt`, `llm.token_count.completion`, `llm.token_count.total`).
+  - Mapped detector execution spans to `TOOL` spans.
+  - Status codes now set to `OK` or `ERROR` (with recorded exception traceback) instead of showing "unknown/—" in Phoenix.
+- **Span Annotations (Evals):**
+  - Verdict feedback (`annotate_phoenix_feedback` in `analysis_store.py`) now logs true annotations to Phoenix `/v1/span_annotations` by capturing and mapping `phoenix_span_id`. This populates the Annotation scores panel.
+- **Phoenix Telemetry Scraper (`observability.py`):**
+  - Added `get_phoenix_telemetry()` which reads recent spans from Phoenix via the REST API to compute run counts, error rates, average latency, and model-fallback rates (when `gemini-3.5-flash` falls back to `gemini-2.5-flash`).
+- **Cross-Store ROI Synthesis (`analysis_store.py`):**
+  - Added `compute_detector_roi()` which fuses Phoenix behavioral telemetry (latency, error rates, runs) with Firestore outcome truth (confirmed accuracy, overrides).
+  - Grades detectors into tiers (`earning`, `watch`, `low_value`, `calibrating`) based on their accuracy-for-cost efficiency score.
+  - Generates custom agent insights (e.g. flagging a detector that adds latency but has low confirmed accuracy).
+- **Upgraded Operator Console UI (`App.jsx`):**
+  - Monospace styled **Detector ROI Panel** showing average tokens, latency, cost-efficiency tier, and custom agent insights.
+  - Activity feed scoped to system-level governance events (`Review`, `Recalibrate`, `Flag`).
+  - Hides empty elements (calibration divergence alerts, health governor alerts) dynamically for a clean dashboard.
+- **Upgraded In-App Investigator Agent (`main.py`):**
+  - Upgraded `/agent/investigate` to fetch Phoenix telemetry, check accuracy drift, recalibrate drifted detector weights (writes to Firestore), and narrate a reliability summary with concrete cost/latency/accuracy metrics.
 
 ## Firebase Status
 

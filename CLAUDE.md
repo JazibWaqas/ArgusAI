@@ -1,6 +1,6 @@
 # CLAUDE.md — ArgusAI Hackathon Source of Truth
 
-Last updated: June 3, 2026.
+Last updated: June 4, 2026.
 
 This file is the master alignment document. Every implementation decision, open question, bug, UX decision, and todo lives here. Codex reads this and uses it as a senior technical supervisor handoff — not micromanagement, but full clarity so implementation can proceed without ambiguity.
 
@@ -90,6 +90,13 @@ So: stage the *demo narrative* freely, but the **Agent Builder + Phoenix MCP int
 - Two new measured fundamental signals added (audio `audio_acoustics`, video `temporal_noise_coherence`); image detector path untouched.
 - Consumer-side de-AI polish: audit/Phoenix links removed from consumer view, one-line summary, de-neoned palette, three-zone header.
 - Consumer follow-up chat upgraded to a visible tool-using Investigator Agent. Verified with `python -m compileall backend\app`, `npm run build`, and a mocked `/sessions/{id}/messages` smoke test returning `reply` plus `tool_calls`.
+- Fused Firestore outcomes with Phoenix telemetry for causal system self-calibration (June 4):
+  - Advanced OpenInference tracing: mapped `CHAIN`, `LLM`, and `TOOL` span kinds, captured inputs/outputs, tracked `session.id`, and tagged LLM model names + prompt/completion/total tokens.
+  - Span evaluations: Feedback widget writes real human-evaluation annotations to `/v1/span_annotations` of Phoenix by capturing and mapping `phoenix_span_id`.
+  - Scraped Phoenix telemetry: Scrapes spans REST API to compute detector run counts, average latency, error rates, and model-fallback rates.
+  - Cross-Store ROI Synthesis: `/agent/detector-roi` fuses Phoenix behavioral telemetry (latency, errors, runs) with Firestore outcome truth (confirmed accuracy, weight overrides) to rank detector efficiency and generate agent insights.
+  - Upgraded Operator Console UI: Monospace styled Detector ROI Panel showing average tokens, latency, cost-efficiency tier, and custom agent insights. Activity feed scoped to system-level governance events; empty cards hide dynamically.
+  - Upgraded Investigator Agent: `/agent/investigate` reads Phoenix telemetry, checks accuracy drift, recalibrates drifted detector weights (writes to Firestore), and narrates a reliability summary with concrete cost/latency/accuracy metrics.
 
 ### What is still not fully proven
 
@@ -710,3 +717,13 @@ Work through this in order. Each item is blocked only by the items above it in t
 24. Deploy frontend with live backend URL
 25. Configure Agent Builder tools against `/agent/analyze` and `/agent/chat`
 26. Final Devpost submission
+
+### Phase 5: Advanced Phoenix Telemetry & ROI (June 4, 2026)
+27. [x] Advanced OpenInference tracing and span statuses in `observability.py`
+28. [x] Wrap Gemini calls as LLM spans with token counts in `llm_client.py`
+29. [x] Mapped spans for detectors as `TOOL` kind in pipelines
+30. [x] Log real human-evaluation annotations to `/v1/span_annotations` of Phoenix
+31. [x] Fused Phoenix REST telemetry and Firestore outcomes into `/agent/detector-roi`
+32. [x] Upgraded operator console with Detector ROI Panel showing average tokens, latency, cost-efficiency, and insights
+33. [x] Scoped Agent activity feed to governance events only and hid empty cards
+34. [x] Upgraded `/agent/investigate` endpoint to perform telemetry-grounded check, trigger causal Firestore weight overrides, and narrate summary

@@ -4,7 +4,7 @@ import {
   ShieldCheck, AlertOctagon, HelpCircle, Search, Camera, Eye,
   ScanSearch, Activity, Target, Database, ChevronDown, ChevronRight,
   Fingerprint, Sparkles, Send, X, Image as ImageIcon, Copy, Check,
-  Zap, Globe, Layers, Cpu, FileDown, RefreshCw, LogIn
+  Zap, Globe, Layers, Cpu, FileDown, RefreshCw, LogIn, Gauge
 } from "lucide-react";
 import "./styles.css";
 
@@ -988,6 +988,7 @@ function AdminConsole({ onExit, onLogout, arizeHealth, onHealthUpdate, statsData
   const [traces, setTraces] = useState([]);
   const [health, setHealth] = useState(arizeHealth);
   const [agentActions, setAgentActions] = useState([]);
+  const [roi, setRoi] = useState(null);
   const [drift, setDrift] = useState({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -1002,18 +1003,21 @@ function AdminConsole({ onExit, onLogout, arizeHealth, onHealthUpdate, statsData
     setLoading(true);
     setError("");
     try {
-      const [healthRes, tracesRes, statsRes, agentRes, driftRes] = await Promise.all([
+      const [healthRes, tracesRes, statsRes, agentRes, driftRes, roiRes] = await Promise.all([
         fetch(`${API_BASE}/arize/health`),
         fetch(`${API_BASE}/arize/traces?limit=10`),
         fetch(`${API_BASE}/stats`),
         fetch(`${API_BASE}/agent/activity?limit=15`),
         fetch(`${API_BASE}/agent/tools/accuracy-drift`),
+        fetch(`${API_BASE}/agent/detector-roi`),
       ]);
       const healthJson = healthRes.ok ? await healthRes.json() : null;
       const tracesJson = tracesRes.ok ? await tracesRes.json() : { traces: [] };
       const statsJson = statsRes.ok ? await statsRes.json() : null;
       const agentJson = agentRes.ok ? await agentRes.json() : { actions: [] };
       const driftJson = driftRes.ok ? await driftRes.json() : { detectors: [] };
+      const roiJson = roiRes.ok ? await roiRes.json() : null;
+      if (roiJson && Array.isArray(roiJson.detectors)) setRoi(roiJson);
       const driftMap = {};
       (Array.isArray(driftJson.detectors) ? driftJson.detectors : []).forEach((row) => { driftMap[row.detector_id] = row; });
       setDrift(driftMap);
@@ -1045,17 +1049,25 @@ function AdminConsole({ onExit, onLogout, arizeHealth, onHealthUpdate, statsData
       const res = await fetch(`${API_BASE}/agent/investigate`, { method: "POST" });
       const data = res.ok ? await res.json() : null;
       setAgentResult(data || { error: "Agent run failed." });
+      if (data && Array.isArray(data.roi)) setRoi({ detectors: data.roi, system: data.system, phoenix_available: roi?.phoenix_available });
       loadAdminData();
     } catch {
       setAgentResult({ error: "Could not reach the agent endpoint." });
     } finally {
       setAgentRunning(false);
     }
-  }, [loadAdminData]);
+  }, [loadAdminData, roi]);
 
   const governor = health?.detector_governor || {};
   const detectorRows = Object.entries(governor.detectors || {});
   const calibration = governor.calibration_divergence;
+  // The operator feed shows what the reliability agent does to govern the system.
+  // Per-case consumer artifacts (fact-check notes drafted from the public chat)
+  // belong to that case, not this system-governance feed.
+  const GOVERNANCE_ACTIONS = new Set(["review", "recalibrate", "flag_review"]);
+  const governanceActions = agentActions.filter((a) => GOVERNANCE_ACTIONS.has(a.type));
+  const roiRows = roi?.detectors || [];
+  const roiSystem = roi?.system || {};
   const globalStats = statsData?.global || {};
   const mediaStats = globalStats.by_media_type || {};
   const verdictStats = globalStats.by_verdict || {};
@@ -1116,7 +1128,7 @@ function AdminConsole({ onExit, onLogout, arizeHealth, onHealthUpdate, statsData
                     <p>Phoenix captures each detector's latency and result. That is how we see where time goes and which checks start to misbehave.</p>
                   </div>
                   <div className="console-arize-card">
-                    <strong>{agentActions.length}</strong>
+                    <strong>{governanceActions.length}</strong>
                     <span>autonomous agent actions</span>
                     <p>The agent reads this telemetry and acts on it, recalibrating detector weights instead of leaving them fixed.</p>
                   </div>
@@ -1231,6 +1243,66 @@ function AdminConsole({ onExit, onLogout, arizeHealth, onHealthUpdate, statsData
                 </div>
               </section>
 
+              {roiRows.length > 0 && (() => {
+                const ROI_TIERS = {
+                  earning: { label: "Earning its weight", color: "#34d399" },
+                  watch: { label: "Watch", color: "#fbbf24" },
+                  low_value: { label: "Low value for cost", color: "#f87171" },
+                  calibrating: { label: "Calibrating", color: "#38bdf8" },
+                };
+                const maxEff = Math.max(...roiRows.map((r) => r.efficiency || 0), 0.001);
+                return (
+                  <section className="admin-section">
+                    <h3><Gauge size={14} /> Detector Value vs Cost</h3>
+                    <p className="admin-section-sub">
+                      Confirmed accuracy from Firestore set against latency and error rate from Phoenix. Fusing both is how the agent decides which detectors earn their weight and which are an expensive way to be wrong. Most deepfake tools never weigh accuracy against cost at all.
+                    </p>
+                    {roi?.phoenix_available === false && (
+                      <p className="admin-section-sub" style={{ color: "#fbbf24" }}>
+                        Phoenix telemetry is not reachable right now, so latency and error figures fall back to Firestore averages.
+                      </p>
+                    )}
+                    <div className="admin-leaderboard admin-roi-list">
+                      {roiRows.map((r) => {
+                        const tier = ROI_TIERS[r.tier] || ROI_TIERS.calibrating;
+                        const bar = Math.max(2, Math.round(((r.efficiency || 0) / maxEff) * 100));
+                        return (
+                          <div className="lb-row lb-row-roi" key={r.detector_id}>
+                            <div className="lb-main">
+                              <div className="lb-head">
+                                <span className="lb-name mono">{detectorLabel(r.detector_id)}</span>
+                                <div className="lb-tags">
+                                  <span className="lb-weight" style={{ color: tier.color, borderColor: `${tier.color}55` }}>
+                                    {r.weight_multiplier?.toFixed(2)}× weight
+                                  </span>
+                                  <span className="lb-trust" style={{ color: tier.color, borderColor: `${tier.color}55`, background: `${tier.color}14` }}>
+                                    {tier.label}
+                                  </span>
+                                </div>
+                              </div>
+                              <div className="lb-bar-track">
+                                <div className="lb-bar-fill" style={{ width: `${bar}%`, background: tier.color }} />
+                              </div>
+                              <div className="lb-meta">
+                                <span>{r.insight}</span>
+                                <span>{r.avg_latency_seconds ? `${r.avg_latency_seconds.toFixed(1)}s/run` : "fast"}</span>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    {(roiSystem.total_tokens > 0 || roiSystem.least_efficient_detector) && (
+                      <p className="admin-section-sub" style={{ marginTop: "0.75rem" }}>
+                        Phoenix recorded {roiSystem.total_tokens?.toLocaleString?.() || roiSystem.total_tokens || 0} model tokens across {roiSystem.llm_calls || 0} calls
+                        {roiSystem.fallback_rate > 0 ? `, with ${Math.round(roiSystem.fallback_rate * 100)}% on the lighter fallback model` : ""}
+                        {roiSystem.least_efficient_detector ? `. Weakest on value for cost: ${detectorLabel(roiSystem.least_efficient_detector)}.` : "."}
+                      </p>
+                    )}
+                  </section>
+                );
+              })()}
+
               <section className="admin-section">
                 <div className="admin-section-head">
                   <h3><Activity size={14} /> Investigator Agent</h3>
@@ -1239,7 +1311,7 @@ function AdminConsole({ onExit, onLogout, arizeHealth, onHealthUpdate, statsData
                   </button>
                 </div>
                 <p className="admin-section-sub">
-                  The agent reviews detector reliability against human-confirmed outcomes and Phoenix health, then recalibrates any detector that has drifted. It governs the system, it does not just report on it.
+                  The agent fuses human-confirmed accuracy from Firestore with live Phoenix telemetry, decides which detectors are earning their weight, and recalibrates any that have drifted. It governs the system, it does not just report on it.
                 </p>
 
                 {agentResult && (
@@ -1260,9 +1332,9 @@ function AdminConsole({ onExit, onLogout, arizeHealth, onHealthUpdate, statsData
                 )}
 
                 <div className="admin-events">
-                  {agentActions.length ? agentActions.map((a) => {
+                  {governanceActions.length ? governanceActions.map((a) => {
                     const cls = a.type === "recalibrate" ? "calib" : a.type === "flag_review" ? "warn" : "";
-                    const label = a.type === "recalibrate" ? "Recalibrated" : a.type === "flag_review" ? "Flagged" : a.type === "fact_check_note" ? "Drafted note" : a.type === "review" ? "Reviewed" : "Action";
+                    const label = a.type === "recalibrate" ? "Recalibrated" : a.type === "flag_review" ? "Flagged" : "Reviewed";
                     return (
                       <div className={`admin-event ${cls}`} key={a.id}>
                         <span className="mono">{label}</span>
@@ -1313,36 +1385,38 @@ function AdminConsole({ onExit, onLogout, arizeHealth, onHealthUpdate, statsData
                 </div>
               </section>
 
-              <section className="admin-grid">
-                <div className="admin-section">
-                  <h3><Activity size={14} /> Detector Health Gates</h3>
-                  <div className="admin-health-grid">
-                    {detectorRows.length ? detectorRows.map(([id, row]) => (
-                      <div key={id} className={`admin-detector ${row.active ? "active" : ""}`}>
-                        <span className="mono">{detectorLabel(id)}</span>
-                        <strong>{row.active ? "Weight reduced" : "Recovered"}</strong>
-                        <small>{row.reason || "nominal"}</small>
+              {(detectorRows.length > 0 || (governor.recent_events || []).length > 0) && (
+                <section className="admin-grid">
+                  {detectorRows.length > 0 && (
+                    <div className="admin-section">
+                      <h3><Activity size={14} /> Detector Health Gates</h3>
+                      <div className="admin-health-grid">
+                        {detectorRows.map(([id, row]) => (
+                          <div key={id} className={`admin-detector ${row.active ? "active" : ""}`}>
+                            <span className="mono">{detectorLabel(id)}</span>
+                            <strong>{row.active ? "Weight reduced" : "Recovered"}</strong>
+                            <small>{row.reason || "nominal"}</small>
+                          </div>
+                        ))}
                       </div>
-                    )) : (
-                      <div className="admin-empty">All detector health gates are nominal.</div>
-                    )}
-                  </div>
-                </div>
+                    </div>
+                  )}
 
-                <div className="admin-section">
-                  <h3><AlertOctagon size={14} /> Calibration Events</h3>
-                  <div className="admin-events">
-                    {(governor.recent_events || []).length ? governor.recent_events.slice().reverse().map((event, idx) => (
-                      <div className={`admin-event ${event.reason === "calibration_divergence" ? "warn" : ""}`} key={`${event.recorded_at || idx}-${idx}`}>
-                        <span className="mono">{event.reason || "detector_event"}</span>
-                        <p>{detectorLabel(event.detector_id) || "detector"} · {formatTime(event.recorded_at)}{event.active_until ? ` · active until ${formatTime(event.active_until)}` : ""}</p>
+                  {(governor.recent_events || []).length > 0 && (
+                    <div className="admin-section">
+                      <h3><AlertOctagon size={14} /> Calibration Events</h3>
+                      <div className="admin-events">
+                        {governor.recent_events.slice().reverse().map((event, idx) => (
+                          <div className={`admin-event ${event.reason === "calibration_divergence" ? "warn" : ""}`} key={`${event.recorded_at || idx}-${idx}`}>
+                            <span className="mono">{event.reason || "detector_event"}</span>
+                            <p>{detectorLabel(event.detector_id) || "detector"} · {formatTime(event.recorded_at)}{event.active_until ? ` · active until ${formatTime(event.active_until)}` : ""}</p>
+                          </div>
+                        ))}
                       </div>
-                    )) : (
-                      <div className="admin-empty">No calibration or circuit-breaker events recorded.</div>
-                    )}
-                  </div>
-                </div>
-              </section>
+                    </div>
+                  )}
+                </section>
+              )}
       </div>
     </div>
   );

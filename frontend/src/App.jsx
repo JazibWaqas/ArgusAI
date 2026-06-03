@@ -428,15 +428,31 @@ function getSignalDescription(signal, mediaType = "image") {
   return null;
 }
 
-function AnimatedSignalCard({ signal, index, mediaType = "image", detectorStats = {}, phoenixTraceId = "" }) {
+const WIDE_SIGNAL_IDS = new Set(["audio_track", "audio_track_acoustics"]);
+
+function isWideSignalCard(signal) {
+  return isOsintSignal(signal) || WIDE_SIGNAL_IDS.has(signal.id);
+}
+
+// Order signals so half-width cards pack first and full-width cards (OSINT, audio) sit at
+// the end, then flag a lone trailing half-width card so it spans the row. Keeps the grid
+// from leaving an orphaned empty half-row regardless of which signals are present.
+function orderedSignalsForGrid(signals) {
+  const normal = signals.filter((s) => !isWideSignalCard(s));
+  const wide = signals.filter((s) => isWideSignalCard(s));
+  const forceWideId = normal.length % 2 === 1 ? normal[normal.length - 1]?.id : null;
+  return { ordered: [...normal, ...wide], forceWideId };
+}
+
+function AnimatedSignalCard({ signal, index, mediaType = "image", detectorStats = {}, phoenixTraceId = "", forceWide = false }) {
   const ref = useRef(null);
   const isInView = useInView(ref, { once: true, margin: "-40px" });
   const [showDetails, setShowDetails] = useState(false);
   const theme = getSignalTheme(signal.category);
   const wide = isOsintSignal(signal);
-  // Standalone audio cards in the video report span full width so they read as a
-  // distinct "embedded audio" band instead of leaving an orphaned half-row.
-  const fullWidth = wide || signal.id === "audio_track" || signal.id === "audio_track_acoustics";
+  // Standalone audio cards (and a lone trailing card) span full width so the grid never
+  // leaves an orphaned empty half-row.
+  const fullWidth = wide || forceWide || WIDE_SIGNAL_IDS.has(signal.id);
 
   const hasInfluence = typeof signal.verdict_influence_percent === "number";
   const barPct = hasInfluence ? signal.verdict_influence_percent : Math.round((signal.reliability || 0) * 100);
@@ -723,6 +739,7 @@ function AudioReportCard({ reportData, sessionId, feedbackState, onFeedback, det
   const signals = (Array.isArray(reportData.signals) && reportData.signals.length)
     ? reportData.signals
     : (reportData.signal ? [reportData.signal] : []);
+  const { ordered: orderedSignals, forceWideId } = orderedSignalsForGrid(signals);
   const voiceSig = signals.find((s) => s?.metrics?.prob_fake != null) || signals.find((s) => s?.id === "audio_deepfake");
   const probFake = voiceSig?.metrics?.prob_fake ?? null;
   const probReal = voiceSig?.metrics?.prob_real ?? null;
@@ -804,9 +821,9 @@ function AudioReportCard({ reportData, sessionId, feedbackState, onFeedback, det
           Each card explains what that check looked for, what it found in this recording, and why it matters.
         </p>
         <div className="signals-grid">
-          {signals.length > 0
-            ? signals.map((signal, i) => (
-                <AnimatedSignalCard key={signal.id || i} signal={signal} index={i} mediaType="audio" detectorStats={detectorStats} />
+          {orderedSignals.length > 0
+            ? orderedSignals.map((signal, i) => (
+                <AnimatedSignalCard key={signal.id || i} signal={signal} index={i} mediaType="audio" detectorStats={detectorStats} forceWide={signal.id === forceWideId} />
               ))
             : <p style={{ color: "var(--text-muted)" }}>No audio signals were produced.</p>}
         </div>
@@ -835,6 +852,7 @@ function ForensicReportCard({ reportData, showJson, onToggleJson, onDownloadPdf,
   const modelHealth = reportData.pipeline_health?.model_health_label;
   const mediaType = reportData.media_type || reportData.evidence?.media_type || "image";
   const visibleSignals = (reportData.evidence?.signals || []).filter((signal) => signal?.visible !== false);
+  const { ordered: orderedSignals, forceWideId } = orderedSignalsForGrid(visibleSignals);
   const mediaCopy = getMediaCopy(mediaType);
   const mediaNoun = mediaCopy.reportNoun;
 
@@ -906,8 +924,8 @@ function ForensicReportCard({ reportData, showJson, onToggleJson, onDownloadPdf,
           Each card explains what that check looked for, what it found in this {mediaNoun}, why it matters, and what might also explain it.
         </p>
         <div className="signals-grid">
-          {visibleSignals.length > 0
-            ? visibleSignals.map((signal, i) => (
+          {orderedSignals.length > 0
+            ? orderedSignals.map((signal, i) => (
                 <AnimatedSignalCard
                   key={signal.id}
                   signal={signal}
@@ -915,6 +933,7 @@ function ForensicReportCard({ reportData, showJson, onToggleJson, onDownloadPdf,
                   mediaType={mediaType}
                   detectorStats={detectorStats}
                   phoenixTraceId={reportData.phoenix_trace_id}
+                  forceWide={signal.id === forceWideId}
                 />
               ))
             : <p style={{ color: "var(--text-muted)" }}>No signals extracted.</p>

@@ -9,12 +9,76 @@ from ..models.evidence import EvidenceSignal, SignalStatus, SignalSupport
 from .base import Detector
 
 
+_AI_GENERATOR_NAMES = [
+    "midjourney", "dall-e", "dalle", "stable diffusion", "stablediffusion", "openai",
+    "comfyui", "automatic1111", "adobe firefly", "firefly", "imagen", "gemini", "sora",
+    "veo", "ideogram", "flux", "leonardo.ai", "runwayml", "pika", "kling", "stability.ai",
+]
+
+
 class MetadataDetector(Detector):
     id = "metadata_analysis"
     name = "Metadata & Provenance"
     category = "metadata"
 
+    def _scan_provenance(self, data: bytes) -> EvidenceSignal | None:
+        """Scan raw file bytes for Content Credentials (C2PA) and AI provenance markers.
+        Works even when EXIF is stripped, and on video containers (Sora/Veo/Gemini), which
+        embed the standard 'trainedAlgorithmicMedia' source type. Returns a decisive signal
+        when AI provenance is found, an authentic-leaning one for camera/creator credentials,
+        else None so the normal EXIF logic runs."""
+        if not data:
+            return None
+        sample = data[:524288] + (data[-65536:] if len(data) > 65536 else b"")
+        blob = sample.decode("latin-1", "ignore").lower()
+
+        ai_source = "trainedalgorithmicmedia" in blob  # C2PA/IPTC digital source type for AI
+        name_hit = next((n for n in _AI_GENERATOR_NAMES if n in blob), None)
+        c2pa_present = ("c2pa" in blob) or ("contentcred" in blob) or ("content credentials" in blob)
+
+        if ai_source or name_hit:
+            observations = []
+            if ai_source:
+                observations.append("Content Credentials (C2PA) digital source type is 'trained algorithmic media' — a standardized AI-generated marker.")
+            if name_hit:
+                observations.append(f"Embedded metadata references a generative tool: {name_hit}.")
+            if c2pa_present and not ai_source:
+                observations.append("A C2PA / Content Credentials manifest is embedded in the file.")
+            return EvidenceSignal(
+                id=self.id, name=self.name, category=self.category,
+                status=SignalStatus.OK, reliability=0.92,
+                summary="The file's embedded provenance marks it as AI-generated.",
+                what_checked="We scanned the file's Content Credentials (C2PA) and embedded provenance metadata for AI-generation markers, including the standardized digital-source-type and known generator names.",
+                what_found=("The provenance metadata flags this as trained-algorithmic (AI-generated) media." if ai_source else f"The embedded metadata names a generative tool: {name_hit}."),
+                why_it_matters="Provenance markers like C2PA are an industry-standard, hard-to-fake trace written by the generator itself. Finding one is among the strongest provenance signals available.",
+                caveat="Provenance can be stripped or, rarely, forged. Absence of a marker is not proof of authenticity.",
+                observations=observations,
+                metrics={"c2pa_present": c2pa_present, "ai_source_type": ai_source, "generator_named": name_hit},
+                supports=SignalSupport.AI_GENERATED,
+                notes="Content Credentials / embedded AI provenance scan.",
+            )
+
+        if c2pa_present:
+            return EvidenceSignal(
+                id=self.id, name=self.name, category=self.category,
+                status=SignalStatus.OK, reliability=0.5,
+                summary="The file carries Content Credentials, with no AI-generation marker.",
+                what_checked="We scanned the file for a C2PA / Content Credentials manifest and any AI-generation source-type marker.",
+                what_found="A Content Credentials (C2PA) manifest is present and does not flag AI generation, which is consistent with camera capture or a credentialed editing workflow.",
+                why_it_matters="Signed Content Credentials are increasingly used by cameras and creators to prove provenance, so their presence without an AI marker leans toward an authentic origin.",
+                caveat="We only check for the AI source-type here, not the full signature chain, so treat this as supporting rather than conclusive.",
+                observations=["A C2PA / Content Credentials manifest is embedded, with no AI digital-source-type marker."],
+                metrics={"c2pa_present": True, "ai_source_type": False},
+                supports=SignalSupport.AUTHENTIC,
+                notes="Content Credentials present without an AI marker.",
+            )
+        return None
+
     async def analyze(self, image, context: Dict[str, Any]) -> EvidenceSignal:
+        provenance = self._scan_provenance(context.get("image_bytes", b"") or b"")
+        if provenance is not None:
+            return provenance
+
         exif = {}
         try:
             raw_exif = image.getexif()

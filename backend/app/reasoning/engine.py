@@ -26,6 +26,22 @@ SIGNAL_IMPORTANCE = {
     "audio_acoustics": 0.6,
 }
 
+# Per-media importance overrides. This is a *relevance* prior (which signals actually
+# answer the question for this media type), separate from the *accuracy* adjustment the
+# self-calibration loop learns from confirmed feedback — the two multiply together.
+# For video, visual forensics should lead and audio is supporting evidence, because a
+# real-sounding voice does not make an AI-generated video real. Audio is down-weighted,
+# not disabled, so it still contributes and self-calibration can still tune it.
+MEDIA_IMPORTANCE_OVERRIDE = {
+    "video": {
+        "spectral_artifacts": 0.95,        # strongest validated signal on extracted frames
+        "temporal_coherence": 0.7,
+        "temporal_noise_coherence": 0.5,   # unproven heuristic, confounded by scene content — starts skeptical
+        "audio_track": 0.4,                # supporting evidence, not verdict-deciding
+        "audio_track_acoustics": 0.35,
+    },
+}
+
 STATUS_FACTOR = {
     SignalStatus.OK: 1.0,
     SignalStatus.WARNING: 0.8,
@@ -61,10 +77,10 @@ class ReasoningEngine:
         try:
             from ..core.analysis_store import get_learned_weights
 
-            learned_weights = get_learned_weights()
+            learned_weights = get_learned_weights(media_type)
         except Exception:
             learned_weights = {}
-        scored_signals = [self._score_signal(signal, learned_weights) for signal in visible_signals]
+        scored_signals = [self._score_signal(signal, learned_weights, media_type) for signal in visible_signals]
 
         authentic_score = sum(item.contribution for item in scored_signals if item.bucket == "authentic")
         ai_score = sum(item.contribution for item in scored_signals if item.bucket == "ai_generated")
@@ -151,8 +167,8 @@ class ReasoningEngine:
             signal_contributions={s.signal.id: round(s.contribution, 4) for s in scored_signals},
         )
 
-    def _score_signal(self, signal: EvidenceSignal, learned_weights: Optional[Dict[str, float]] = None) -> ScoredSignal:
-        importance = SIGNAL_IMPORTANCE.get(signal.id, 0.6)
+    def _score_signal(self, signal: EvidenceSignal, learned_weights: Optional[Dict[str, float]] = None, media_type: str = "image") -> ScoredSignal:
+        importance = MEDIA_IMPORTANCE_OVERRIDE.get(media_type, {}).get(signal.id, SIGNAL_IMPORTANCE.get(signal.id, 0.6))
         status_factor = STATUS_FACTOR.get(signal.status, 0.0)
         # Self-calibration: scale a detector's influence by how often it has matched
         # human-confirmed ground truth (1.0x until it has earned a change).

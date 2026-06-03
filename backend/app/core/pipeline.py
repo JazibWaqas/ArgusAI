@@ -323,6 +323,15 @@ class AnalysisPipeline:
                         "summary": sig.summary,
                         "visible": sig.visible,
                     }
+                # Temporal Coherence is derived from the same Gemini call as Semantic &
+                # Physical Consistency, so for video we hide the semantic card to avoid a
+                # duplicate card and double-counting one visual judgment in the verdict.
+                signals = [
+                    s.model_copy(update={"visible": False}) if s.id == "semantic_inconsistencies" else s
+                    for s in signals
+                ]
+                if "semantic_inconsistencies" in xray_metrics:
+                    xray_metrics["semantic_inconsistencies"]["visible"] = False
 
             signals_by_id = {signal.id: signal for signal in signals}
             calibration_event = None

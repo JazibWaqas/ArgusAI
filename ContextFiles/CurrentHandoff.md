@@ -323,6 +323,23 @@ The voice-authenticity model is real, but it should not be treated as the single
 - The final audio verdict is still correctly `ai_generated` because Gemini semantic listening identifies synthetic-speech evidence with high confidence. The audio fusion now allows high-confidence Gemini synthetic evidence to drive the final verdict while keeping the wav2vec2 disagreement visible as an evidence card.
 - This is acceptable and useful for the evidence-trail story: one detector can be wrong, and the system shows why the final verdict did not blindly follow it.
 
+## Signal Reliability + Media-Aware Calibration (June 3, 2026 — latest)
+
+Driven by a real failure: a clearly-AI video (95.8% spectral AI) was verdicted "likely authentic" because a real-sounding voice (audio signals) plus a fooled Gemini outvoted the one signal that caught it. Root causes and fixes:
+
+- **Audio overrode the video verdict.** A real voice does not make an AI video real. Fix: signal importance is now *media-aware* via `MEDIA_IMPORTANCE_OVERRIDE` in `engine.py`. For video, spectral is boosted (0.95), audio is supporting evidence only (audio_track 0.4, embedded acoustic 0.35), and `temporal_noise_coherence` is lowered to 0.5 (unproven heuristic, confounded by scene content). These are *relevance* priors (which signals answer the question for this media), a separate axis from the *accuracy* the calibration loop learns. The two multiply.
+- **Double-counted Gemini.** `temporal_coherence` is derived from the same Gemini call as `semantic_inconsistencies`. For video the Semantic card is now hidden, so that one visual judgment is shown and scored once.
+- **Frame count** raised 2 → 5 (`VIDEO_MAX_FRAMES`, config default + `.env`) so spectral/ELA/sensor-noise evaluate more frames. Adds a few seconds; accepted for reliability.
+- **Metadata upgraded to real provenance (C2PA).** `metadata.py` now scans raw file bytes (works with stripped EXIF, and on video bytes) for Content Credentials and the standardized AI source type `trainedAlgorithmicMedia`, plus generator names. AI provenance → strong AI signal; C2PA without an AI marker → authentic-leaning. This doubles as the provenance "watermark check" for Sora/Veo/Gemini/Firefly output.
+- **Self-calibration is now media-aware.** `detector_stats` carries `confirmed_by_media` ({image/video/audio: total, correct, accuracy}); `get_learned_weights(media_type)` resolves each detector with fallback: agent override → media-specific confirmed accuracy (once it has `LEARNED_WEIGHT_MIN_CONFIRMATIONS`) → global confirmed accuracy → 1.0x. The engine calls it with the analysis media type. Falls back to global until per-media confirmations accumulate.
+- **Audio verdict fix:** a confident Gemini AI call (>= 0.7) now overrides the voice model even when the model is confidently "authentic" (the model is the weakest audio signal; a missed fake is the worse error). A naive weighted vote was deliberately rejected because it regressed the working case (two fooled "authentic" signals outvoting a correct Gemini AI).
+- **Embedded video audio** now also runs the acoustic micro-signature, and standalone-audio + orphaned signal cards render full-width (no empty grid space).
+
+Honest caveats a fresh session should know:
+- The media-importance numbers (0.95 / 0.5 / 0.4 / 0.35) are reasonable hand-set *priors*, not empirically optimized; the calibration loop adjusts around them. Importance (relevance) and learned weight (accuracy) compose, so a signal can be down-weighted on both axes.
+- The C2PA generator-name byte scan can in rare cases false-positive (a generator name present in a caption/screenshot rather than provenance); the `trainedAlgorithmicMedia` marker is the reliable one.
+- The audio Gemini-override is an intentional asymmetric bias toward catching fakes; a real clip where Gemini wrongly calls AI at >= 0.7 would false-positive.
+
 ## Firebase Status
 
 Firestore integration is implemented and active on Cloud Run.

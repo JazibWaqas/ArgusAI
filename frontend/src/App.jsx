@@ -1580,7 +1580,12 @@ export default function App() {
     let coldStartTimer = null;
     try {
       coldStartTimer = setTimeout(() => {
-        setStatus((current) => current || "Connecting to Google Cloud Run (waking up backend container)...");
+        const localApi = API_BASE.includes("localhost") || API_BASE.includes("127.0.0.1");
+        setStatus((current) => current || (
+          localApi
+            ? "Connecting to local backend..."
+            : "Connecting to Google Cloud Run (waking up backend container)..."
+        ));
       }, 3500);
       const res = await fetch(`${API_BASE}/sessions`, { method: "POST" });
       if (!res.ok) throw new Error("session_create_failed");

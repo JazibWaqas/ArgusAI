@@ -170,7 +170,11 @@ class AudioAnalysisPipeline:
             return True
         detector_conf = detector_signal.confidence or 0.0
         gemini_conf = gemini_signal.confidence or 0.0
-        if gemini_signal.supports == SignalSupport.AI_GENERATED and gemini_conf >= 0.90:
+        # A confident AI call from Gemini overrides the voice model even when the model is
+        # confidently "authentic". The voice model is the weakest audio signal and the one
+        # most often fooled into a confident wrong answer, and a missed fake (false
+        # authentic) is the more dangerous error for a forensic tool.
+        if gemini_signal.supports == SignalSupport.AI_GENERATED and gemini_conf >= 0.7:
             return True
         return gemini_conf >= 0.75 and gemini_conf > detector_conf + 0.15
 

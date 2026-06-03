@@ -267,8 +267,11 @@ def _record_confirmed(
     truth_now: Optional[str],
     truth_prev: Optional[str],
     first_time: bool,
+    media_type: str = "image",
 ) -> None:
-    """Update a detector's human-confirmed accuracy counters.
+    """Update a detector's human-confirmed accuracy counters, both globally and per
+    media type. A detector behaves differently on image vs video vs audio, so the
+    verdict engine reads the per-media accuracy when enough confirmations exist.
 
     ``support`` is what the detector concluded; ``truth_now`` is the human-confirmed
     correct direction. On a first rating we add one confirmation; on a flip we only
@@ -278,6 +281,7 @@ def _record_confirmed(
         return
     correct_now = 1 if support == truth_now else 0
     correct_prev = 1 if (not first_time and support == truth_prev) else 0
+    media = media_type or "image"
     doc_ref = db.collection("detector_stats").document(detector_id)
     try:
         from firebase_admin import firestore
@@ -288,16 +292,27 @@ def _record_confirmed(
         def update(txn: Any) -> None:
             snap = doc_ref.get(transaction=txn)
             current = snap.to_dict() if snap.exists else {}
-            confirmed_total = int(current.get("confirmed_total") or 0) + (1 if first_time else 0)
-            confirmed_correct = int(current.get("confirmed_correct") or 0) + (correct_now - correct_prev)
-            confirmed_total = max(0, confirmed_total)
-            confirmed_correct = max(0, min(confirmed_total, confirmed_correct))
+            confirmed_total = max(0, int(current.get("confirmed_total") or 0) + (1 if first_time else 0))
+            confirmed_correct = max(0, min(confirmed_total, int(current.get("confirmed_correct") or 0) + (correct_now - correct_prev)))
+
+            by_media = current.get("confirmed_by_media")
+            by_media = dict(by_media) if isinstance(by_media, dict) else {}
+            row = by_media.get(media) if isinstance(by_media.get(media), dict) else {}
+            m_total = max(0, int(row.get("total") or 0) + (1 if first_time else 0))
+            m_correct = max(0, min(m_total, int(row.get("correct") or 0) + (correct_now - correct_prev)))
+            by_media[media] = {
+                "total": m_total,
+                "correct": m_correct,
+                "accuracy": round(m_correct / m_total, 4) if m_total else 0.0,
+            }
+
             txn.set(
                 doc_ref,
                 {
                     "confirmed_total": confirmed_total,
                     "confirmed_correct": confirmed_correct,
                     "confirmed_accuracy": round(confirmed_correct / confirmed_total, 4) if confirmed_total else 0.0,
+                    "confirmed_by_media": by_media,
                     "last_updated": _now_iso(),
                 },
                 merge=True,
@@ -422,33 +437,54 @@ def get_stats() -> Optional[dict[str, Any]]:
         return None
 
 
-_learned_weights_cache: dict[str, Any] = {"ts": 0.0, "value": {}}
+_learned_weights_cache: dict[str, dict[str, Any]] = {}
 _LEARNED_WEIGHTS_TTL_SECONDS = 60.0
 
 
-def get_learned_weights() -> dict[str, float]:
+def get_learned_weights(media_type: str = "image") -> dict[str, float]:
     """Per-detector verdict-weight multipliers learned from confirmed accuracy.
 
-    Cached briefly so the verdict engine does not hit Firestore on every analysis.
-    Returns an empty dict (no adjustment) when Firebase is unavailable or no
-    detector has earned a change yet.
+    Media-aware: a detector earns a media-specific multiplier once it has enough
+    confirmations for that media type (image/video/audio), and falls back to its
+    global confirmed accuracy otherwise. A manual agent override always wins.
+    Cached per media so the verdict engine does not hit Firestore on every analysis.
+    Returns an empty dict (no adjustment) when Firebase is unavailable or nothing earned.
     """
     import time
 
+    media = media_type or "image"
     now = time.time()
-    if now - float(_learned_weights_cache["ts"]) < _LEARNED_WEIGHTS_TTL_SECONDS:
-        return _learned_weights_cache["value"]
+    cached = _learned_weights_cache.get(media)
+    if cached and now - float(cached["ts"]) < _LEARNED_WEIGHTS_TTL_SECONDS:
+        return cached["value"]
 
-    stats = get_stats()
-    weights = (stats or {}).get("learned_weights") or {}
-    _learned_weights_cache["ts"] = now
-    _learned_weights_cache["value"] = weights
+    weights: dict[str, float] = {}
+    db = get_db()
+    if db is not None:
+        try:
+            for doc in db.collection("detector_stats").stream():
+                data = doc.to_dict() or {}
+                override = _bounded_multiplier(data.get("agent_weight_override"))
+                if override is not None:
+                    mult = override
+                else:
+                    by_media = data.get("confirmed_by_media") if isinstance(data.get("confirmed_by_media"), dict) else {}
+                    row = by_media.get(media) if isinstance(by_media.get(media), dict) else None
+                    if row and int(row.get("total") or 0) >= LEARNED_WEIGHT_MIN_CONFIRMATIONS:
+                        mult = _learned_multiplier(float(row.get("accuracy") or 0.0), int(row.get("total") or 0))
+                    else:
+                        mult = _learned_multiplier(float(data.get("confirmed_accuracy") or 0.0), int(data.get("confirmed_total") or 0))
+                if mult != 1.0:
+                    weights[doc.id] = mult
+        except Exception as exc:
+            log.warning("Could not read learned weights for %s: %s", media, exc)
+
+    _learned_weights_cache[media] = {"ts": now, "value": weights}
     return weights
 
 
 def clear_learned_weights_cache() -> None:
-    _learned_weights_cache["ts"] = 0.0
-    _learned_weights_cache["value"] = {}
+    _learned_weights_cache.clear()
 
 
 def get_detector_reliability(detector_id: str) -> dict[str, Any]:
@@ -761,6 +797,7 @@ def apply_feedback(report: Any, verdict_correct: bool) -> dict[str, Any]:
 
     feedback = "correct" if verdict_correct else "incorrect"
     verdict_direction = _verdict_direction(getattr(report, "verdict", None))
+    media_type = str(getattr(report, "media_type", "image") or "image")
     detectors = _detector_rows(report)
     try:
         from firebase_admin import firestore
@@ -789,7 +826,8 @@ def apply_feedback(report: Any, verdict_correct: bool) -> dict[str, Any]:
         truth_prev = None if existing is None else (verdict_direction if existing == "correct" else _opposite(verdict_direction))
         first_time = existing is None
         for detector_id, row in detectors.items():
-            _record_confirmed(db, detector_id, _support_direction(row.get("support")), truth_now, truth_prev, first_time)
+            _record_confirmed(db, detector_id, _support_direction(row.get("support")), truth_now, truth_prev, first_time, media_type)
+        clear_learned_weights_cache()
     except Exception as exc:
         log.warning("Could not apply feedback for %s: %s", sha, exc)
         return {"ok": False, "error": "Could not persist feedback."}

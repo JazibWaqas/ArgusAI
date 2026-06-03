@@ -1,12 +1,12 @@
 {
   "last_calibration_observation": {
     "spectral_support": "ai_generated",
-    "semantic_support": "authentic",
-    "disagreed": true,
-    "recorded_at": "2026-06-02T22:58:35.185053+00:00",
-    "streak": 1
+    "semantic_support": "inconclusive",
+    "disagreed": false,
+    "recorded_at": "2026-06-03T13:22:31.802293+00:00",
+    "streak": 0
   },
-  "calibration_streak": 1,
+  "calibration_streak": 0,
   "detectors": {},
   "events": []
 }

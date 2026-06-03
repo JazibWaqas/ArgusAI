@@ -18,7 +18,7 @@ class Settings:
         self.spectral_reference_real_dir = os.getenv("SPECTRAL_REFERENCE_REAL_DIR", "Images Dataset/Real Images")
         self.spectral_reference_ai_dir = os.getenv("SPECTRAL_REFERENCE_AI_DIR", "Images Dataset/AI Images")
         self.spectral_reference_sample_count = int(os.getenv("SPECTRAL_REFERENCE_SAMPLE_COUNT", "12"))
-        self.video_max_frames = int(os.getenv("VIDEO_MAX_FRAMES", "2"))
+        self.video_max_frames = int(os.getenv("VIDEO_MAX_FRAMES", "5"))
         self.phoenix_api_key = os.getenv("PHOENIX_API_KEY")
         self.phoenix_collector_endpoint = os.getenv("PHOENIX_COLLECTOR_ENDPOINT", "")
         self.phoenix_project_name = os.getenv("PHOENIX_PROJECT_NAME", "argusai-forensics")

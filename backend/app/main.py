@@ -416,6 +416,236 @@ def _too_large(contents: bytes) -> bool:
     return len(contents) > settings.max_upload_mb * 1024 * 1024
 
 
+def _report_verdict(report: Any) -> str:
+    verdict = getattr(report, "verdict", "inconclusive")
+    return verdict.value if hasattr(verdict, "value") else str(verdict)
+
+
+def _report_signals(report_payload: dict[str, Any]) -> list[dict[str, Any]]:
+    evidence = report_payload.get("evidence") if isinstance(report_payload.get("evidence"), dict) else {}
+    signals = evidence.get("signals") if isinstance(evidence.get("signals"), list) else None
+    if signals is None:
+        signals = report_payload.get("signals") if isinstance(report_payload.get("signals"), list) else []
+    primary = report_payload.get("signal") if isinstance(report_payload.get("signal"), dict) else None
+    if primary and not any((s or {}).get("id") == primary.get("id") for s in signals if isinstance(s, dict)):
+        signals = [primary, *signals]
+    return [s for s in signals if isinstance(s, dict)]
+
+
+def _find_signal(report_payload: dict[str, Any], detector_id: str | None) -> dict[str, Any] | None:
+    signals = _report_signals(report_payload)
+    if detector_id:
+        needle = detector_id.strip().lower()
+        for sig in signals:
+            if str(sig.get("id") or "").lower() == needle or str(sig.get("name") or "").lower() == needle:
+                return sig
+    return max(
+        signals,
+        key=lambda sig: float(sig.get("verdict_influence_percent") or sig.get("confidence") or 0),
+        default=None,
+    )
+
+
+def _investigator_tool_declarations() -> list[dict[str, Any]]:
+    return [
+        {
+            "name": "look_closer_at_media",
+            "description": "Inspect the original uploaded image, video, or audio for a focused forensic question without rerunning the full pipeline.",
+            "parameters": {
+                "type": "OBJECT",
+                "properties": {
+                    "question": {"type": "STRING", "description": "The focused thing to inspect in the media."}
+                },
+                "required": ["question"],
+            },
+        },
+        {
+            "name": "query_case_history",
+            "description": "Query ArgusAI's Firestore history for similar recent cases of the same media type.",
+            "parameters": {
+                "type": "OBJECT",
+                "properties": {
+                    "media_type": {"type": "STRING", "description": "image, video, or audio"},
+                    "limit": {"type": "NUMBER", "description": "Maximum number of cases to return."},
+                },
+            },
+        },
+        {
+            "name": "explain_detector_reasoning",
+            "description": "Explain why a detector's influence was high or low, including reliability, learned weight, and health-governor context.",
+            "parameters": {
+                "type": "OBJECT",
+                "properties": {
+                    "detector_id": {"type": "STRING", "description": "Optional detector id or name from the report."}
+                },
+            },
+        },
+        {
+            "name": "run_live_provenance",
+            "description": "Run live grounded OSINT provenance research on the original media and user's claim.",
+            "parameters": {
+                "type": "OBJECT",
+                "properties": {
+                    "claim": {"type": "STRING", "description": "The provenance claim or question to investigate."}
+                },
+            },
+        },
+        {
+            "name": "draft_fact_check_note",
+            "description": "Produce a concise citable fact-check note artifact for this case.",
+            "parameters": {
+                "type": "OBJECT",
+                "properties": {
+                    "claim": {"type": "STRING", "description": "The claim being checked."}
+                },
+            },
+        },
+        {
+            "name": "flag_for_human_review",
+            "description": "Flag this case for human review when the evidence is high-impact, uncertain, or contested.",
+            "parameters": {
+                "type": "OBJECT",
+                "properties": {
+                    "reason": {"type": "STRING", "description": "Why the case needs human review."},
+                    "priority": {"type": "STRING", "description": "low, normal, high, or urgent"},
+                },
+                "required": ["reason"],
+            },
+        },
+    ]
+
+
+async def _run_investigator_tool(
+    *,
+    name: str,
+    args: dict[str, Any],
+    session_id: str,
+    data: Any,
+    report_payload: dict[str, Any],
+    client: LLMClient,
+) -> dict[str, Any]:
+    try:
+        media_type = str(report_payload.get("media_type") or getattr(data, "media_type", "image") or "image")
+        if name == "look_closer_at_media":
+            if not data.media_bytes:
+                return {"ok": False, "label": "original media unavailable", "error": "The original upload is no longer cached for this session."}
+            question = str(args.get("question") or "Look for details relevant to the user's question.")
+            result = await client.focused_media_review(data.media_bytes, question, user_context=data.user_context)
+            if not result:
+                return {"ok": False, "label": f"looked closer at the {media_type}", "error": "Focused media review was unavailable."}
+            observations = result.get("observations") if isinstance(result.get("observations"), list) else []
+            return {
+                "ok": True,
+                "label": f"looked closer at the {media_type}",
+                "answer": result.get("answer"),
+                "observations": observations[:6],
+                "confidence": result.get("confidence"),
+                "media_type": media_type,
+            }
+
+        if name == "query_case_history":
+            requested = str(args.get("media_type") or media_type or "image")
+            limit = int(args.get("limit") or 6)
+            result = get_similar_past_cases(media_type=requested, limit=max(1, min(limit, 10)))
+            cases = result.get("cases") or result.get("recent_cases") or []
+            if not isinstance(cases, list):
+                cases = []
+            return {
+                **result,
+                "ok": bool(result.get("ok", True)),
+                "label": f"searched case history -> {len(cases)} matches",
+                "cases": cases[:10],
+            }
+
+        if name == "explain_detector_reasoning":
+            detector_id = str(args.get("detector_id") or "").strip() or None
+            sig = _find_signal(report_payload, detector_id)
+            if not sig:
+                return {"ok": False, "label": "checked detector influence", "error": "No matching signal was found in this report."}
+            detector = str(sig.get("id") or detector_id or "unknown")
+            reliability = get_detector_reliability(detector)
+            health = (report_payload.get("pipeline_health") or {}).get("detector_governor") or {}
+            return {
+                "ok": True,
+                "label": f"checked {detector} influence",
+                "detector_id": detector,
+                "signal": {
+                    "name": sig.get("name"),
+                    "status": sig.get("status"),
+                    "supports": sig.get("supports"),
+                    "confidence": sig.get("confidence"),
+                    "reliability": sig.get("reliability"),
+                    "verdict_influence_percent": sig.get("verdict_influence_percent"),
+                    "summary": sig.get("summary"),
+                    "what_found": sig.get("what_found"),
+                    "caveat": sig.get("caveat"),
+                },
+                "reliability": reliability,
+                "health_governor": health,
+                "score_breakdown": report_payload.get("score_breakdown"),
+            }
+
+        if name == "run_live_provenance":
+            if not data.media_bytes:
+                return {"ok": False, "label": "live provenance unavailable", "error": "The original upload is no longer cached for this session."}
+            claim = str(args.get("claim") or data.user_context or "Investigate the provenance of this media.")
+            reverse_matches = await client.reverse_image_search(data.media_bytes, claim)
+            result = await client.grounded_osint_research_agent(data.media_bytes, claim, reverse_matches=reverse_matches)
+            if not result:
+                return {"ok": False, "label": "ran live provenance search", "error": "Grounded provenance search was unavailable."}
+            osint, meta = result
+            fact_sources = osint.get("fact_check_sources") if isinstance(osint.get("fact_check_sources"), list) else []
+            hops = int(osint.get("research_hops") or 1)
+            return {
+                "ok": True,
+                "label": f"ran live provenance search -> {len(fact_sources)} sources",
+                "osint": osint,
+                "grounding_metadata": {
+                    "web_search_queries": meta.get("webSearchQueries") or meta.get("web_search_queries") or [],
+                },
+                "research_hops": hops,
+            }
+
+        if name == "draft_fact_check_note":
+            claim = str(args.get("claim") or data.user_context or "the submitted media authenticity claim")
+            verdict = str(report_payload.get("verdict") or "inconclusive")
+            summary = str(report_payload.get("short_summary") or report_payload.get("explanation") or "Evidence summary unavailable.")
+            trace_id = report_payload.get("phoenix_trace_id")
+            note = (
+                f"Claim reviewed: {claim}\n"
+                f"ArgusAI finding: {verdict}.\n"
+                f"Evidence basis: {summary}\n"
+                f"Audit trail: {'Phoenix trace ' + trace_id if trace_id else 'Trace unavailable'}.\n"
+                "Recommended use: cite as automated forensic screening and retain human editorial review for publication decisions."
+            )
+            log_agent_action(
+                "fact_check_note",
+                f"Drafted fact-check note ({verdict})",
+                {"claim": claim[:200], "verdict": verdict, "session_id": session_id},
+            )
+            return {"ok": True, "label": "drafted fact-check note", "artifact_type": "fact_check_note", "note": note}
+
+        if name == "flag_for_human_review":
+            reason = str(args.get("reason") or "The case needs human review.")
+            priority = str(args.get("priority") or "normal")[:40]
+            record = {"session_id": session_id, "reason": reason[:1000], "priority": priority, "status": "queued_for_human_review"}
+            try:
+                action_dir = Path("logs/agent_actions")
+                action_dir.mkdir(parents=True, exist_ok=True)
+                path = action_dir / f"human_review_{abs(hash(json.dumps(record, sort_keys=True))) & 0xffffffff:x}.json"
+                path.write_text(json.dumps(record, indent=2), encoding="utf-8")
+                record["local_artifact"] = str(path)
+            except Exception:
+                pass
+            log_agent_action("flag_review", f"Flagged case for human review ({priority})", {"reason": reason[:200], "session_id": session_id})
+            return {"ok": True, "label": "flagged for human review", **record}
+
+        return {"ok": False, "label": name.replace("_", " "), "error": "Unknown investigator tool."}
+    except Exception as exc:
+        log.warning("Investigator tool %s failed: %s", name, exc)
+        return {"ok": False, "label": name.replace("_", " "), "error": "Tool failed safely."}
+
+
 @app.post("/sessions")
 async def create_session() -> dict:
     sid = session_store.create()
@@ -436,6 +666,14 @@ async def analyze_in_session(
 
     report = await pipeline.analyze(contents, user_context=context)
     session_store.set_report(session_id, report)
+    session_store.set_media(
+        session_id,
+        contents,
+        media_type=str(getattr(report, "media_type", "image") or "image"),
+        content_type=file.content_type or "",
+        filename=file.filename or "",
+        user_context=context,
+    )
     session_store.append_message(
         session_id,
         "user",
@@ -481,6 +719,14 @@ async def analyze_audio_in_session(
 
     report = await audio_pipeline.analyze(contents, user_context=context)
     session_store.set_report(session_id, report)
+    session_store.set_media(
+        session_id,
+        contents,
+        media_type="audio",
+        content_type=file.content_type or "",
+        filename=file.filename or "",
+        user_context=context,
+    )
 
     session_store.append_message(
         session_id,
@@ -512,17 +758,36 @@ async def session_followup(session_id: str, body: ChatMessageRequest):
 
     client = LLMClient()
     report_payload = data.last_report.model_dump(mode="json")
-    evidence_payload = report_payload.get("evidence") or report_payload
-    reply = await client.followup_answer(
-        body.message,
-        data.last_report.verdict.value if hasattr(data.last_report.verdict, "value") else str(data.last_report.verdict),
-        evidence_payload,
-    )
-    if not reply:
-        reply = "I could not generate a follow-up answer. Check LLM API keys and try again."
+    verdict = _report_verdict(data.last_report)
 
-    session_store.append_message(session_id, "assistant", reply, {"kind": "text"})
-    return {"reply": reply, "session_id": session_id}
+    async def run_tool(tool_name: str, tool_args: dict[str, Any]) -> dict[str, Any]:
+        return await _run_investigator_tool(
+            name=tool_name,
+            args=tool_args,
+            session_id=session_id,
+            data=data,
+            report_payload=report_payload,
+            client=client,
+        )
+
+    agent_result = await client.investigator_agent_reply(
+        user_message=body.message,
+        verdict=verdict,
+        report=report_payload,
+        history=data.messages,
+        tools=_investigator_tool_declarations(),
+        tool_runner=run_tool,
+    )
+    reply = (agent_result or {}).get("reply")
+    tool_calls = (agent_result or {}).get("tool_calls") or []
+    if not reply:
+        evidence_payload = report_payload.get("evidence") or report_payload
+        reply = await client.followup_answer(body.message, verdict, evidence_payload)
+    if not reply:
+        reply = "I could not generate a follow-up answer from the available evidence."
+
+    session_store.append_message(session_id, "assistant", reply, {"kind": "text", "tool_calls": tool_calls})
+    return {"reply": reply, "session_id": session_id, "tool_calls": tool_calls}
 
 
 @app.post("/sessions/{session_id}/feedback")
@@ -606,6 +871,14 @@ async def agent_analyze(
     report = await pipeline.analyze(contents, user_context=context)
     sid = session_store.create()
     session_store.set_report(sid, report)
+    session_store.set_media(
+        sid,
+        contents,
+        media_type=str(getattr(report, "media_type", "image") or "image"),
+        content_type=file.content_type or "",
+        filename=file.filename or "",
+        user_context=context,
+    )
     return {"session_id": sid, **_agent_report_summary(report)}
 
 

@@ -9,6 +9,11 @@ from typing import Any, Dict, List, Optional
 class SessionData:
     messages: List[Dict[str, Any]] = field(default_factory=list)
     last_report: Optional[Any] = None
+    media_bytes: Optional[bytes] = None
+    media_type: str = "image"
+    media_content_type: str = ""
+    media_filename: str = ""
+    user_context: str = ""
 
 
 class SessionStore:
@@ -38,6 +43,26 @@ class SessionStore:
         if not s:
             return False
         s.last_report = report
+        return True
+
+    def set_media(
+        self,
+        session_id: str,
+        contents: bytes,
+        *,
+        media_type: str,
+        content_type: str = "",
+        filename: str = "",
+        user_context: str = "",
+    ) -> bool:
+        s = self.get(session_id)
+        if not s:
+            return False
+        s.media_bytes = contents
+        s.media_type = media_type or "image"
+        s.media_content_type = content_type or ""
+        s.media_filename = filename or ""
+        s.user_context = user_context or ""
         return True
 
 

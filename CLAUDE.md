@@ -38,6 +38,8 @@ Current live state:
 - Agent action tools now exist: detector reliability, similar cases, accuracy drift, detector recalibration, draft fact-check note, and human-review flagging.
 - Verdict cards and official PDFs now surface Phoenix chain-of-custody audit links/trace IDs.
 - Admin panel now explains the Firestore persistence + Phoenix immutable trace story directly for judges.
+- Public report follow-up chat is now a bounded Gemini function-calling Investigator Agent. It can inspect the original uploaded media, query Firestore case history, explain detector influence/reliability, run live grounded OSINT, draft a fact-check note, and flag the case for human review. The UI shows compact tool-use chips before the answer.
+- Follow-up media inspection uses an in-memory session media cache. This is reliable locally and demo-safe on the current single-instance warm Cloud Run setup, but not durable across cold restarts, deploys, scale-to-zero, crashes, or future `max-instances>1`. For production/cloud robustness, move uploaded media to Cloud Storage or another durable store and reload it by session/case ID.
 - Backend revision with latency fixes and Flash-Lite explanations deployed: `argusai-backend-00023-mtw`.
 - Frontend revision with admin polling/stat refresh fixes deployed: `argusai-frontend-00005-r54`.
 - Admin stats are now consistent: `/stats` rebuilds global totals from Firestore `/analyses`, the admin console polls every 15s, and the main app refreshes stats after analysis.
@@ -73,6 +75,7 @@ So: stage the *demo narrative* freely, but the **Agent Builder + Phoenix MCP int
 - Firestore persistence works (`source: firestore`); Firebase lru_cache bug fixed (restart backend to apply).
 - Phoenix tracing works **locally**: project `argusai-forensics`, internal id `UHJvamVjdDoy`. Cloud Phoenix is empty/ephemeral — ignore it for the demo.
 - `/agent/analyze` and `/agent/chat` exist and are history-aware (inject Firestore reliability context).
+- `/sessions/{session_id}/messages` is now the consumer-side Investigator Agent loop, with tools for focused media review, case history, detector reasoning, OSINT, fact-check note drafting, and human-review flagging. Tool failures are guarded and the loop is bounded.
 - Arize Reliability Console shows real-world accuracy, trust leaderboard, applied weights.
 
 ### What is now done from this plan
@@ -86,12 +89,15 @@ So: stage the *demo narrative* freely, but the **Agent Builder + Phoenix MCP int
 - Operator console rebuilt as a full-page dashboard behind a soft-gate login modal; agent activity feed + drift arrows + real-world accuracy + trust leaderboard.
 - Two new measured fundamental signals added (audio `audio_acoustics`, video `temporal_noise_coherence`); image detector path untouched.
 - Consumer-side de-AI polish: audit/Phoenix links removed from consumer view, one-line summary, de-neoned palette, three-zone header.
+- Consumer follow-up chat upgraded to a visible tool-using Investigator Agent. Verified with `python -m compileall backend\app`, `npm run build`, and a mocked `/sessions/{id}/messages` smoke test returning `reply` plus `tool_calls`.
 
 ### What is still not fully proven
 
 - The full local stack run + seeding pass before recording: verify image/video/audio analyses, feedback returns 200 (Firebase connected), audio shows 4 cards, video shows Sensor Noise Coherence, "Run investigator agent" populates the feed, and traces land in local Phoenix.
 
 - The money-shot conversation should be rehearsed end to end on the final sample.
+- The public follow-up Investigator Agent should be rehearsed locally on the final sample: ask it to look closer at the media, check similar cases, explain a detector's weight, run provenance, and draft a fact-check note. This has been syntax/build/smoke verified, but not yet live-tested with a real uploaded sample and Gemini tool calls end to end.
+- Cloud durability caveat: follow-up "look closer" relies on the in-memory media cache. It is demo-safe locally and while Cloud Run stays on one warm instance, but not durable until original uploads are externalized.
 - Gemini 3.5 Flash returned temporary high-demand `503` during one ADK verification run. Keep it as the default, but use `ADK_GEMINI_MODEL=gemini-2.5-flash` if the recording needs a stable fallback.
 - Google Cloud Agent Builder console setup remains optional for extra proof; the repo-local ADK path is the practical, verified demo path because local Phoenix/MCP are reachable from the laptop.
 ## The target architecture — two agent personas
@@ -156,7 +162,7 @@ Expose these as OpenAPI tools (new thin backend endpoints over existing `analysi
 ## Project-complete checklist (when ALL true, stop building)
 
 - [x] Phoenix MCP returns real data inside an ADK agent session (Stage One gate met locally).
-- [ ] Agent plans a multi-tool investigation from one goal, no hardcoded order.
+- [x] Public follow-up agent plans bounded multi-tool investigations from one user question, no hardcoded order. Build/smoke verified; still rehearse on final demo media.
 - [x] Agent can call a Phoenix MCP tool through ADK.
 - [x] `recalibrate_detector_weight` writes to Firestore and appears in `/stats` (verified with no-op `1.0x`).
 - [x] `detect_accuracy_drift` returns a real recent-vs-historical signal shape from Firestore feedback.

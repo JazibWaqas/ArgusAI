@@ -1794,7 +1794,8 @@ export default function App() {
       });
       const data = await res.json();
       const reply = res.ok ? data.reply : (data.error || "Could not answer.");
-      setMessages((prev) => [...prev, { id: `a-${Date.now()}`, role: "assistant", kind: "text", text: reply }]);
+      const toolCalls = Array.isArray(data.tool_calls) ? data.tool_calls : [];
+      setMessages((prev) => [...prev, { id: `a-${Date.now()}`, role: "assistant", kind: "text", text: reply, toolCalls }]);
     } catch {
       setMessages((prev) => [...prev, { id: `a-${Date.now()}`, role: "assistant", kind: "text", text: "Network error." }]);
     } finally {
@@ -1956,7 +1957,19 @@ export default function App() {
                   <div className="user-bubble text-only"><p>{m.text}</p></div>
                 )}
                 {m.role === "assistant" && m.kind === "text" && (
-                  <div className="assistant-bubble"><p>{m.text}</p></div>
+                  <div className="assistant-bubble">
+                    {Array.isArray(m.toolCalls) && m.toolCalls.length > 0 && (
+                      <div className="tool-call-strip">
+                        {m.toolCalls.map((tool, idx) => (
+                          <span key={`${tool.name || "tool"}-${idx}`} className={`tool-call-chip ${tool.ok === false ? "tool-call-failed" : ""}`}>
+                            <Target size={12} />
+                            {tool.label || (tool.name || "used tool").replaceAll("_", " ")}
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                    <p>{m.text}</p>
+                  </div>
                 )}
                 {m.role === "assistant" && m.kind === "audio_report" && m.report && (
                   <AudioReportCard

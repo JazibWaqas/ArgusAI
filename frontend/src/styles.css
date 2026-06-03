@@ -384,6 +384,34 @@ html { scroll-behavior: smooth; }
   color: var(--text);
   line-height: 1.8;
 }
+.tool-call-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 10px;
+}
+.tool-call-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 4px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(34,211,238,0.22);
+  background: rgba(34,211,238,0.08);
+  color: #bdeefa;
+  font-size: 11px;
+  line-height: 1.2;
+  white-space: normal;
+}
+.tool-call-chip svg {
+  flex-shrink: 0;
+}
+.tool-call-failed {
+  border-color: rgba(251,191,36,0.28);
+  background: rgba(251,191,36,0.08);
+  color: #f8d98b;
+}
 
 /* Feed status */
 .feed-status {

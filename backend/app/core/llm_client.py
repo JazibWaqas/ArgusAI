@@ -589,6 +589,197 @@ class LLMClient:
 
         return await gemini_reply()
 
+    async def focused_media_review(
+        self,
+        media_bytes: bytes,
+        question: str,
+        *,
+        user_context: str = "",
+    ) -> Optional[Dict[str, Any]]:
+        if not llm_settings.gemini_api_key or not media_bytes:
+            return None
+
+        mime = self._image_mime_type(media_bytes)
+        if mime.startswith("audio/"):
+            action = "Listen to the submitted audio recording"
+            media_word = "audio"
+        elif mime.startswith("video/"):
+            action = "Watch the submitted video clip"
+            media_word = "video"
+        else:
+            action = "Look closely at the submitted image"
+            media_word = "image"
+
+        prompt = (
+            "You are ArgusAI's investigator agent. "
+            f"{action} and answer the user's focused forensic question. "
+            "Do not rerun the full pipeline. Inspect only what is visible or audible in the media. "
+            "Separate observations from conclusions. Use plain professional language, no markdown, no em dashes.\n\n"
+            f"Original user context: {(user_context or '').strip() or 'None supplied.'}\n"
+            f"Focused question: {question.strip()}\n\n"
+            "Return only one JSON object with exactly these keys: "
+            "answer (string, 2 to 5 sentences), observations (array of strings), confidence (float 0 to 1), media_type (string)."
+        )
+        payload = {
+            "contents": [
+                {
+                    "parts": [
+                        {"text": prompt},
+                        {
+                            "inline_data": {
+                                "mime_type": mime,
+                                "data": base64.b64encode(media_bytes).decode("utf-8"),
+                            }
+                        },
+                    ]
+                }
+            ],
+            "generationConfig": {"temperature": 0.15},
+        }
+        headers = {"Content-Type": "application/json"}
+        async with httpx.AsyncClient(timeout=max(30.0, float(llm_settings.vision_timeout_seconds))) as client:
+            try:
+                response = await self._post_with_fallback(client, llm_settings.gemini_vision_model, headers, payload)
+                data = response.json()
+                text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+            except Exception as exc:
+                detail = self.last_error or str(exc)
+                self._note_error(
+                    f"Focused media review failed: {detail}",
+                    provider="gemini",
+                    model=self.last_model or llm_settings.gemini_vision_model,
+                )
+                return None
+        parsed = self._extract_json_object(text) or {"answer": text}
+        parsed["media_type"] = str(parsed.get("media_type") or media_word)
+        if not isinstance(parsed.get("observations"), list):
+            parsed["observations"] = []
+        return parsed
+
+    async def investigator_agent_reply(
+        self,
+        *,
+        user_message: str,
+        verdict: str,
+        report: Dict[str, Any],
+        history: list[Dict[str, Any]],
+        tools: list[Dict[str, Any]],
+        tool_runner: Any,
+        max_rounds: int = 3,
+    ) -> Optional[Dict[str, Any]]:
+        if not llm_settings.gemini_api_key:
+            return None
+
+        system = (
+            "You are ArgusAI's user-facing Investigator Agent for a completed media forensic report. "
+            "You may use tools to inspect the original media, query prior case history, explain detector influence, "
+            "run live provenance research, draft a fact-check note, or flag the case for human review. "
+            "Use tools when they materially improve the answer. Do not rerun the full forensic pipeline. "
+            "Keep tool use bounded. If a tool fails, continue from the report evidence. "
+            "Final answers must be clear, professional, concise, and free of filler. Do not use em dashes."
+        )
+        report_brief = {
+            "verdict": verdict,
+            "media_type": report.get("media_type"),
+            "certainty": report.get("certainty"),
+            "confidence_label": report.get("confidence_label"),
+            "short_summary": report.get("short_summary"),
+            "pipeline_health": report.get("pipeline_health"),
+            "phoenix_trace_id": report.get("phoenix_trace_id"),
+            "evidence": report.get("evidence") or {"signals": report.get("signals") or []},
+            "audio_signal": report.get("signal"),
+        }
+        prior = [
+            {"role": row.get("role"), "content": row.get("content")}
+            for row in (history or [])[-8:]
+            if row.get("role") in {"user", "assistant"} and row.get("content")
+        ]
+        contents: list[dict[str, Any]] = [
+            {"role": "user", "parts": [{"text": system}]},
+            {
+                "role": "user",
+                "parts": [
+                    {
+                        "text": (
+                            f"Current report JSON:\n{json.dumps(report_brief, ensure_ascii=False)[:18000]}\n\n"
+                            f"Recent transcript JSON:\n{json.dumps(prior, ensure_ascii=False)[:6000]}\n\n"
+                            f"User question: {user_message}"
+                        )
+                    }
+                ],
+            },
+        ]
+        payload_tools = [{"functionDeclarations": tools}]
+        headers = {"Content-Type": "application/json"}
+        tool_calls: list[dict[str, Any]] = []
+
+        async with httpx.AsyncClient(timeout=45.0) as client:
+            for _ in range(max(1, min(max_rounds, 4))):
+                payload = {
+                    "contents": contents,
+                    "tools": payload_tools,
+                    "generationConfig": {"temperature": 0.2},
+                }
+                try:
+                    response = await self._post_with_fallback(client, llm_settings.gemini_model, headers, payload)
+                    data = response.json()
+                    model_content = data["candidates"][0]["content"]
+                    parts = model_content.get("parts") or []
+                except Exception as exc:
+                    detail = self.last_error or str(exc)
+                    self._note_error(
+                        f"Investigator agent request failed: {detail}",
+                        provider="gemini",
+                        model=self.last_model or llm_settings.gemini_model,
+                    )
+                    return None
+
+                function_part = next((p for p in parts if isinstance(p.get("functionCall"), dict)), None)
+                if not function_part:
+                    text = "\n".join(str(p.get("text") or "").strip() for p in parts if p.get("text")).strip()
+                    return {"reply": text, "tool_calls": tool_calls}
+
+                function_call = function_part["functionCall"]
+                name = str(function_call.get("name") or "")
+                args = function_call.get("args") if isinstance(function_call.get("args"), dict) else {}
+                result = await tool_runner(name, args)
+                tool_calls.append(
+                    {
+                        "name": name,
+                        "label": result.get("label") or name.replace("_", " "),
+                        "ok": bool(result.get("ok", True)),
+                    }
+                )
+                contents.append(model_content)
+                contents.append(
+                    {
+                        "role": "user",
+                        "parts": [
+                            {
+                                "functionResponse": {
+                                    "name": name,
+                                    "response": result,
+                                }
+                            }
+                        ],
+                    }
+                )
+
+        final_prompt = (
+            "Tool limit reached. Answer the user's question from the report and tool results already provided. "
+            "Be concise and professional."
+        )
+        contents.append({"role": "user", "parts": [{"text": final_prompt}]})
+        payload = {"contents": contents, "generationConfig": {"temperature": 0.2}}
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            try:
+                response = await self._post_with_fallback(client, llm_settings.gemini_model, headers, payload)
+                data = response.json()
+                text = data["candidates"][0]["content"]["parts"][0]["text"].strip()
+                return {"reply": text, "tool_calls": tool_calls}
+            except Exception:
+                return {"reply": None, "tool_calls": tool_calls}
+
     async def generate_explanation(
         self,
         verdict: str,

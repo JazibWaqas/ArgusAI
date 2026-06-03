@@ -195,6 +195,10 @@ Backend:
 - `/agent/chat` injects Firestore history context before Gemini answers, so the agent can discuss accumulated reliability rather than acting like a generic Gemini wrapper.
 - Agent action endpoints exist under `/agent/tools/*`: detector reliability, similar cases, accuracy drift, detector recalibration, draft fact-check note, and human-review artifact.
 - `/agent/tools/recalibrate-detector` writes a bounded detector weight override to Firestore; `get_learned_weights()` consumes it, so future verdicts can change.
+- The public report follow-up chat is now a bounded Gemini function-calling Investigator Agent, not a passive report-summary reader. Endpoint: `POST /sessions/{session_id}/messages`.
+- The follow-up agent has guarded tools for: focused multimodal review of the original uploaded media, Firestore case-history lookup, detector influence/reliability explanation, live grounded OSINT provenance, fact-check note drafting, and human-review flagging.
+- Original uploaded media is cached in the in-memory session after analysis so the follow-up agent can "look closer" at the actual image/video/audio without rerunning the full forensic pipeline. This is demo-safe locally and usually works on current Cloud Run while `max-instances=1` and the instance is warm, but it is not restart/scale-safe until media is externalized to Cloud Storage or another durable store.
+- Follow-up agent tool-call loop is bounded to a few rounds and tool failures degrade to a normal text answer rather than crashing the chat.
 
 Frontend:
 
@@ -217,6 +221,7 @@ Frontend:
 - Verdict cards now show an inline forensic trace chip with `View audit trail` linking to Phoenix.
 - Official PDF reports include `Forensic trace ID`, Phoenix audit URL, and a chain-of-custody footer with trace ID and generation timestamp.
 - Admin dashboard includes explanatory framing copy: investigation history is persisted in Firestore and each verdict's full reasoning is recorded as a Phoenix trace.
+- Follow-up chat now surfaces visible tool-use chips before the agent answer, e.g. `looked closer at the image`, `searched case history -> 3 matches`, or `ran live provenance search -> 2 sources`.
 
 Cloud/Arize:
 
@@ -428,6 +433,14 @@ npm run build
 
 Both passed after the latest changes.
 
+Latest local validation for the follow-up Investigator Agent:
+
+```text
+python -m compileall backend\app -> passed
+cd frontend && npm run build -> passed
+Mocked POST /sessions/{id}/messages -> 200 with reply + tool_calls
+```
+
 Useful health checks:
 
 ```powershell
@@ -501,6 +514,7 @@ These need user/browser interaction or product judgment.
 
 - Current Phoenix Cloud Run deployment is unauthenticated and ephemeral. Fine for hackathon/demo, not production.
 - Backend sessions are in-memory. Keep `max-instances=1` until session storage is externalized.
+- The public follow-up Investigator Agent's "look closer at media" and live media-grounded OSINT tools depend on the in-memory cached upload. They work locally and during a continuous warm single-instance Cloud Run session, but can fail after cold start, deploy, crash, scale-to-zero, or if `max-instances` is raised. The durable fix is to store uploaded media in Cloud Storage keyed by session/case ID and reload it inside `/sessions/{id}/messages`.
 - Gemini 3.5 quota/high demand can happen. The fallback to Gemini 2.5 is intentional and verified.
 - Audio reports have a different schema (`AudioForensicReport`) than image/video reports. Frontend handles this.
 - The dedicated wav2vec2/HF voice model can misclassify modern Gemini-generated audio as authentic. Do not demo it as a guaranteed standalone detector. Keep it as one evidence card and let the multi-signal verdict explain any disagreement.

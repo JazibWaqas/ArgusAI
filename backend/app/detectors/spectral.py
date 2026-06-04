@@ -283,31 +283,31 @@ class SpectralArtifactDetector(Detector):
         if ai_prob >= 0.6:
             supports = SignalSupport.AI_GENERATED
             summary = (
-                f"The Six-Lens model scored this image {ai_prob:.1%} AI / {auth_prob:.1%} authentic — "
+                f"The Six-Lens model scored this image {ai_prob:.1%} AI and {auth_prob:.1%} authentic, "
                 f"a {confidence_label}-confidence finding toward synthetic generation."
             )
             what_found = (
-                f"All six spectral lenses — visual texture (ConvNeXt), frequency grids (FFT), sensor noise simulation (SRM), "
-                f"color-space fingerprints (YCbCr), spatial reconstruction (SPAI), and robustness testing — "
+                f"All six spectral lenses, covering visual texture (ConvNeXt), frequency grids (FFT), sensor noise simulation (SRM), "
+                f"color-space fingerprints (YCbCr), spatial reconstruction (SPAI), and robustness testing, "
                 f"collectively scored this image {ai_prob:.1%} AI. "
                 f"{'A score this strong' if ai_prob >= 0.80 else 'At this level'}, the majority of lenses independently flagged patterns "
                 f"like periodic frequency grids and noise distributions inconsistent with any known camera sensor profile."
             )
             why_it_matters = (
-                f"This model looks for patterns invisible to the human eye — buried in the pixel-level math of the image. "
+                f"This model looks for patterns invisible to the human eye, buried in the pixel-level math of the image. "
                 f"A {ai_prob:.1%} score means the statistical fingerprint aligns significantly more with AI generation than camera physics, "
                 f"and these frequency-domain traces are very hard to remove without visibly degrading the image."
             )
         elif ai_prob <= 0.4:
             supports = SignalSupport.AUTHENTIC
             summary = (
-                f"The Six-Lens model scored this image {auth_prob:.1%} authentic / {ai_prob:.1%} AI — "
+                f"The Six-Lens model scored this image {auth_prob:.1%} authentic and {ai_prob:.1%} AI, "
                 f"a {confidence_label}-confidence finding toward real camera capture."
             )
             what_found = (
-                f"Across all six lenses, the model returned only {ai_prob:.1%} AI probability — consistent with real camera optics. "
+                f"Across all six lenses, the model returned only {ai_prob:.1%} AI probability, consistent with real camera optics. "
                 f"The SRM residuals match expected sensor noise, the FFT spectrum shows natural frequency falloff (no periodic grid artifacts), "
-                f"and the SPAI reconstruction probe behaved predictably — the way natural scenes respond, not AI-synthesized regions."
+                f"and the SPAI reconstruction probe behaved the way natural scenes respond, not the way AI-synthesized regions do."
             )
             why_it_matters = (
                 f"A {auth_prob:.1%} authenticity score means the image's deepest mathematical structure is consistent with physical lens optics and silicon sensor physics. "
@@ -316,7 +316,7 @@ class SpectralArtifactDetector(Detector):
         else:
             supports = SignalSupport.INCONCLUSIVE
             summary = (
-                f"The Six-Lens model returned a split result: {ai_prob:.1%} AI vs {auth_prob:.1%} authentic — "
+                f"The Six-Lens model returned a split result: {ai_prob:.1%} AI versus {auth_prob:.1%} authentic, "
                 f"a margin of only {margin:.1%}, too narrow for a confident read."
             )
             what_found = (
@@ -325,14 +325,14 @@ class SpectralArtifactDetector(Detector):
                 f"or a real photo that's been compressed or resized enough to partially erase its original frequency-domain fingerprint."
             )
             why_it_matters = (
-                f"A split result at {ai_prob:.1%}/{auth_prob:.1%} is itself forensically meaningful — clearly authentic images typically score 20-35% AI, "
+                f"A split result at {ai_prob:.1%} versus {auth_prob:.1%} is itself forensically meaningful. Clearly authentic images typically score 20-35% AI, "
                 f"and clearly AI images 75-99%. This middle zone suggests the image's statistical fingerprint has been partially obscured, "
                 f"making the other detectors especially important."
             )
 
         observations = [
-            f"Six-Lens fusion result — AI score: {ai_prob:.4f} ({ai_prob:.1%}), Authentic score: {auth_prob:.4f} ({auth_prob:.1%}).",
-            f"Score margin: {margin:.4f} — the gap between the two class probabilities. Margins above 0.30 are considered high-confidence.",
+            f"Six-Lens fusion result. AI score: {ai_prob:.4f} ({ai_prob:.1%}), authentic score: {auth_prob:.4f} ({auth_prob:.1%}).",
+            f"Score margin: {margin:.4f}. This is the gap between the two class probabilities. Margins above 0.30 are considered high-confidence.",
             f"Confidence tier: {confidence_label} (margin {margin:.2f}).",
             f"Lenses applied: (1) ConvNeXt semantic texture, (2) FFT frequency domain, (3) SRM sensor noise residuals, "
             f"(4) YCbCr chroma channel analysis, (5) SPAI spatial predictability, (6) Robustness adversarial probe.",

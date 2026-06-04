@@ -14,6 +14,19 @@ from ..models.evidence import EvidenceSignal, SignalStatus, SignalSupport
 from .base import Detector
 
 
+def _trim_to_sentence(text: str, limit: int) -> str:
+    """Trim long text at the last sentence boundary within the limit, so card
+    copy never cuts off mid-thought. Returns the full text when it already fits."""
+    text = (text or "").strip()
+    if len(text) <= limit:
+        return text
+    window = text[:limit]
+    cut = max(window.rfind(". "), window.rfind("! "), window.rfind("? "))
+    if cut >= int(limit * 0.6):
+        return window[: cut + 1].rstrip()
+    return window.rstrip().rstrip(",;:") + "."
+
+
 class OpenSourceIntelligenceDetector(Detector):
     id = "osint_verification"
     name = "Live Web Fact-Checking (OSINT)"
@@ -327,8 +340,10 @@ class OpenSourceIntelligenceDetector(Detector):
         is_real = fact_check.get("verified_real", False)
         context_str = fact_check.get("context", "Context parsed but empty.")
 
-        # Trim context to a readable card length — full version stays in observations
-        context_preview = context_str[:350].rstrip() + ("..." if len(context_str) > 350 else "")
+        # Show a complete, readable synthesis on the card. Trim only very long
+        # text, and trim at a sentence boundary so it never cuts off mid-thought.
+        # The full version always stays in observations.
+        context_preview = _trim_to_sentence(context_str, 600)
 
         observations = [
             "OSINT mode: DuckDuckGo + LLM synthesis (fallback).",
@@ -349,7 +364,7 @@ class OpenSourceIntelligenceDetector(Detector):
             )
             why_it_matters = (
                 f"When credible fact-checkers or news organizations have already identified a {subject} or claim as fabricated, "
-                "that public record is one of the strongest signals we have — it means the deception has already been caught and documented."
+                "that public record is one of the strongest signals we have. It means the deception has already been caught and documented."
             )
             observations.append(
                 f"CRITICAL: The open internet explicitly flags this event or {subject} as a fabricated deepfake."

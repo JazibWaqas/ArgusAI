@@ -39,7 +39,7 @@ class MetadataDetector(Detector):
         if ai_source or name_hit:
             observations = []
             if ai_source:
-                observations.append("Content Credentials (C2PA) digital source type is 'trained algorithmic media' — a standardized AI-generated marker.")
+                observations.append("Content Credentials (C2PA) digital source type is 'trained algorithmic media', a standardized AI-generated marker.")
             if name_hit:
                 observations.append(f"Embedded metadata references a generative tool: {name_hit}.")
             if c2pa_present and not ai_source:

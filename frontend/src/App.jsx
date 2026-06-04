@@ -515,7 +515,7 @@ function AnimatedSignalCard({ signal, index, mediaType = "image", detectorStats 
   // ELA heatmap is always visible above the toggle (not hidden behind expand)
   const elaImage = mediaType === "image" && signal.metrics?.ela_image_base64 ? (
     <div className="signal-image-container">
-      <img src={`data:image/png;base64,${signal.metrics.ela_image_base64}`} alt="ELA compression heatmap — brighter areas had more compression stress" />
+      <img src={`data:image/png;base64,${signal.metrics.ela_image_base64}`} alt="ELA compression heatmap, brighter areas had more compression stress" />
     </div>
   ) : null;
 
@@ -727,7 +727,7 @@ function FeedbackWidget({ sessionId, feedbackState, onFeedback }) {
     <div className="feedback-row">
       <span>Was this verdict accurate?</span>
       {submitted ? (
-        <strong>Thanks — this helps calibrate future analyses.</strong>
+        <strong>Thanks. This helps calibrate future analyses.</strong>
       ) : (
         <div className="feedback-actions">
           <button type="button" onClick={() => onFeedback(true)}>
@@ -1780,7 +1780,7 @@ function LandingPage({ fileInputRef, previewUrl, fileType, selectedMediaType, ha
           <div className="lp-diff-icon" style={{background:"rgba(34,211,238,0.08)",borderColor:"rgba(34,211,238,0.2)",color:"#22d3ee"}}><Activity size={18}/></div>
           <div>
             <h4>Every verdict is auditable</h4>
-            <p>Each analysis is recorded as a traceable forensic record — what each detector found, when, and how the verdict was reached. Defensible enough for a newsroom or a court.</p>
+            <p>Each analysis is recorded as a traceable forensic record: what each detector found, when, and how the verdict was reached. Defensible enough for a newsroom or a court.</p>
           </div>
         </div>
       </section>

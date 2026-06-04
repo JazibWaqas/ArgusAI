@@ -495,10 +495,12 @@ class ReasoningEngine:
         if not items:
             return "other weaker signals"
 
+        # This returns a clause, not a full sentence. Callers embed it mid-sentence
+        # and supply their own trailing punctuation, so it must not end with a period.
         if len(items) == 1:
             item = items[0]
             detail = item.get("what_found") or item.get("summary") or "it produced a meaningful signal"
-            return f"{item['name']}, where we found that {detail.rstrip('.').lower()}."
+            return f"{item['name']}, where we found that {detail.rstrip('.').lower()}"
 
         first = items[0]
         second = items[1]
@@ -506,5 +508,5 @@ class ReasoningEngine:
         second_detail = second.get("what_found") or second.get("summary") or "it produced a meaningful signal"
         return (
             f"{first['name']}, where we found that {first_detail.rstrip('.').lower()}, "
-            f"and {second['name']}, where we found that {second_detail.rstrip('.').lower()}."
+            f"and {second['name']}, where we found that {second_detail.rstrip('.').lower()}"
         )

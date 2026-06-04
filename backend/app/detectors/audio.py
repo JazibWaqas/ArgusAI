@@ -308,7 +308,7 @@ def _build_signal(prob_real: float, prob_fake: float, source: str, latency: floa
             f"This audio appears to be {'AI-generated (TTS/voice cloning)' if is_fake else 'authentic human speech'}. "
             f"Confidence: {confidence:.0%}. Inference via {source.replace('_', ' ')}."
         )
-    source_label = "🖥 Local wav2vec2 model" if source == "local_wav2vec2" else "☁ HuggingFace Space"
+    source_label = "Local wav2vec2 model" if source == "local_wav2vec2" else "HuggingFace Space"
 
     return EvidenceSignal(
         id="audio_deepfake",

@@ -253,7 +253,7 @@ def build_official_forensic_pdf(
     media_noun = _MEDIA_NOUN[media_type]
 
     story.append(Paragraph(f"Forensic {_MEDIA_TITLE[media_type]}", title_style))
-    story.append(Paragraph("ArgusAI — Multi-modal forensic investigation", sub_style))
+    story.append(Paragraph("ArgusAI multi-modal forensic investigation", sub_style))
 
     gen = report.generated_at
     if gen.tzinfo is not None:

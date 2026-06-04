@@ -1,0 +1,207 @@
+{
+    "timestamp": "2026-06-03T23:44:07.181656+00:00",
+    "image_hash": "c1387933ece83e9875bb3641b2e11a4f20def53e3269adfc98a1b776d5f41a4a",
+    "media_type": "image",
+    "image_info": {
+        "width": 1122,
+        "height": 1402,
+        "mode": "RGB",
+        "sha256": "c1387933ece83e9875bb3641b2e11a4f20def53e3269adfc98a1b776d5f41a4a",
+        "format": "PNG"
+    },
+    "global_execution_time": 75.4909,
+    "reasoning_execution_time": 30.3309,
+    "detector_metrics": {
+        "spectral_artifacts": {
+            "status": "ok",
+            "support": "ai_generated",
+            "time_seconds": 1.0989,
+            "reliability": 0.7,
+            "confidence": 0.953413724899292,
+            "summary": "The Six-Lens model scored this image 95.3% AI / 4.7% authentic \u2014 a extremely high-confidence finding toward synthetic generation.",
+            "top_observation": "Six-Lens fusion result \u2014 AI score: 0.9534 (95.3%), Authentic score: 0.0466 (4.7%).",
+            "visible": true
+        },
+        "metadata_analysis": {
+            "status": "ok",
+            "support": "ai_generated",
+            "time_seconds": 0.0049,
+            "reliability": 0.92,
+            "confidence": null,
+            "summary": "The file's embedded provenance marks it as AI-generated.",
+            "top_observation": "Content Credentials (C2PA) digital source type is 'trained algorithmic media' \u2014 a standardized AI-generated marker.",
+            "visible": true
+        },
+        "noise_pattern_analysis": {
+            "status": "ok",
+            "support": "authentic",
+            "time_seconds": 0.1442,
+            "reliability": 0.55,
+            "confidence": null,
+            "summary": "The image shows consistent, subtle grain in nearly all regions (0.6% smooth blocks, variance 1187.8) - the expected fingerprint of a real camera sensor.",
+            "top_observation": "Global pixel variance: 1187.8 | Mean brightness: 72.4/255 | Std deviation: 34.5",
+            "visible": true
+        },
+        "lighting_consistency": {
+            "status": "ok",
+            "support": "ai_generated",
+            "time_seconds": 0.0582,
+            "reliability": 0.65,
+            "confidence": null,
+            "summary": "The lighting looks physically impossible for a real camera: dynamic range of 248/255 with only 0.000% blown highlights and 0.000% crushed shadows.",
+            "top_observation": "Dynamic range: 248/255 (darkest pixel: 7, brightest: 255)",
+            "visible": true
+        },
+        "error_level_analysis": {
+            "status": "ok",
+            "support": "unknown",
+            "time_seconds": 2.1293,
+            "reliability": 0.25,
+            "confidence": null,
+            "summary": "The ELA map shows moderate, fairly uniform compression residuals (mean: 1.48, quadrant spread: 0.35). No editing seams or compositing artifacts were detected.",
+            "top_observation": "Image: 1122x1402px | JPEG recompressed at quality 90",
+            "visible": true
+        },
+        "osint_verification": {
+            "status": "ok",
+            "support": "ai_generated",
+            "time_seconds": 18.6149,
+            "reliability": 0.98,
+            "confidence": null,
+            "summary": "The research agent found credible public sources flagging this image or claim as fabricated.",
+            "top_observation": "OSINT mode: Gemini vision + Google Search grounding.",
+            "visible": true
+        },
+        "semantic_inconsistencies": {
+            "status": "ok",
+            "support": "ai_generated",
+            "time_seconds": 43.1338,
+            "reliability": 0.55,
+            "confidence": 0.75,
+            "summary": "The image contains several physical and graphical errors typical of AI generation, such as deformed hands and distorted team logos. The text and emblems on both jerseys are warped, and the skin textures appear overly smooth and plastic. These details confirm the image is AI-generated rather than a real photograph.",
+            "top_observation": "Virat's left hand on the bottom right has unnaturally elongated, sausage-like fingers with missing knuckle definition.",
+            "visible": true
+        }
+    },
+    "final_verdict": "likely_ai_generated",
+    "certainty": 0.945,
+    "warnings": [],
+    "score_breakdown": {
+        "authentic": 0.134,
+        "ai_generated": 2.808,
+        "inconclusive": 0.031,
+        "total_considered": 2.972
+    },
+    "reasoning_summary": {
+        "verdict": "likely_ai_generated",
+        "certainty": 0.945,
+        "certainty_percent": 94,
+        "confidence_label": "high",
+        "leaning": "likely_ai_generated",
+        "media_type": "image",
+        "short_summary": "This looks AI-generated, with 94% confidence. The strongest signal is Metadata & Provenance.",
+        "scores": {
+            "authentic": 0.134,
+            "ai_generated": 2.808,
+            "inconclusive": 0.031,
+            "total_considered": 2.972
+        },
+        "signal_coverage": {
+            "usable_signal_count": 7,
+            "blocked_signal_count": 0,
+            "total_signal_count": 7
+        },
+        "top_authentic_signals": [
+            {
+                "name": "Thermal Noise & Sensor Consistency",
+                "summary": "The image shows consistent, subtle grain in nearly all regions (0.6% smooth blocks, variance 1187.8) - the expected fingerprint of a real camera sensor.",
+                "what_found": "Only 0.6% of pixel blocks are flat - the rest carry a consistent, fine-grained texture at the sub-pixel level. This is the natural noise floor left by photon shot noise and thermal read noise on real camera sensors. The variance of 1187.8 is healthy: present but controlled, suggesting base-ISO capture with standard noise reduction.",
+                "why_it_matters": "Uniform, subtle grain that's present everywhere but never overwhelming is genuinely difficult for AI to replicate convincingly. This pattern - real grain without being suspiciously chaotic - is one of the stronger authentic fingerprints this test can find.",
+                "caveat": "Heavy compression, denoising, upscaling, or added grain filters can all change the noise profile independently of whether the image was generated or photographed.",
+                "support": "authentic",
+                "contribution": 0.134
+            }
+        ],
+        "top_ai_signals": [
+            {
+                "name": "Metadata & Provenance",
+                "summary": "The file's embedded provenance marks it as AI-generated.",
+                "what_found": "The provenance metadata flags this as trained-algorithmic (AI-generated) media.",
+                "why_it_matters": "Provenance markers like C2PA are an industry-standard, hard-to-fake trace written by the generator itself. Finding one is among the strongest provenance signals available.",
+                "caveat": "Provenance can be stripped or, rarely, forged. Absence of a marker is not proof of authenticity.",
+                "support": "ai_generated",
+                "contribution": 0.828
+            },
+            {
+                "name": "Live Web Fact-Checking (OSINT)",
+                "summary": "The research agent found credible public sources flagging this image or claim as fabricated.",
+                "what_found": "The image, showing cricketers Babar Azam and Virat Kohli shouting at each other, is widely considered to be a deepfake or heavily edited. While no specific fact-check directly addresses this exact image, reports from the Asia Cup 2022 and 2023 consistently highlight the mutual respect and friendly interactions between Azam and Kohli. Articles from August 2022 and September 2023 detail their cordial meetings and positive statements about each othe...",
+                "why_it_matters": "Named fact-checks and dated public provenance are stronger than a naked model score because they show where the claim came from and whether journalists have already verified or debunked it.",
+                "caveat": "OSINT is strongest for public figures, viral claims, and news events. Generic private images may have no searchable provenance.",
+                "support": "ai_generated",
+                "contribution": 0.689
+            },
+            {
+                "name": "Semantic & Physical Consistency",
+                "summary": "The image contains several physical and graphical errors typical of AI generation, such as deformed hands and distorted team logos. The text and emblems on both jerseys are warped, and the skin textures appear overly smooth and plastic. These details confirm the image is AI-generated rather than a real photograph.",
+                "what_found": "The image contains several physical and graphical errors typical of AI generation, such as deformed hands and distorted team logos. The text and emblems on both jerseys are warped, and the skin textures appear overly smooth and plastic. These details confirm the image is AI-generated rather than a real photograph.",
+                "why_it_matters": "When an image has broken anatomy, impossible geometry, or missing shadows, that is strong evidence it was generated rather than photographed.",
+                "caveat": "This detector is useful, but it can still be wrong and should be treated as one part of the full picture.",
+                "support": "ai_generated",
+                "contribution": 0.569
+            }
+        ],
+        "top_inconclusive_signals": [
+            {
+                "name": "Error Level Analysis (ELA)",
+                "summary": "The ELA map shows moderate, fairly uniform compression residuals (mean: 1.48, quadrant spread: 0.35). No editing seams or compositing artifacts were detected.",
+                "what_found": "Re-saving at quality 90 produced a mean residual of 1.48 with a quadrant spread of only 0.35. The compression stress is consistent across all four quadrants, and only 0.00% of pixels show elevated residuals. This uniform profile suggests the image has a consistent compression history - no obvious signs of region-level editing or compositing.",
+                "why_it_matters": "A uniform ELA profile removes one red flag - there are no obvious editing seams. However, ELA does not tell us whether the image is AI-generated, only that it has not been obviously composited. The other detectors handle the AI vs. real question.",
+                "caveat": "ELA detects editing and compression inconsistency, not AI generation. Social media uploads, repeated saves, and WhatsApp forwarding all degrade this test. It's treated as a weak supporting check.",
+                "support": "unknown",
+                "contribution": 0.031
+            }
+        ]
+    },
+    "pipeline_health": {
+        "arize": {
+            "configured": true,
+            "enabled": true,
+            "project_name": "argusai-forensics",
+            "collector_endpoint": "http://localhost:6006/v1/traces",
+            "dashboard_url": "http://localhost:6006",
+            "error": null
+        },
+        "detector_governor": {
+            "enabled": true,
+            "status": "ok",
+            "active_anomaly_count": 0,
+            "detectors": {},
+            "calibration_divergence": null,
+            "spectral_attenuation_factor": 1.0,
+            "last_calibration_observation": {
+                "spectral_support": "ai_generated",
+                "semantic_support": "ai_generated",
+                "disagreed": false,
+                "recorded_at": "2026-06-03T23:43:36.555718+00:00",
+                "streak": 0
+            },
+            "recent_events": []
+        },
+        "model_health_label": "All detector health gates operational"
+    },
+    "phoenix_trace_id": "9e836b3a82948446ff2648fe615e13e6",
+    "llm_health": {
+        "gemini_key_count": 32,
+        "gemini_available": true,
+        "gemini_model": "gemini-3.5-flash",
+        "gemini_vision_model": "gemini-3.5-flash",
+        "gemini_grounding_model": "gemini-3.5-flash",
+        "gemini_fallback_model": "gemini-2.5-flash",
+        "osint_use_grounding": true,
+        "explanation_provider": "gemini",
+        "explanation_model": "gemini-3.1-flash-lite",
+        "explanation_timeout_seconds": 30.0,
+        "provider_ready": "gemini"
+    }
+}

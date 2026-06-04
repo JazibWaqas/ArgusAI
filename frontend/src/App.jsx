@@ -288,6 +288,18 @@ function shortHash(value) {
   return String(value).slice(0, 10);
 }
 
+function formatLatencySeconds(value) {
+  const num = Number(value);
+  if (!Number.isFinite(num)) return "n/a";
+  return num >= 0.1 ? `${num.toFixed(1)}s` : "fast";
+}
+
+function stepUsesPhoenixMcp(step) {
+  const tool = String(step?.tool || "").toLowerCase();
+  const tags = Array.isArray(step?.tags) ? step.tags : [];
+  return tool.includes("phoenix") || tags.some((tag) => String(tag).toLowerCase().includes("mcp"));
+}
+
 const DETECTOR_LABELS = {
   spectral_artifacts: "Spectral Artifacts",
   metadata_analysis: "Metadata & Provenance",
@@ -299,6 +311,10 @@ const DETECTOR_LABELS = {
   temporal_coherence: "Temporal Coherence",
   audio_track: "Embedded Audio",
   audio_deepfake: "Voice Authenticity",
+  audio_semantic: "Audio Semantic",
+  audio_acoustics: "Audio Acoustics",
+  temporal_noise_coherence: "Temporal Noise Coherence",
+  audio_track_acoustics: "Audio Track Acoustics",
 };
 
 function detectorLabel(id) {
@@ -994,6 +1010,8 @@ function AdminConsole({ onExit, onLogout, arizeHealth, onHealthUpdate, statsData
   const [error, setError] = useState("");
   const [agentRunning, setAgentRunning] = useState(false);
   const [agentResult, setAgentResult] = useState(null);
+  const [showAllLeaderboard, setShowAllLeaderboard] = useState(false);
+  const [expandedAgentActionId, setExpandedAgentActionId] = useState(null);
 
   useEffect(() => {
     setHealth(arizeHealth);
@@ -1074,6 +1092,7 @@ function AdminConsole({ onExit, onLogout, arizeHealth, onHealthUpdate, statsData
   const feedback = statsData?.feedback || {};
   const realWorldAccuracy = feedback.total_feedback ? feedback.accuracy_rate : null;
   const leaderboard = buildLeaderboard(statsData?.detectors || {});
+  const displayedLeaderboard = showAllLeaderboard ? leaderboard : leaderboard.slice(0, 5);
   const aiCount = verdictStats.likely_ai_generated || verdictStats.ai_generated || 0;
   const authCount = verdictStats.likely_authentic || verdictStats.authentic || 0;
   const incCount = verdictStats.inconclusive || 0;
@@ -1087,13 +1106,13 @@ function AdminConsole({ onExit, onLogout, arizeHealth, onHealthUpdate, statsData
       <header className="console-header">
         <div className="console-title">
           <span className="console-kicker">Operator console</span>
-          <h1>ArgusAI Reliability and Agent Console</h1>
-          <p className="console-sub">How Arize Phoenix and the investigator agent keep this system honest and improving over time.</p>
+          <h1>Reliability & Agent Operations</h1>
+          <p className="console-sub">Arize Phoenix traces and human-confirmed outcomes drive how the Gemini agent reweights each detector.</p>
         </div>
         <div className="console-actions">
           <div className={`admin-health-pill ${health?.status === "calibration_alert" ? "warn" : health?.status === "anomaly" ? "error" : "ok"}`}>
             <Activity size={14} />
-            {health?.label || "Arize health unavailable"}
+            Arize Phoenix · Live
           </div>
           <button className="admin-refresh" onClick={loadAdminData} disabled={loading}>
             <RefreshCw size={14} /> {loading ? "Refreshing" : "Refresh"}
@@ -1131,6 +1150,24 @@ function AdminConsole({ onExit, onLogout, arizeHealth, onHealthUpdate, statsData
                     <strong>{governanceActions.length}</strong>
                     <span>autonomous agent actions</span>
                     <p>The agent reads this telemetry and acts on it, recalibrating detector weights instead of leaving them fixed.</p>
+                  </div>
+                </div>
+              </section>
+
+              <section className="agent-loop-card">
+                <h3>How the agent operates</h3>
+                <div className="agent-loop-steps">
+                  <div className="agent-loop-step">
+                    <span>Observe</span>
+                    <p>Reads Phoenix spans: latency, errors, token usage.</p>
+                  </div>
+                  <div className="agent-loop-step">
+                    <span>Decide</span>
+                    <p>Weighs that against human-confirmed accuracy in Firestore.</p>
+                  </div>
+                  <div className="agent-loop-step">
+                    <span>Act</span>
+                    <p>Reweights detectors, flags for review, drafts fact-check notes.</p>
                   </div>
                 </div>
               </section>
@@ -1179,66 +1216,154 @@ function AdminConsole({ onExit, onLogout, arizeHealth, onHealthUpdate, statsData
               </section>
 
               <section className="admin-section">
-                <h3><Target size={14} /> Detector Trust Leaderboard</h3>
+                <div className="admin-section-head">
+                  <h3><Activity size={14} /> Investigator Agent</h3>
+                  <button className="agent-run-btn" onClick={runInvestigatorAgent} disabled={agentRunning}>
+                    {agentRunning ? <><div className="spin-ring" /> Running…</> : <><Target size={14} /> Run investigator agent</>}
+                  </button>
+                </div>
                 <p className="admin-section-sub">
-                  Ranked by how often each detector matched <strong>human-confirmed</strong> ground truth. A detector earns a trust tier after {CONFIRMED_TRUST_MIN} confirmations, and the verdict engine then scales its influence up or down on its own. This is the observability feeding the decision, not just recording it.
+                  The agent fuses human-confirmed accuracy from Firestore with live Phoenix telemetry, decides which detectors are earning their weight, and recalibrates any that have drifted. It governs the system, it does not just report on it.
                 </p>
-                {Object.keys(statsData?.learned_weights || {}).length > 0 && (
-                  <div className="admin-alert calib">
-                    <Activity size={15} />
-                    Self-calibration is active. ArgusAI has re-weighted {Object.keys(statsData.learned_weights).length} detector{Object.keys(statsData.learned_weights).length > 1 ? "s" : ""} from confirmed outcomes.
+
+                {agentResult && (
+                  <div className="agent-run-result">
+                    {agentResult.error ? (
+                      <div className="admin-alert error">{agentResult.error}</div>
+                    ) : (
+                      <>
+                        {agentResult.narration && <p className="agent-narration">{agentResult.narration}</p>}
+                        <ol className="agent-steps">
+                          {(agentResult.steps || []).map((s, i) => (
+                            <li key={i}>
+                              <span className="mono">{s.tool}</span>
+                              {stepUsesPhoenixMcp(s) && <span className="mcp-chip">via Arize Phoenix MCP</span>}
+                              {s.summary}
+                            </li>
+                          ))}
+                        </ol>
+                      </>
+                    )}
                   </div>
                 )}
-                <div className="admin-leaderboard">
-                  {leaderboard.length ? leaderboard.map((d, i) => {
-                    const wUp = d.weightMultiplier > 1.001;
-                    const wDown = d.weightMultiplier < 0.999;
-                    const dr = drift[d.id];
-                    const driftDelta = dr ? Number(dr.delta) : null;
-                    const showDrift = dr && Math.abs(driftDelta) >= 0.05;
+
+                <div className="admin-events">
+                  {governanceActions.length ? governanceActions.map((a) => {
+                    const cls = a.type === "recalibrate" ? "calib" : a.type === "flag_review" ? "warn" : "";
+                    const label = a.type === "recalibrate" ? "Recalibrated" : a.type === "flag_review" ? "Flagged" : "Reviewed";
+                    const actionId = a.id || `${a.timestamp}-${a.summary}`;
+                    const expanded = expandedAgentActionId === actionId;
+                    const report = a.detail?.report || null;
+                    const steps = report?.steps || [];
+                    const telemetry = report?.phoenix_telemetry || null;
+                    const lowValue = report?.low_value_detectors || a.detail?.low_value_detectors || [];
+                    const detectors = report?.detectors_evaluated || [];
+                    const recalibrations = report?.recalibrations || [];
                     return (
-                      <div className="lb-row" key={d.id}>
-                        <div className="lb-rank">{i + 1}</div>
-                        <div className="lb-main">
-                          <div className="lb-head">
-                            <span className="lb-name mono">{d.label}</span>
-                            <div className="lb-tags">
-                              {showDrift && (
-                                <span className="lb-drift" style={{ color: driftDelta < 0 ? "#f87171" : "#34d399" }} title="Recent confirmed accuracy vs historical">
-                                  {driftDelta < 0 ? "↘" : "↗"} {Math.abs(Math.round(driftDelta * 100))}% recent
-                                </span>
-                              )}
-                              {(wUp || wDown) && (
-                                <span className="lb-weight" style={{ color: wUp ? "#34d399" : "#f87171", borderColor: `${wUp ? "#34d399" : "#f87171"}55` }}>
-                                  {wUp ? "↑" : "↓"} {d.weightMultiplier.toFixed(2)}× weight
-                                </span>
-                              )}
-                              <span
-                                className="lb-trust"
-                                style={{ color: d.trust.color, borderColor: `${d.trust.color}55`, background: `${d.trust.color}14` }}
-                              >
-                                {d.trust.label}
-                              </span>
-                            </div>
+                      <div className={`admin-event ${cls} agent-report-row ${expanded ? "expanded" : ""}`} key={actionId}>
+                        <button className="agent-report-toggle" onClick={() => setExpandedAgentActionId(expanded ? null : actionId)}>
+                          <span className="mono">{label}</span>
+                          <span>{a.summary} · {formatTime(a.timestamp)}</span>
+                          <ChevronDown className="agent-report-chevron" size={15} />
+                        </button>
+                        {expanded && (
+                          <div className="agent-report-detail">
+                            {!report ? (
+                              <div className="agent-report-block">
+                                <h4>Legacy action</h4>
+                                <p>This row was logged before full agent run reports were stored. Run the investigator agent again to create an auditable report.</p>
+                              </div>
+                            ) : (
+                              <>
+                                {report.narration && <p className="agent-report-narration">{report.narration}</p>}
+
+                                {steps.length > 0 && (
+                                  <div className="agent-report-block">
+                                    <h4>Tool trail</h4>
+                                    <ol className="agent-steps agent-report-steps">
+                                      {steps.map((step, idx) => (
+                                        <li key={`${step.tool || "step"}-${idx}`}>
+                                          <span className="mono">{step.tool}</span>
+                                          {stepUsesPhoenixMcp(step) && <span className="mcp-chip">via Arize Phoenix MCP</span>}
+                                          {step.summary}
+                                        </li>
+                                      ))}
+                                    </ol>
+                                  </div>
+                                )}
+
+                                {telemetry && (
+                                  <div className="agent-report-metrics">
+                                    <div>
+                                      <strong>{telemetry.available ? "Live" : "Unavailable"}</strong>
+                                      <span>Phoenix telemetry</span>
+                                    </div>
+                                    <div>
+                                      <strong>{Number(telemetry.model_calls || 0).toLocaleString()}</strong>
+                                      <span>model calls</span>
+                                    </div>
+                                    <div>
+                                      <strong>{Number(telemetry.total_tokens || 0).toLocaleString()}</strong>
+                                      <span>tokens</span>
+                                    </div>
+                                    <div>
+                                      <strong>{formatPercent(telemetry.fallback_rate || 0)}</strong>
+                                      <span>fallback rate</span>
+                                    </div>
+                                  </div>
+                                )}
+
+                                <div className="agent-report-block">
+                                  <h4>Decision</h4>
+                                  {lowValue.length > 0 ? (
+                                    <p>Flagged low-value detectors: {lowValue.map((row) => row.name || detectorLabel(row.id)).join(", ")}.</p>
+                                  ) : (
+                                    <p>No detector crossed the low-value threshold in this review.</p>
+                                  )}
+                                  {recalibrations.length > 0 ? (
+                                    <p>Recalibrated: {recalibrations.map((row) => detectorLabel(row.detector_id)).join(", ")}.</p>
+                                  ) : (
+                                    <p>Weights held stable because confirmed drift stayed within tolerance.</p>
+                                  )}
+                                </div>
+
+                                {detectors.length > 0 && (
+                                  <div className="agent-report-block">
+                                    <h4>Detectors evaluated</h4>
+                                    <div className="agent-report-table-wrap">
+                                      <table className="agent-report-table">
+                                        <thead>
+                                          <tr>
+                                            <th>Detector</th>
+                                            <th>Tier</th>
+                                            <th>Accuracy</th>
+                                            <th>Latency</th>
+                                            <th>Weight</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody>
+                                          {detectors.map((row) => (
+                                            <tr key={row.id || row.name}>
+                                              <td>{row.name || detectorLabel(row.id)}</td>
+                                              <td>{formatVerdict(row.tier || "unknown")}</td>
+                                              <td>{formatPercent(row.confirmed_accuracy || 0)}</td>
+                                              <td>{formatLatencySeconds(row.avg_latency_seconds)}</td>
+                                              <td>{Number(row.weight || 1).toFixed(2)}x</td>
+                                            </tr>
+                                          ))}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  </div>
+                                )}
+                              </>
+                            )}
                           </div>
-                          <div className="lb-bar-track">
-                            <div className="lb-bar-fill" style={{ width: `${Math.max(2, Math.round(d.barValue * 100))}%`, background: d.trust.color }} />
-                          </div>
-                          <div className="lb-meta">
-                            <span>
-                              {d.ready
-                                ? `${formatPercent(d.confirmedAccuracy)} confirmed accuracy · ${d.confirmedTotal} reviewed`
-                                : d.confirmedTotal > 0
-                                  ? `${d.confirmedTotal}/${CONFIRMED_TRUST_MIN} confirmations · ${formatPercent(d.matchRate)} verdict match`
-                                  : `Awaiting confirmations · ${formatPercent(d.matchRate)} verdict match`}
-                            </span>
-                            <span>{d.totalRuns} runs · {d.avgLatency.toFixed(2)}s avg</span>
-                          </div>
-                        </div>
+                        )}
                       </div>
                     );
                   }) : (
-                    <div className="admin-empty">Run a few analyses to build the reliability leaderboard.</div>
+                    <div className="admin-empty">No agent actions yet. Run the investigator agent above, and its actions will appear here.</div>
                   )}
                 </div>
               </section>
@@ -1253,9 +1378,9 @@ function AdminConsole({ onExit, onLogout, arizeHealth, onHealthUpdate, statsData
                 const maxEff = Math.max(...roiRows.map((r) => r.efficiency || 0), 0.001);
                 return (
                   <section className="admin-section">
-                    <h3><Gauge size={14} /> Detector Value vs Cost</h3>
+                    <h3><Gauge size={14} /> Detector Influence</h3>
                     <p className="admin-section-sub">
-                      Confirmed accuracy from Firestore set against latency and error rate from Phoenix. Fusing both is how the agent decides which detectors earn their weight and which are an expensive way to be wrong. Most deepfake tools never weigh accuracy against cost at all.
+                      Confirmed accuracy weighed against Phoenix latency and error rate.
                     </p>
                     {roi?.phoenix_available === false && (
                       <p className="admin-section-sub" style={{ color: "#fbbf24" }}>
@@ -1305,44 +1430,72 @@ function AdminConsole({ onExit, onLogout, arizeHealth, onHealthUpdate, statsData
 
               <section className="admin-section">
                 <div className="admin-section-head">
-                  <h3><Activity size={14} /> Investigator Agent</h3>
-                  <button className="agent-run-btn" onClick={runInvestigatorAgent} disabled={agentRunning}>
-                    {agentRunning ? <><div className="spin-ring" /> Running…</> : <><Target size={14} /> Run investigator agent</>}
-                  </button>
+                  <h3><Target size={14} /> Detector Trust Leaderboard</h3>
+                  {leaderboard.length > 5 && (
+                    <button className="leaderboard-toggle" onClick={() => setShowAllLeaderboard((v) => !v)}>
+                      {showAllLeaderboard ? "Show top 5" : `Show all ${leaderboard.length}`}
+                    </button>
+                  )}
                 </div>
                 <p className="admin-section-sub">
-                  The agent fuses human-confirmed accuracy from Firestore with live Phoenix telemetry, decides which detectors are earning their weight, and recalibrates any that have drifted. It governs the system, it does not just report on it.
+                  Ranked by how often each detector matched <strong>human-confirmed</strong> ground truth. A detector earns a trust tier after {CONFIRMED_TRUST_MIN} confirmations, and the verdict engine then scales its influence up or down on its own.
                 </p>
-
-                {agentResult && (
-                  <div className="agent-run-result">
-                    {agentResult.error ? (
-                      <div className="admin-alert error">{agentResult.error}</div>
-                    ) : (
-                      <>
-                        {agentResult.narration && <p className="agent-narration">{agentResult.narration}</p>}
-                        <ol className="agent-steps">
-                          {(agentResult.steps || []).map((s, i) => (
-                            <li key={i}><span className="mono">{s.tool}</span> {s.summary}</li>
-                          ))}
-                        </ol>
-                      </>
-                    )}
+                {Object.keys(statsData?.learned_weights || {}).length > 0 && (
+                  <div className="admin-alert calib">
+                    <Activity size={15} />
+                    Self-calibration is active. ArgusAI has re-weighted {Object.keys(statsData.learned_weights).length} detector{Object.keys(statsData.learned_weights).length > 1 ? "s" : ""} from confirmed outcomes.
                   </div>
                 )}
-
-                <div className="admin-events">
-                  {governanceActions.length ? governanceActions.map((a) => {
-                    const cls = a.type === "recalibrate" ? "calib" : a.type === "flag_review" ? "warn" : "";
-                    const label = a.type === "recalibrate" ? "Recalibrated" : a.type === "flag_review" ? "Flagged" : "Reviewed";
+                <div className="admin-leaderboard">
+                  {leaderboard.length ? displayedLeaderboard.map((d, i) => {
+                    const wUp = d.weightMultiplier > 1.001;
+                    const wDown = d.weightMultiplier < 0.999;
+                    const dr = drift[d.id];
+                    const driftDelta = dr ? Number(dr.delta) : null;
+                    const showDrift = dr && Math.abs(driftDelta) >= 0.05;
                     return (
-                      <div className={`admin-event ${cls}`} key={a.id}>
-                        <span className="mono">{label}</span>
-                        <p>{a.summary} · {formatTime(a.timestamp)}</p>
+                      <div className="lb-row" key={d.id}>
+                        <div className="lb-rank">{i + 1}</div>
+                        <div className="lb-main">
+                          <div className="lb-head">
+                            <span className="lb-name mono">{d.label}</span>
+                            <div className="lb-tags">
+                              {showDrift && (
+                                <span className="lb-drift" style={{ color: driftDelta < 0 ? "#f87171" : "#34d399" }} title="Recent confirmed accuracy vs historical">
+                                  {driftDelta < 0 ? "↘" : "↗"} {Math.abs(Math.round(driftDelta * 100))}% recent
+                                </span>
+                              )}
+                              {(wUp || wDown) && (
+                                <span className="lb-weight" style={{ color: wUp ? "#34d399" : "#f87171", borderColor: `${wUp ? "#34d399" : "#f87171"}55` }}>
+                                  {wUp ? "↑" : "↓"} {d.weightMultiplier.toFixed(2)}× weight
+                                </span>
+                              )}
+                              <span
+                                className="lb-trust"
+                                style={{ color: d.trust.color, borderColor: `${d.trust.color}55`, background: `${d.trust.color}14` }}
+                              >
+                                {d.trust.label}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="lb-bar-track">
+                            <div className="lb-bar-fill" style={{ width: `${Math.max(2, Math.round(d.barValue * 100))}%`, background: d.trust.color }} />
+                          </div>
+                          <div className="lb-meta">
+                            <span>
+                              {d.ready
+                                ? `${formatPercent(d.confirmedAccuracy)} confirmed accuracy · ${d.confirmedTotal} reviewed`
+                                : d.confirmedTotal > 0
+                                  ? `${d.confirmedTotal}/${CONFIRMED_TRUST_MIN} confirmations · ${formatPercent(d.matchRate)} verdict match`
+                                  : `Awaiting confirmations · ${formatPercent(d.matchRate)} verdict match`}
+                            </span>
+                            <span>{d.totalRuns} runs · {d.avgLatency.toFixed(2)}s avg</span>
+                          </div>
+                        </div>
                       </div>
                     );
                   }) : (
-                    <div className="admin-empty">No agent actions yet. Run the investigator agent above, and its actions will appear here.</div>
+                    <div className="admin-empty">Run a few analyses to build the reliability leaderboard.</div>
                   )}
                 </div>
               </section>

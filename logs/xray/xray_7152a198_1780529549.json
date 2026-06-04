@@ -1,0 +1,235 @@
+{
+    "timestamp": "2026-06-03T23:32:29.327905+00:00",
+    "image_hash": "7152a19884b314a8fa1975e748ed74f02b7d2bc8b7711c20d5ed3198891b55dc",
+    "media_type": "video",
+    "image_info": {
+        "width": 2562,
+        "height": 1440,
+        "mode": "RGB",
+        "sha256": "7152a19884b314a8fa1975e748ed74f02b7d2bc8b7711c20d5ed3198891b55dc",
+        "format": "VIDEO"
+    },
+    "global_execution_time": 108.1404,
+    "reasoning_execution_time": 31.9733,
+    "detector_metrics": {
+        "spectral_artifacts": {
+            "status": "ok",
+            "support": "ai_generated",
+            "time_seconds": 4.6467,
+            "reliability": 0.7,
+            "confidence": 0.9240555763244629,
+            "summary": "The Six-Lens model scored this image 92.4% AI / 7.6% authentic \u2014 a extremely high-confidence finding toward synthetic generation.",
+            "top_observation": "Six-Lens fusion result \u2014 AI score: 0.9241 (92.4%), Authentic score: 0.0759 (7.6%).",
+            "visible": true
+        },
+        "metadata_analysis": {
+            "status": "warning",
+            "support": "unknown",
+            "time_seconds": 0.0927,
+            "reliability": 0.3,
+            "confidence": null,
+            "summary": "The file does not contain any usable metadata.",
+            "top_observation": "The file contains no EXIF metadata, so provenance clues are limited.",
+            "visible": true
+        },
+        "noise_pattern_analysis": {
+            "status": "unavailable",
+            "support": "unknown",
+            "time_seconds": 0.0,
+            "reliability": 0.0,
+            "confidence": null,
+            "summary": "Thermal Noise & Sensor Consistency is calibrated for still images and is hidden for video reports.",
+            "visible": false
+        },
+        "lighting_consistency": {
+            "status": "unavailable",
+            "support": "unknown",
+            "time_seconds": 0.0,
+            "reliability": 0.0,
+            "confidence": null,
+            "summary": "Lighting Physics & Contrast Geometry is calibrated for still images and is hidden for video reports.",
+            "visible": false
+        },
+        "error_level_analysis": {
+            "status": "ok",
+            "support": "unknown",
+            "time_seconds": 20.5449,
+            "reliability": 0.25,
+            "confidence": null,
+            "summary": "The ELA map shows moderate, fairly uniform compression residuals (mean: 0.92, quadrant spread: 0.58). No editing seams or compositing artifacts were detected.",
+            "top_observation": "Image: 2562x1440px | JPEG recompressed at quality 90",
+            "visible": true
+        },
+        "osint_verification": {
+            "status": "unavailable",
+            "support": "unknown",
+            "time_seconds": 0.0005,
+            "reliability": 0.0,
+            "confidence": null,
+            "summary": "Web verification was skipped. Add context to enable it.",
+            "top_observation": "OSINT skipped: no user context provided.",
+            "visible": true
+        },
+        "semantic_inconsistencies": {
+            "status": "ok",
+            "support": "authentic",
+            "time_seconds": 52.4629,
+            "reliability": 0.3,
+            "confidence": 0.0,
+            "summary": "The video footage appears to be an authentic recording. All elements, including the hot air balloons, landscape, and lighting, maintain excellent temporal and identity consistency throughout the clip. The motion of the balloons and the camera movement are smooth and realistic, without any signs of the synthetic style or physics inconsistencies often associated with AI-generated video.",
+            "top_observation": "No obvious semantic anomalies reported.",
+            "visible": false
+        },
+        "temporal_coherence": {
+            "status": "ok",
+            "support": "inconclusive",
+            "time_seconds": 0.0,
+            "reliability": 0.35,
+            "confidence": 0.0,
+            "summary": "The video footage appears to be an authentic recording. All elements, including the hot air balloons, landscape, and lighting, maintain excellent temporal and identity consistency throughout the clip. The motion of the balloons and the camera movement are smooth and realistic, without any signs of the synthetic style or physics inconsistencies often associated with AI-generated video.",
+            "visible": true
+        },
+        "temporal_noise_coherence": {
+            "status": "ok",
+            "support": "ai_generated",
+            "time_seconds": 0.0,
+            "reliability": 0.55,
+            "confidence": null,
+            "summary": "The frames carry almost no real sensor noise (floor 0.32), which is unusual for genuine camera footage.",
+            "visible": true
+        },
+        "audio_track": {
+            "status": "unavailable",
+            "support": "unknown",
+            "time_seconds": 0.3641,
+            "reliability": 0.0,
+            "confidence": null,
+            "summary": "No usable audio track was found in this video.",
+            "visible": true
+        }
+    },
+    "final_verdict": "likely_ai_generated",
+    "certainty": 0.748,
+    "warnings": [
+        "Metadata & Provenance: The file does not contain any usable metadata.",
+        "Live Web Fact-Checking (OSINT): Web verification was skipped. Add context to enable it.",
+        "Audio Track: No usable audio track was found in this video."
+    ],
+    "score_breakdown": {
+        "authentic": 0.0,
+        "ai_generated": 0.752,
+        "inconclusive": 0.327,
+        "total_considered": 1.079
+    },
+    "reasoning_summary": {
+        "verdict": "likely_ai_generated",
+        "certainty": 0.748,
+        "certainty_percent": 75,
+        "confidence_label": "moderate",
+        "leaning": "likely_ai_generated",
+        "media_type": "video",
+        "short_summary": "This looks AI-generated, with 75% confidence. The strongest signal is Spectral Artifacts.",
+        "scores": {
+            "authentic": 0,
+            "ai_generated": 0.752,
+            "inconclusive": 0.327,
+            "total_considered": 1.079
+        },
+        "signal_coverage": {
+            "usable_signal_count": 5,
+            "blocked_signal_count": 2,
+            "total_signal_count": 7
+        },
+        "top_authentic_signals": [],
+        "top_ai_signals": [
+            {
+                "name": "Spectral Artifacts",
+                "summary": "The Six-Lens model scored this image 92.4% AI / 7.6% authentic \u2014 a extremely high-confidence finding toward synthetic generation.",
+                "what_found": "All six spectral lenses \u2014 visual texture (ConvNeXt), frequency grids (FFT), sensor noise simulation (SRM), color-space fingerprints (YCbCr), spatial reconstruction (SPAI), and robustness testing \u2014 collectively scored this image 92.4% AI. A score this strong, the majority of lenses independently flagged patterns like periodic frequency grids and noise distributions inconsistent with any known camera sensor profile.",
+                "why_it_matters": "This model looks for patterns invisible to the human eye \u2014 buried in the pixel-level math of the image. A 92.4% score means the statistical fingerprint aligns significantly more with AI generation than camera physics, and these frequency-domain traces are very hard to remove without visibly degrading the image.",
+                "caveat": "Heavy JPEG compression, aggressive resizing, or strong image filters can partially destroy the frequency-domain signals this model depends on, potentially softening a confident AI detection into an inconclusive result. Conversely, very new or unusual AI generators not present in training data may produce lower-than-expected scores.",
+                "support": "ai_generated",
+                "contribution": 0.637
+            },
+            {
+                "name": "Sensor Noise Coherence",
+                "summary": "The frames carry almost no real sensor noise (floor 0.32), which is unusual for genuine camera footage.",
+                "what_found": "The frames carry almost no real sensor noise (floor 0.32), which is unusual for genuine camera footage.",
+                "why_it_matters": "A real camera leaves a steady noise floor in every frame. AI video generators rarely model true sensor noise, so it is often missing or flickers across frames, which is hard to fake.",
+                "caveat": "Heavy compression, denoising, and very detailed scenes affect this measurement, so it is weighed with the other signals.",
+                "support": "ai_generated",
+                "contribution": 0.114
+            }
+        ],
+        "top_inconclusive_signals": [
+            {
+                "name": "Temporal Coherence",
+                "summary": "The video footage appears to be an authentic recording. All elements, including the hot air balloons, landscape, and lighting, maintain excellent temporal and identity consistency throughout the clip. The motion of the balloons and the camera movement are smooth and realistic, without any signs of the synthetic style or physics inconsistencies often associated with AI-generated video.",
+                "what_found": "The video review did not find the usual temporal tells: motion stays coherent, details remain stable, and scene geometry holds across frames.",
+                "why_it_matters": "AI video generators often fail across time even when individual frames look convincing.",
+                "caveat": "Low bitrate, motion blur, and heavy compression can resemble temporal artifacts, so this signal is weighed with the rest of the evidence.",
+                "support": "inconclusive",
+                "contribution": 0.196
+            },
+            {
+                "name": "Metadata & Provenance",
+                "summary": "The file does not contain any usable metadata.",
+                "what_found": "This image has no EXIF metadata at all, so we cannot see what device or software created it.",
+                "why_it_matters": "Missing metadata removes a useful source of provenance, but it does not automatically mean the image is AI-generated.",
+                "caveat": "Many social media platforms strip metadata during upload, so this signal is weak on its own.",
+                "support": "unknown",
+                "contribution": 0.101
+            },
+            {
+                "name": "Error Level Analysis (ELA)",
+                "summary": "The ELA map shows moderate, fairly uniform compression residuals (mean: 0.92, quadrant spread: 0.58). No editing seams or compositing artifacts were detected.",
+                "what_found": "Re-saving at quality 90 produced a mean residual of 0.92 with a quadrant spread of only 0.58. The compression stress is consistent across all four quadrants, and only 0.00% of pixels show elevated residuals. This uniform profile suggests the image has a consistent compression history - no obvious signs of region-level editing or compositing.",
+                "why_it_matters": "A uniform ELA profile removes one red flag - there are no obvious editing seams. However, ELA does not tell us whether the image is AI-generated, only that it has not been obviously composited. The other detectors handle the AI vs. real question.",
+                "caveat": "ELA detects editing and compression inconsistency, not AI generation. Social media uploads, repeated saves, and WhatsApp forwarding all degrade this test. It's treated as a weak supporting check.",
+                "support": "unknown",
+                "contribution": 0.031
+            }
+        ]
+    },
+    "pipeline_health": {
+        "arize": {
+            "configured": true,
+            "enabled": true,
+            "project_name": "argusai-forensics",
+            "collector_endpoint": "http://localhost:6006/v1/traces",
+            "dashboard_url": "http://localhost:6006",
+            "error": null
+        },
+        "detector_governor": {
+            "enabled": true,
+            "status": "ok",
+            "active_anomaly_count": 0,
+            "detectors": {},
+            "calibration_divergence": null,
+            "spectral_attenuation_factor": 1.0,
+            "last_calibration_observation": {
+                "spectral_support": "ai_generated",
+                "semantic_support": "authentic",
+                "disagreed": true,
+                "recorded_at": "2026-06-03T23:31:57.061331+00:00",
+                "streak": 1
+            },
+            "recent_events": []
+        },
+        "model_health_label": "All detector health gates operational"
+    },
+    "phoenix_trace_id": "606bb259f0e01f97fdb4ae9a9428bc48",
+    "llm_health": {
+        "gemini_key_count": 32,
+        "gemini_available": true,
+        "gemini_model": "gemini-3.5-flash",
+        "gemini_vision_model": "gemini-3.5-flash",
+        "gemini_grounding_model": "gemini-3.5-flash",
+        "gemini_fallback_model": "gemini-2.5-flash",
+        "osint_use_grounding": true,
+        "explanation_provider": "gemini",
+        "explanation_model": "gemini-3.1-flash-lite",
+        "explanation_timeout_seconds": 30.0,
+        "provider_ready": "gemini"
+    }
+}

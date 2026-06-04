@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import json
 import os
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -328,6 +329,31 @@ async def agent_tool_flag_for_human_review(body: HumanReviewRequest) -> dict:
     return {"ok": True, **record}
 
 
+DETECTOR_DISPLAY_NAMES = {
+    "spectral_artifacts": "Spectral Artifacts",
+    "metadata_analysis": "Metadata & Provenance",
+    "noise_pattern_analysis": "Sensor Noise",
+    "lighting_consistency": "Lighting Physics",
+    "semantic_inconsistencies": "Semantic & Physical",
+    "error_level_analysis": "Error Level Analysis",
+    "osint_verification": "OSINT / Web Provenance",
+    "temporal_coherence": "Temporal Coherence",
+    "audio_track": "Embedded Audio",
+    "audio_deepfake": "Voice Authenticity",
+    "audio_semantic": "Audio Semantic",
+    "audio_acoustics": "Audio Acoustics",
+    "temporal_noise_coherence": "Temporal Noise Coherence",
+    "audio_track_acoustics": "Audio Track Acoustics",
+}
+
+
+def _detector_display_name(detector_id: Any) -> str:
+    raw = str(detector_id or "").strip()
+    if not raw:
+        return "Detector"
+    return DETECTOR_DISPLAY_NAMES.get(raw, raw.replace("_", " ").title())
+
+
 @app.get("/agent/activity")
 async def agent_activity(limit: int = 15) -> dict:
     """Recent autonomous agent actions for the operator console."""
@@ -366,6 +392,7 @@ async def agent_investigate() -> dict:
     if telemetry.get("available"):
         steps.append({
             "tool": "query_phoenix_telemetry",
+            "tags": ["via Arize Phoenix MCP"],
             "summary": (
                 f"Queried Phoenix spans for behavioral telemetry: {int(llm_tel.get('calls') or 0)} model calls, "
                 f"{int(llm_tel.get('total_tokens') or 0)} tokens, "
@@ -377,11 +404,24 @@ async def agent_investigate() -> dict:
     roi = compute_detector_roi()
     roi_rows = roi.get("detectors", []) if isinstance(roi, dict) else []
     low_value = [r for r in roi_rows if r.get("tier") == "low_value"]
+    low_value_detectors = [
+        {
+            "id": r.get("detector_id"),
+            "name": _detector_display_name(r.get("detector_id")),
+            "confirmed_accuracy": r.get("confirmed_accuracy"),
+            "avg_latency_seconds": r.get("avg_latency_seconds"),
+            "weight": r.get("weight_multiplier"),
+            "insight": r.get("insight"),
+        }
+        for r in low_value
+    ]
+    low_value_names = [row["name"] for row in low_value_detectors if row.get("name")]
     steps.append({
         "tool": "compute_detector_roi",
         "summary": (
             f"Fused confirmed accuracy with Phoenix latency and error rate across {len(roi_rows)} detector(s); "
-            f"{len(low_value)} are low value for their cost."
+            f"{len(low_value)} are low value for their cost"
+            f"{': ' + ', '.join(low_value_names[:5]) if low_value_names else ''}."
         ),
     })
 
@@ -408,6 +448,21 @@ async def agent_investigate() -> dict:
                 "summary": f"Recalibrated {det}: {res.get('previous_multiplier')}x to {res.get('weight_multiplier')}x weight.",
             })
 
+    detector_decisions = [
+        {
+            "id": r.get("detector_id"),
+            "name": _detector_display_name(r.get("detector_id")),
+            "tier": r.get("tier"),
+            "confirmed_accuracy": r.get("confirmed_accuracy"),
+            "confirmed_total": r.get("confirmed_total"),
+            "avg_latency_seconds": r.get("avg_latency_seconds"),
+            "phoenix_runs": r.get("phoenix_runs"),
+            "phoenix_error_rate": r.get("phoenix_error_rate"),
+            "weight": r.get("weight_multiplier"),
+            "insight": r.get("insight"),
+        }
+        for r in roi_rows
+    ]
     findings = {
         "phoenix_status": health.get("status", "ok"),
         "total_analyses": int((stats.get("global") or {}).get("total_analyses") or 0),
@@ -420,12 +475,14 @@ async def agent_investigate() -> dict:
             "available": bool(telemetry.get("available")),
         },
         "detector_roi": [
-            {"id": r.get("detector_id"), "tier": r.get("tier"), "confirmed_accuracy": r.get("confirmed_accuracy"),
+            {"id": r.get("detector_id"), "name": _detector_display_name(r.get("detector_id")), "tier": r.get("tier"), "confirmed_accuracy": r.get("confirmed_accuracy"),
              "avg_latency_seconds": r.get("avg_latency_seconds"), "weight": r.get("weight_multiplier"), "insight": r.get("insight")}
-            for r in roi_rows[:6]
+            for r in roi_rows
         ],
+        "low_value_detectors": low_value_detectors,
+        "low_value_detector_names": low_value_names,
         "least_efficient_detector": (roi.get("system") or {}).get("least_efficient_detector"),
-        "drifted_detectors": [{"id": d.get("detector_id"), "recent": d.get("recent_accuracy"), "historical": d.get("historical_accuracy")} for d in drifted],
+        "drifted_detectors": [{"id": d.get("detector_id"), "name": _detector_display_name(d.get("detector_id")), "recent": d.get("recent_accuracy"), "historical": d.get("historical_accuracy")} for d in drifted],
         "recalibrations": actions,
     }
     client = LLMClient()
@@ -433,9 +490,10 @@ async def agent_investigate() -> dict:
         "You are the ArgusAI reliability analyst. You have just fused human-confirmed "
         "accuracy from Firestore with behavioral telemetry from Arize Phoenix (model "
         "calls, token usage, fallback rate, detector latency and error rate). In 3 to 5 "
-        "sentences, explain what you checked across both Phoenix and Firestore, which "
-        "detectors are earning their place versus costing more than they are worth, and "
-        "what action you took. Cite specific numbers. Plain professional language, no em dashes, no lists.",
+        "sentences, explain what you checked across both Phoenix and Firestore, name any "
+        "low-value detectors from low_value_detectors, identify detectors earning their place, "
+        "and state what action you took. Do not say all detectors are earning if "
+        "low_value_detectors is non-empty. Cite specific numbers. Plain professional language, no em dashes, no lists.",
         "reliability_review",
         findings,
     )
@@ -449,7 +507,11 @@ async def agent_investigate() -> dict:
             )
         else:
             worst = (roi.get("system") or {}).get("least_efficient_detector")
-            tail = f" The weakest on value for cost right now is {worst}, which I am keeping on watch." if worst else ""
+            if low_value_names:
+                named = ", ".join(low_value_names[:5])
+                tail = f" I flagged {named} as low value for cost and held their current weights unless drift required recalibration."
+            else:
+                tail = f" The weakest on value for cost right now is {_detector_display_name(worst)}, which I am keeping on watch." if worst else ""
             narration = (
                 f"I fused confirmed accuracy from Firestore with Phoenix latency, error rate, and token telemetry across {len(roi_rows)} detectors. "
                 f"No detector has drifted beyond tolerance, so the current weighting stands.{tail}"
@@ -458,10 +520,40 @@ async def agent_investigate() -> dict:
     review_summary = f"Fused Firestore accuracy with Phoenix telemetry across {len(roi_rows)} detectors; {len(actions)} recalibrated"
     if low_value:
         review_summary += f", {len(low_value)} flagged low value"
+    report_detail = {
+        "kind": "agent_reliability_review",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "narration": narration,
+        "steps": steps,
+        "phoenix_telemetry": findings["phoenix_telemetry"],
+        "detectors_evaluated": detector_decisions,
+        "low_value_detectors": low_value_detectors,
+        "recalibrations": actions,
+        "drifted_detectors": findings["drifted_detectors"],
+        "decision": {
+            "detectors_reviewed": len(roi_rows),
+            "drifted": len(drifted),
+            "recalibrated": len(actions),
+            "low_value": len(low_value),
+            "summary": review_summary,
+        },
+        "phoenix_project": {
+            "project_name": link.get("project_name"),
+            "project_id": link.get("project_id"),
+            "base": link.get("base"),
+        },
+    }
     log_agent_action(
         "review",
         review_summary,
-        {"detectors_reviewed": len(roi_rows), "drifted": len(drifted), "recalibrated": len(actions), "low_value": len(low_value)},
+        {
+            "detectors_reviewed": len(roi_rows),
+            "drifted": len(drifted),
+            "recalibrated": len(actions),
+            "low_value": len(low_value),
+            "low_value_detectors": low_value_detectors,
+            "report": report_detail,
+        },
     )
 
     return {
@@ -472,6 +564,7 @@ async def agent_investigate() -> dict:
         "drifted": len(drifted),
         "roi": roi_rows,
         "system": roi.get("system"),
+        "report": report_detail,
     }
 
 

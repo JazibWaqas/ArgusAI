@@ -155,6 +155,8 @@ def _global_stats_from_analyses(db: Any, fallback: Optional[dict[str, Any]] = No
         docs = db.collection("analyses").stream()
         for doc in docs:
             data = doc.to_dict() or {}
+            if data.get("_demo_seed"):
+                continue
             total += 1
             media = str(data.get("media_type") or "image").lower()
             by_media_type[media] = by_media_type.get(media, 0) + 1
@@ -594,6 +596,17 @@ def compute_detector_roi() -> dict[str, Any]:
         confirmed_total = int(row.get("confirmed_total") or 0)
         accuracy = float(row.get("confirmed_accuracy") or 0.0)
         weight = float(row.get("weight_multiplier") or 1.0)
+        override = row.get("agent_weight_override")
+        # An agent override means the reliability agent intervened on this detector,
+        # which the slow passive self-calibration loop did not do. Surface that so the
+        # agent's contribution is visibly distinct from automatic lifetime calibration.
+        # A neutral 1.0x override changes nothing, so it does not count as an action.
+        try:
+            override_active = override is not None and abs(float(override) - 1.0) > 0.01
+        except (TypeError, ValueError):
+            override_active = False
+        weight_source = "agent" if override_active else "calibrated"
+        override_reason = row.get("agent_override_reason") if override_active else None
         fs_latency = float(row.get("avg_latency_seconds") or 0.0)
         phx = phx_detectors.get(detector_id) or {}
         phx_latency = phx.get("avg_latency_seconds")
@@ -643,6 +656,8 @@ def compute_detector_roi() -> dict[str, Any]:
                 "efficiency": efficiency,
                 "tier": tier,
                 "insight": insight,
+                "weight_source": weight_source,
+                "override_reason": override_reason,
             }
         )
 
@@ -667,6 +682,109 @@ def compute_detector_roi() -> dict[str, Any]:
             "least_efficient_detector": (least_efficient or {}).get("detector_id") if least_efficient else None,
         },
     }
+
+
+def compute_confidence_calibration() -> dict[str, Any]:
+    """Are our confidence numbers honest? Bucket human-confirmed analyses by the
+    certainty band the system reported, then measure how often each band was
+    actually right. A well-calibrated system is right about as often as it claims.
+    Needs both certainty (Firestore) and confirmed outcomes."""
+    db = get_db()
+    bands_def = [
+        ("90-100%", 0.90, 1.01),
+        ("75-90%", 0.75, 0.90),
+        ("60-75%", 0.60, 0.75),
+        ("below 60%", 0.0, 0.60),
+    ]
+    if db is None:
+        return {"ok": False, "bands": [], "total": 0}
+    try:
+        buckets = {label: {"correct": 0, "total": 0} for label, _, _ in bands_def}
+        total = 0
+        for doc in db.collection("analyses").order_by("timestamp", direction="DESCENDING").limit(300).stream():
+            data = doc.to_dict() or {}
+            if data.get("_demo_seed"):
+                continue
+            feedback = data.get("user_feedback")
+            if feedback not in {"correct", "incorrect"}:
+                continue
+            try:
+                certainty = float(data.get("certainty"))
+            except (TypeError, ValueError):
+                continue
+            for label, lo, hi in bands_def:
+                if lo <= certainty < hi:
+                    buckets[label]["total"] += 1
+                    if feedback == "correct":
+                        buckets[label]["correct"] += 1
+                    total += 1
+                    break
+
+        bands = []
+        for label, lo, hi in bands_def:
+            b = buckets[label]
+            if not b["total"]:
+                continue
+            acc = round(b["correct"] / b["total"], 4)
+            # Well-calibrated if confirmed accuracy lands within the band or above it.
+            well = acc >= lo - 0.05
+            bands.append({"label": label, "count": b["total"], "accuracy": acc, "well_calibrated": well})
+
+        hero = next((b for b in bands if b["label"] == "90-100%"), bands[0] if bands else None)
+        return {"ok": True, "bands": bands, "total": total, "hero": hero}
+    except Exception as exc:
+        log.warning("Could not compute calibration: %s", exc)
+        return {"ok": False, "bands": [], "total": 0}
+
+
+def get_review_queue(limit: int = 12) -> dict[str, Any]:
+    """Cases that warrant a human: anything the agent flagged for review, plus
+    recent low-confidence or inconclusive verdicts that have not been confirmed yet."""
+    db = get_db()
+    if db is None:
+        return {"ok": False, "items": []}
+    items: list[dict[str, Any]] = []
+    try:
+        for doc in db.collection("agent_actions").where("type", "==", "flag_review").order_by("timestamp", direction="DESCENDING").limit(limit).stream():
+            data = doc.to_dict() or {}
+            detail = data.get("detail") or {}
+            items.append({
+                "source": "flagged",
+                "reason": data.get("summary") or detail.get("reason") or "Flagged for human review by the agent.",
+                "timestamp": data.get("timestamp"),
+                "media_type": detail.get("media_type"),
+                "verdict": detail.get("verdict"),
+                "certainty": detail.get("certainty"),
+            })
+    except Exception:
+        pass
+    try:
+        for doc in db.collection("analyses").order_by("timestamp", direction="DESCENDING").limit(60).stream():
+            data = doc.to_dict() or {}
+            if data.get("_demo_seed"):
+                continue
+            if data.get("user_feedback") in {"correct", "incorrect"}:
+                continue
+            verdict = str(data.get("verdict") or "")
+            try:
+                certainty = float(data.get("certainty") or 0.0)
+            except (TypeError, ValueError):
+                certainty = 0.0
+            if verdict == "inconclusive" or (0 < certainty < 0.6):
+                items.append({
+                    "source": "low",
+                    "reason": "Inconclusive verdict" if verdict == "inconclusive" else "Low confidence, awaiting confirmation",
+                    "timestamp": data.get("timestamp"),
+                    "media_type": data.get("media_type"),
+                    "verdict": verdict,
+                    "certainty": certainty,
+                })
+            if len(items) >= limit:
+                break
+    except Exception:
+        pass
+    items.sort(key=lambda x: str(x.get("timestamp") or ""), reverse=True)
+    return {"ok": True, "items": items[:limit]}
 
 
 def recalibrate_detector_weight(detector_id: str, multiplier: float, reason: str = "agent_recalibration") -> dict[str, Any]:
@@ -746,10 +864,15 @@ def trace_rows_from_firestore(limit: int = 10) -> Optional[list[dict[str, Any]]]
     if db is None:
         return None
     try:
-        query = db.collection("analyses").order_by("timestamp", direction="DESCENDING").limit(max(1, min(limit, 50)))
+        capped = max(1, min(limit, 50))
+        query = db.collection("analyses").order_by("timestamp", direction="DESCENDING").limit(capped + 20)
         rows = []
         for doc in query.stream():
             data = doc.to_dict() or {}
+            if data.get("_demo_seed"):
+                continue
+            if len(rows) >= capped:
+                break
             detectors = data.get("detectors") if isinstance(data.get("detectors"), dict) else {}
             rows.append(
                 {
@@ -765,6 +888,21 @@ def trace_rows_from_firestore(limit: int = 10) -> Optional[list[dict[str, Any]]]
                     "calibration_divergence": False,
                 }
             )
+
+        # Backfill latency from Phoenix for records that predate latency persistence.
+        # Phoenix holds the true trace duration, so the table never shows a blank row.
+        if any(r.get("latency_seconds") in (None, 0) for r in rows):
+            try:
+                from .observability import get_phoenix_root_latencies
+
+                phx_latency = get_phoenix_root_latencies()
+                for r in rows:
+                    if r.get("latency_seconds") in (None, 0):
+                        tid = r.get("phoenix_trace_id")
+                        if tid and tid in phx_latency:
+                            r["latency_seconds"] = phx_latency[tid]
+            except Exception:
+                pass
         return rows
     except Exception as exc:
         log.warning("Could not query Firestore traces: %s", exc)

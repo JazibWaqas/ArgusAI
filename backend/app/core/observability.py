@@ -314,6 +314,42 @@ def phoenix_project_id() -> Optional[str]:
     return None
 
 
+def get_phoenix_root_latencies(limit: int = 200) -> dict[str, float]:
+    """Map each analysis trace id to its real wall-clock latency in seconds, read
+    straight from the Phoenix root span. This is the source-of-truth latency the
+    operator console shows when a Firestore record predates latency persistence."""
+    base = phoenix_ui_base()
+    project_id = phoenix_project_id()
+    if not base or not project_id:
+        return {}
+    try:
+        import httpx
+        from datetime import datetime
+
+        resp = httpx.get(f"{base}/v1/projects/{project_id}/spans?limit={limit}", timeout=8)
+        resp.raise_for_status()
+        rows = (resp.json() or {}).get("data", []) or []
+    except Exception:
+        return {}
+
+    out: dict[str, float] = {}
+    for node in rows:
+        if node.get("parent_id"):
+            continue  # root spans only
+        ctx = node.get("context") or {}
+        trace_id = ctx.get("trace_id")
+        start, end = node.get("start_time"), node.get("end_time")
+        if not trace_id or not start or not end:
+            continue
+        try:
+            s = datetime.fromisoformat(start.replace("Z", "+00:00"))
+            e = datetime.fromisoformat(end.replace("Z", "+00:00"))
+            out[str(trace_id)] = max(0.0, round((e - s).total_seconds(), 2))
+        except Exception:
+            continue
+    return out
+
+
 def get_phoenix_telemetry(limit: int = 500) -> dict[str, Any]:
     """Read behavioral truth from Phoenix: per-detector run counts, error rates,
     and latency, plus LLM token usage and model-fallback rate.

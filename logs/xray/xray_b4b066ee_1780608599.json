@@ -1,0 +1,198 @@
+{
+    "timestamp": "2026-06-04T21:29:59.358771+00:00",
+    "image_hash": "b4b066ee870dec8f3d6623134ae45bc94570fbf24711794a1ea87ce818597047",
+    "media_type": "video",
+    "image_info": {
+        "width": 0,
+        "height": 0,
+        "mode": "video",
+        "sha256": "b4b066ee870dec8f3d6623134ae45bc94570fbf24711794a1ea87ce818597047",
+        "format": "VIDEO"
+    },
+    "global_execution_time": 23.919,
+    "reasoning_execution_time": 5.7042,
+    "detector_metrics": {
+        "spectral_artifacts": {
+            "status": "unavailable",
+            "support": "unknown",
+            "time_seconds": 0.0,
+            "reliability": 0.0,
+            "confidence": null,
+            "summary": "Spectral Artifacts needs extracted video frames, but frame extraction was unavailable: Video file exceeds maximum size of 20.0MB..",
+            "visible": true
+        },
+        "metadata_analysis": {
+            "status": "unavailable",
+            "support": "unknown",
+            "time_seconds": 0.0,
+            "reliability": 0.0,
+            "confidence": null,
+            "summary": "Metadata & Provenance needs extracted video frames, but frame extraction was unavailable: Video file exceeds maximum size of 20.0MB..",
+            "visible": true
+        },
+        "noise_pattern_analysis": {
+            "status": "unavailable",
+            "support": "unknown",
+            "time_seconds": 0.0,
+            "reliability": 0.0,
+            "confidence": null,
+            "summary": "Thermal Noise & Sensor Consistency is calibrated for still images and is hidden for video reports.",
+            "visible": false
+        },
+        "lighting_consistency": {
+            "status": "unavailable",
+            "support": "unknown",
+            "time_seconds": 0.0,
+            "reliability": 0.0,
+            "confidence": null,
+            "summary": "Lighting Physics & Contrast Geometry is calibrated for still images and is hidden for video reports.",
+            "visible": false
+        },
+        "error_level_analysis": {
+            "status": "unavailable",
+            "support": "unknown",
+            "time_seconds": 0.0,
+            "reliability": 0.0,
+            "confidence": null,
+            "summary": "Error Level Analysis (ELA) needs extracted video frames, but frame extraction was unavailable: Video file exceeds maximum size of 20.0MB..",
+            "visible": true
+        },
+        "osint_verification": {
+            "status": "unavailable",
+            "support": "unknown",
+            "time_seconds": 0.0001,
+            "reliability": 0.0,
+            "confidence": null,
+            "summary": "Web verification was skipped. Add context to enable it.",
+            "top_observation": "OSINT skipped: no user context provided.",
+            "visible": true
+        },
+        "semantic_inconsistencies": {
+            "status": "ok",
+            "support": "inconclusive",
+            "time_seconds": 17.5595,
+            "reliability": 0.25,
+            "confidence": 0.3,
+            "summary": "The video shows a stable landscape with consistent snow patterns and natural water ripples. There are no temporal anomalies or morphing structures, suggesting authentic footage.",
+            "top_observation": "No obvious semantic anomalies reported.",
+            "visible": false
+        },
+        "temporal_coherence": {
+            "status": "ok",
+            "support": "inconclusive",
+            "time_seconds": 0.0,
+            "reliability": 0.75,
+            "confidence": 0.3,
+            "summary": "The video shows a stable landscape with consistent snow patterns and natural water ripples. There are no temporal anomalies or morphing structures, suggesting authentic footage.",
+            "visible": true
+        },
+        "temporal_noise_coherence": {
+            "status": "unavailable",
+            "support": "unknown",
+            "time_seconds": 0.0,
+            "reliability": 0.0,
+            "confidence": null,
+            "summary": "Cross-frame sensor noise could not be measured for this clip.",
+            "visible": true
+        },
+        "audio_track": {
+            "status": "unavailable",
+            "support": "unknown",
+            "time_seconds": 0.0003,
+            "reliability": 0.0,
+            "confidence": null,
+            "summary": "No usable audio track was found in this video.",
+            "visible": true
+        }
+    },
+    "final_verdict": "inconclusive",
+    "certainty": 0.078,
+    "warnings": [
+        "Spectral Artifacts: Spectral Artifacts needs extracted video frames, but frame extraction was unavailable: Video file exceeds maximum size of 20.0MB..",
+        "Metadata & Provenance: Metadata & Provenance needs extracted video frames, but frame extraction was unavailable: Video file exceeds maximum size of 20.0MB..",
+        "Error Level Analysis (ELA): Error Level Analysis (ELA) needs extracted video frames, but frame extraction was unavailable: Video file exceeds maximum size of 20.0MB..",
+        "Live Web Fact-Checking (OSINT): Web verification was skipped. Add context to enable it.",
+        "Sensor Noise Coherence: Cross-frame sensor noise could not be measured for this clip.",
+        "Audio Track: No usable audio track was found in this video."
+    ],
+    "score_breakdown": {
+        "authentic": 0.0,
+        "ai_generated": 0.0,
+        "inconclusive": 0.63,
+        "total_considered": 0.63
+    },
+    "reasoning_summary": {
+        "verdict": "inconclusive",
+        "certainty": 0.078,
+        "certainty_percent": 8,
+        "confidence_label": "low",
+        "leaning": null,
+        "media_type": "video",
+        "short_summary": "The checks came back split and we cannot confidently say either way at 8% certainty. The most weight came from Temporal Coherence, which could not produce a clear direction on their own.",
+        "scores": {
+            "authentic": 0,
+            "ai_generated": 0,
+            "inconclusive": 0.63,
+            "total_considered": 0.63
+        },
+        "signal_coverage": {
+            "usable_signal_count": 1,
+            "blocked_signal_count": 6,
+            "total_signal_count": 7
+        },
+        "top_authentic_signals": [],
+        "top_ai_signals": [],
+        "top_inconclusive_signals": [
+            {
+                "name": "Temporal Coherence",
+                "summary": "The video shows a stable landscape with consistent snow patterns and natural water ripples. There are no temporal anomalies or morphing structures, suggesting authentic footage.",
+                "what_found": "The video shows a stable landscape with consistent snow patterns and natural water ripples. There are no temporal anomalies or morphing structures, suggesting authentic footage.",
+                "why_it_matters": "AI video generators often fail across time even when individual frames look convincing.",
+                "caveat": "Low bitrate, motion blur, and heavy compression can resemble temporal artifacts, so this signal is weighed with the rest of the evidence.",
+                "support": "inconclusive",
+                "contribution": 0.63
+            }
+        ]
+    },
+    "pipeline_health": {
+        "arize": {
+            "configured": true,
+            "enabled": true,
+            "project_name": "argusai-forensics",
+            "collector_endpoint": "http://localhost:6006/v1/traces",
+            "dashboard_url": "http://localhost:6006",
+            "error": null
+        },
+        "detector_governor": {
+            "enabled": true,
+            "status": "ok",
+            "active_anomaly_count": 0,
+            "detectors": {},
+            "calibration_divergence": null,
+            "spectral_attenuation_factor": 1.0,
+            "last_calibration_observation": {
+                "spectral_support": "unknown",
+                "semantic_support": "inconclusive",
+                "disagreed": false,
+                "recorded_at": "2026-06-04T21:29:53.386161+00:00",
+                "streak": 0
+            },
+            "recent_events": []
+        },
+        "model_health_label": "All detector health gates operational"
+    },
+    "phoenix_trace_id": "ca56d0c94f16491ccb015704e5f96190",
+    "llm_health": {
+        "gemini_key_count": 32,
+        "gemini_available": true,
+        "gemini_model": "gemini-3.5-flash",
+        "gemini_vision_model": "gemini-3.5-flash",
+        "gemini_grounding_model": "gemini-3.5-flash",
+        "gemini_fallback_model": "gemini-2.5-flash",
+        "osint_use_grounding": true,
+        "explanation_provider": "gemini",
+        "explanation_model": "gemini-3.1-flash-lite",
+        "explanation_timeout_seconds": 30.0,
+        "provider_ready": "gemini"
+    }
+}

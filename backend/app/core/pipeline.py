@@ -396,6 +396,7 @@ class AnalysisPipeline:
                 "arize": tracing_health(),
                 "detector_governor": health_snapshot,
                 "model_health_label": self._model_health_label(merged_signals),
+                "latency_seconds": round(global_duration, 4),
             }
 
             report = ForensicReport(

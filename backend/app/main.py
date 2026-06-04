@@ -17,8 +17,10 @@ from .core.analysis_store import (
     annotate_phoenix_feedback,
     apply_feedback,
     build_history_context,
+    compute_confidence_calibration,
     compute_detector_roi,
     detect_accuracy_drift,
+    get_review_queue,
     fallback_stats_from_xray,
     get_agent_actions,
     get_detector_reliability,
@@ -367,6 +369,19 @@ async def agent_detector_roi() -> dict:
     return compute_detector_roi()
 
 
+@app.get("/agent/calibration")
+async def agent_calibration() -> dict:
+    """Confidence calibration: how often each reported-certainty band was actually
+    confirmed correct. Powers the calibration card in the operator console."""
+    return compute_confidence_calibration()
+
+
+@app.get("/agent/review-queue")
+async def agent_review_queue(limit: int = 12) -> dict:
+    """Cases needing a human: agent-flagged plus low-confidence or inconclusive."""
+    return get_review_queue(limit)
+
+
 @app.post("/agent/investigate")
 async def agent_investigate() -> dict:
     """In-app reliability analyst: fuses Firestore outcome truth (confirmed accuracy,
@@ -492,8 +507,15 @@ async def agent_investigate() -> dict:
         "calls, token usage, fallback rate, detector latency and error rate). In 3 to 5 "
         "sentences, explain what you checked across both Phoenix and Firestore, name any "
         "low-value detectors from low_value_detectors, identify detectors earning their place, "
-        "and state what action you took. Do not say all detectors are earning if "
-        "low_value_detectors is non-empty. Cite specific numbers. Plain professional language, no em dashes, no lists.",
+        "and state what action you took. "
+        "CRITICAL about actions: you changed detector weights ONLY if the recalibrations list "
+        "is non-empty. If recalibrations is empty, do NOT say you down-weighted, reduced, lowered, "
+        "or changed any weight in this review. The low-value detectors are already carrying reduced "
+        "weight from earlier learning, so describe them as already down-weighted and say you flagged "
+        "them and made no new change this run. If recalibrations is non-empty, describe exactly those "
+        "before-to-after weight changes and why. "
+        "Do not say all detectors are earning if low_value_detectors is non-empty. "
+        "Cite specific numbers. Plain professional language, no em dashes, no lists.",
         "reliability_review",
         findings,
     )

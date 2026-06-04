@@ -1,9 +1,9 @@
 {
   "last_calibration_observation": {
     "spectral_support": "ai_generated",
-    "semantic_support": "ai_generated",
+    "semantic_support": "inconclusive",
     "disagreed": false,
-    "recorded_at": "2026-06-03T23:43:36.555718+00:00",
+    "recorded_at": "2026-06-04T23:26:54.273868+00:00",
     "streak": 0
   },
   "calibration_streak": 0,

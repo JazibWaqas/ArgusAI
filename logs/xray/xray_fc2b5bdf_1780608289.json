@@ -1,0 +1,208 @@
+{
+    "timestamp": "2026-06-04T21:24:49.843940+00:00",
+    "image_hash": "fc2b5bdf516a164a96c50b61c291f092951bb161bb037e7968e1031a9382e0b9",
+    "media_type": "image",
+    "image_info": {
+        "width": 1024,
+        "height": 1024,
+        "mode": "RGB",
+        "sha256": "fc2b5bdf516a164a96c50b61c291f092951bb161bb037e7968e1031a9382e0b9",
+        "format": "JPEG"
+    },
+    "global_execution_time": 35.0361,
+    "reasoning_execution_time": 9.8103,
+    "detector_metrics": {
+        "spectral_artifacts": {
+            "status": "ok",
+            "support": "ai_generated",
+            "time_seconds": 15.0678,
+            "reliability": 0.7,
+            "confidence": 0.9077306985855103,
+            "summary": "The Six-Lens model scored this image 90.8% AI and 9.2% authentic, a extremely high-confidence finding toward synthetic generation.",
+            "top_observation": "Six-Lens fusion result. AI score: 0.9077 (90.8%), authentic score: 0.0923 (9.2%).",
+            "visible": true
+        },
+        "metadata_analysis": {
+            "status": "ok",
+            "support": "ai_generated",
+            "time_seconds": 0.0023,
+            "reliability": 0.92,
+            "confidence": null,
+            "summary": "The file's embedded provenance marks it as AI-generated.",
+            "top_observation": "Content Credentials (C2PA) digital source type is 'trained algorithmic media', a standardized AI-generated marker.",
+            "visible": true
+        },
+        "noise_pattern_analysis": {
+            "status": "ok",
+            "support": "inconclusive",
+            "time_seconds": 0.0775,
+            "reliability": 0.2,
+            "confidence": null,
+            "summary": "The noise profile is ambiguous - variance 3684.0, 6.2% smooth blocks - midrange values that could belong to either a compressed real photo or a noise-augmented AI image.",
+            "top_observation": "Global pixel variance: 3684.0 | Mean brightness: 102.8/255 | Std deviation: 60.7",
+            "visible": true
+        },
+        "lighting_consistency": {
+            "status": "ok",
+            "support": "inconclusive",
+            "time_seconds": 0.0138,
+            "reliability": 0.3,
+            "confidence": null,
+            "summary": "The lighting is balanced and well-behaved (255/255 range, 102.8/255 mean, 0.023% clipping) - matching both a well-exposed real photo and a capable AI generator.",
+            "top_observation": "Dynamic range: 255/255 (darkest pixel: 0, brightest: 255)",
+            "visible": true
+        },
+        "error_level_analysis": {
+            "status": "ok",
+            "support": "unknown",
+            "time_seconds": 0.3704,
+            "reliability": 0.1,
+            "confidence": null,
+            "summary": "ELA found essentially no compression residual (mean: 0.32, max: 13.00). The image's original quality setting is too close to the test quality for ELA to produce meaningful results.",
+            "top_observation": "Image: 1024x1024px | JPEG recompressed at quality 90",
+            "visible": true
+        },
+        "osint_verification": {
+            "status": "unavailable",
+            "support": "unknown",
+            "time_seconds": 0.0002,
+            "reliability": 0.0,
+            "confidence": null,
+            "summary": "Web verification was skipped. Add context to enable it.",
+            "top_observation": "OSINT skipped: no user context provided.",
+            "visible": true
+        },
+        "semantic_inconsistencies": {
+            "status": "ok",
+            "support": "inconclusive",
+            "time_seconds": 9.4804,
+            "reliability": 0.25,
+            "confidence": 0.3,
+            "summary": "The image depicts a dog in mid-air catching a frisbee with natural lighting and sharp details. No anatomical errors, clipping, or background distortions are visible. The textures and proportions suggest this is a genuine photograph.",
+            "top_observation": "No obvious semantic anomalies reported.",
+            "visible": true
+        }
+    },
+    "final_verdict": "likely_ai_generated",
+    "certainty": 0.855,
+    "warnings": [
+        "Live Web Fact-Checking (OSINT): Web verification was skipped. Add context to enable it."
+    ],
+    "score_breakdown": {
+        "authentic": 0.0,
+        "ai_generated": 1.293,
+        "inconclusive": 0.438,
+        "total_considered": 1.731
+    },
+    "reasoning_summary": {
+        "verdict": "likely_ai_generated",
+        "certainty": 0.855,
+        "certainty_percent": 86,
+        "confidence_label": "high",
+        "leaning": "likely_ai_generated",
+        "media_type": "image",
+        "short_summary": "This looks AI-generated, with 86% confidence. The strongest signal is Metadata & Provenance.",
+        "scores": {
+            "authentic": 0,
+            "ai_generated": 1.293,
+            "inconclusive": 0.438,
+            "total_considered": 1.731
+        },
+        "signal_coverage": {
+            "usable_signal_count": 6,
+            "blocked_signal_count": 1,
+            "total_signal_count": 7
+        },
+        "top_authentic_signals": [],
+        "top_ai_signals": [
+            {
+                "name": "Metadata & Provenance",
+                "summary": "The file's embedded provenance marks it as AI-generated.",
+                "what_found": "The provenance metadata flags this as trained-algorithmic (AI-generated) media.",
+                "why_it_matters": "Provenance markers like C2PA are an industry-standard, hard-to-fake trace written by the generator itself. Finding one is among the strongest provenance signals available.",
+                "caveat": "Provenance can be stripped or, rarely, forged. Absence of a marker is not proof of authenticity.",
+                "support": "ai_generated",
+                "contribution": 0.828
+            },
+            {
+                "name": "Spectral Artifacts",
+                "summary": "The Six-Lens model scored this image 90.8% AI and 9.2% authentic, a extremely high-confidence finding toward synthetic generation.",
+                "what_found": "All six spectral lenses, covering visual texture (ConvNeXt), frequency grids (FFT), sensor noise simulation (SRM), color-space fingerprints (YCbCr), spatial reconstruction (SPAI), and robustness testing, collectively scored this image 90.8% AI. A score this strong, the majority of lenses independently flagged patterns like periodic frequency grids and noise distributions inconsistent with any known camera sensor profile.",
+                "why_it_matters": "This model looks for patterns invisible to the human eye, buried in the pixel-level math of the image. A 90.8% score means the statistical fingerprint aligns significantly more with AI generation than camera physics, and these frequency-domain traces are very hard to remove without visibly degrading the image.",
+                "caveat": "Heavy JPEG compression, aggressive resizing, or strong image filters can partially destroy the frequency-domain signals this model depends on, potentially softening a confident AI detection into an inconclusive result. Conversely, very new or unusual AI generators not present in training data may produce lower-than-expected scores.",
+                "support": "ai_generated",
+                "contribution": 0.465
+            }
+        ],
+        "top_inconclusive_signals": [
+            {
+                "name": "Semantic & Physical Consistency",
+                "summary": "The image depicts a dog in mid-air catching a frisbee with natural lighting and sharp details. No anatomical errors, clipping, or background distortions are visible. The textures and proportions suggest this is a genuine photograph.",
+                "what_found": "The image depicts a dog in mid-air catching a frisbee with natural lighting and sharp details. No anatomical errors, clipping, or background distortions are visible. The textures and proportions suggest this is a genuine photograph.",
+                "why_it_matters": "A mixed visual result means we cannot use this check to settle the verdict. The other signals carry more weight here.",
+                "caveat": "This detector is useful, but it can still be wrong and should be treated as one part of the full picture.",
+                "support": "inconclusive",
+                "contribution": 0.24
+            },
+            {
+                "name": "Lighting Physics & Contrast Geometry",
+                "summary": "The lighting is balanced and well-behaved (255/255 range, 102.8/255 mean, 0.023% clipping) - matching both a well-exposed real photo and a capable AI generator.",
+                "what_found": "The image has a 255/255 dynamic range, 102.8/255 mean brightness, and only 0.023% clipped highlights with 0.004% crushed shadows. This balanced exposure is realistic-looking but not diagnostic - it fits equally well for a careful real photograph and a modern AI generator.",
+                "why_it_matters": "Lighting is most useful when it's either suspiciously perfect (AI) or clearly clipping (real). A balanced middle-ground doesn't give us enough to work with, so this signal defers to others.",
+                "caveat": "HDR post-processing, tone mapping, strong flash, and professional retouching can all alter exposure profiles - introducing 'AI-like' qualities into real photos or vice versa.",
+                "support": "inconclusive",
+                "contribution": 0.133
+            },
+            {
+                "name": "Thermal Noise & Sensor Consistency",
+                "summary": "The noise profile is ambiguous - variance 3684.0, 6.2% smooth blocks - midrange values that could belong to either a compressed real photo or a noise-augmented AI image.",
+                "what_found": "The image has variance 3684.0 and 6.2% flat blocks - neither extreme enough to trigger a clear verdict. This ambiguity typically means the image has been compressed, resized, or otherwise processed in a way that erased the original noise fingerprint.",
+                "why_it_matters": "When noise falls in the middle range, it can belong to either side - meaning this signal cannot meaningfully contribute to the verdict. The other detectors carry more weight here.",
+                "caveat": "Heavy compression, denoising, upscaling, or added grain filters can all change the noise profile independently of whether the image was generated or photographed.",
+                "support": "inconclusive",
+                "contribution": 0.052
+            }
+        ]
+    },
+    "pipeline_health": {
+        "arize": {
+            "configured": true,
+            "enabled": true,
+            "project_name": "argusai-forensics",
+            "collector_endpoint": "http://localhost:6006/v1/traces",
+            "dashboard_url": "http://localhost:6006",
+            "error": null
+        },
+        "detector_governor": {
+            "enabled": true,
+            "status": "ok",
+            "active_anomaly_count": 0,
+            "detectors": {},
+            "calibration_divergence": null,
+            "spectral_attenuation_factor": 1.0,
+            "last_calibration_observation": {
+                "spectral_support": "ai_generated",
+                "semantic_support": "inconclusive",
+                "disagreed": false,
+                "recorded_at": "2026-06-04T21:24:39.723120+00:00",
+                "streak": 0
+            },
+            "recent_events": []
+        },
+        "model_health_label": "All detector health gates operational"
+    },
+    "phoenix_trace_id": "bfc5976ce5f751128f73057783cd197b",
+    "llm_health": {
+        "gemini_key_count": 32,
+        "gemini_available": true,
+        "gemini_model": "gemini-3.5-flash",
+        "gemini_vision_model": "gemini-3.5-flash",
+        "gemini_grounding_model": "gemini-3.5-flash",
+        "gemini_fallback_model": "gemini-2.5-flash",
+        "osint_use_grounding": true,
+        "explanation_provider": "gemini",
+        "explanation_model": "gemini-3.1-flash-lite",
+        "explanation_timeout_seconds": 30.0,
+        "provider_ready": "gemini"
+    }
+}

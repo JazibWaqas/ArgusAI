@@ -1,6 +1,6 @@
 # CLAUDE.md — ArgusAI Hackathon Source of Truth
 
-Last updated: June 4, 2026.
+Last updated: June 6, 2026.
 
 This file is the master alignment document. Every implementation decision, open question, bug, UX decision, and todo lives here. Codex reads this and uses it as a senior technical supervisor handoff — not micromanagement, but full clarity so implementation can proceed without ambiguity.
 
@@ -39,7 +39,9 @@ Current live state:
 - Verdict cards and official PDFs now surface Phoenix chain-of-custody audit links/trace IDs.
 - Admin panel now explains the Firestore persistence + Phoenix immutable trace story directly for judges.
 - Public report follow-up chat is now a bounded Gemini function-calling Investigator Agent. It can inspect the original uploaded media, query Firestore case history, explain detector influence/reliability, run live grounded OSINT, draft a fact-check note, and flag the case for human review. The UI shows compact tool-use chips before the answer.
+- Follow-up chat now shows a visible pending investigator bubble while the agent is working, then replaces it with the final answer and tool-use chips.
 - Follow-up media inspection uses an in-memory session media cache. This is reliable locally and demo-safe on the current single-instance warm Cloud Run setup, but not durable across cold restarts, deploys, scale-to-zero, crashes, or future `max-instances>1`. For production/cloud robustness, move uploaded media to Cloud Storage or another durable store and reload it by session/case ID.
+- Operator reliability governance now supports bench/reactivate in addition to recalibration. A benched detector is persisted in Firestore and gets `0.0x` future verdict influence until a human reactivates it.
 - Backend revision with latency fixes and Flash-Lite explanations deployed: `argusai-backend-00023-mtw`.
 - Frontend revision with admin polling/stat refresh fixes deployed: `argusai-frontend-00005-r54`.
 - Admin stats are now consistent: `/stats` rebuilds global totals from Firestore `/analyses`, the admin console polls every 15s, and the main app refreshes stats after analysis.
@@ -85,7 +87,8 @@ So: stage the *demo narrative* freely, but the **Agent Builder + Phoenix MCP int
 - Backend agent action endpoints exist under `/agent/tools/*`.
 - `detect_accuracy_drift()` computes recent-vs-historical confirmed accuracy from Firestore analysis feedback.
 - `recalibrate_detector_weight()` writes a bounded Firestore override consumed by `get_learned_weights()`, so the agent can causally affect future verdict weighting.
-- In-app investigator agent (`POST /agent/investigate`) drives the agent from the operator console (not the terminal): reviews drift/reliability/Phoenix health, recalibrates drifted detectors, narrates via Gemini, and logs a `review` action every run. The ADK + Phoenix MCP agent stays as the canonical partner artifact (run as its own process).
+- `bench_detector()` writes `agent_benched` to Firestore, clears the learned-weight cache, logs a `bench` action, and makes `get_learned_weights()` return `0.0` for that detector. `reactivate_detector()` clears bench and override fields so a human can bring it back.
+- In-app investigator agent (`POST /agent/investigate`) drives the agent from the operator console (not the terminal): reviews drift/reliability/Phoenix health, recalibrates drifted detectors, can bench one low-value high-latency detector per run, narrates via Gemini, and logs a `review` action every run. The ADK + Phoenix MCP agent stays as the canonical partner artifact (run as its own process).
 - Operator console rebuilt as a full-page dashboard behind a soft-gate login modal; agent activity feed + drift arrows + real-world accuracy + trust leaderboard.
 - Two new measured fundamental signals added (audio `audio_acoustics`, video `temporal_noise_coherence`); image detector path untouched.
 - Consumer-side de-AI polish: audit/Phoenix links removed from consumer view, one-line summary, de-neoned palette, three-zone header.
@@ -97,6 +100,7 @@ So: stage the *demo narrative* freely, but the **Agent Builder + Phoenix MCP int
   - Cross-Store ROI Synthesis: `/agent/detector-roi` fuses Phoenix behavioral telemetry (latency, errors, runs) with Firestore outcome truth (confirmed accuracy, weight overrides) to rank detector efficiency and generate agent insights.
   - Upgraded Operator Console UI: Monospace styled Detector ROI Panel showing average tokens, latency, cost-efficiency tier, and custom agent insights. Activity feed scoped to system-level governance events; empty cards hide dynamically.
   - Upgraded Investigator Agent: `/agent/investigate` reads Phoenix telemetry, checks accuracy drift, recalibrates drifted detector weights (writes to Firestore), and narrates a reliability summary with concrete cost/latency/accuracy metrics.
+  - Detector bench/reactivate governance: `/agent/investigate` can bench a low-value high-latency detector; `POST /agent/tools/bench-detector` and `POST /agent/tools/reactivate-detector` expose human control; Detector Influence rows show `Disable` or `Reactivate`.
 
 ### What is still not fully proven
 
@@ -113,7 +117,7 @@ An agent = **Gemini (brain) + tools + a decide-loop** (model picks a tool, sees 
 
 **Persona A — Investigator Agent (per-case, user-facing).** Given media + a claim, Gemini plans: run forensics → notice detectors disagree → **query Phoenix MCP for that detector's track record** → query Firebase for confirmed reliability → search the web for provenance → conclude → **act** (draft a citable fact-check note / flag for human review).
 
-**Persona B — Reliability Agent (system-level, uniquely Arize).** Reviews Firebase accuracy + Phoenix traces, **detects detector drift** (recent accuracy dropped vs historical), and **autonomously recalibrates that detector's weight** by writing to Firestore — which the verdict engine already consumes. The agent literally takes charge of the system, under human oversight.
+**Persona B — Reliability Agent (system-level, uniquely Arize).** Reviews Firebase accuracy + Phoenix traces, **detects detector drift** (recent accuracy dropped vs historical), and **autonomously recalibrates or benches detector influence** by writing to Firestore, which the verdict engine already consumes. Recalibration changes weight; benching removes a detector from verdict influence until a human reactivates it. The agent literally takes charge of the system, under human oversight.
 
 **The demo money-shot (one conversation that hits all 4 judging criteria):** Run Persona A on the Pope-puffer (or PSL) image. Mid-investigation the agent says: *"Spectral and semantic disagree. Let me check spectral's reliability via Phoenix… it's drifted to 61% on recent confirmed cases, so I'm down-weighting it and trusting the web evidence,"* then produces a verdict + fact-check note. That single flow shows: agentic planning + Phoenix MCP (Arize) + Firebase intelligence + self-calibration + a real action.
 
@@ -133,6 +137,7 @@ Expose these as OpenAPI tools (new thin backend endpoints over existing `analysi
 - `detect_accuracy_drift()` → per detector, recent-window accuracy vs historical, flags drift (needs Step 3).
 - `get_similar_past_cases(media_type)` → recent same-media analyses + verdicts (reads `analyses`).
 - `recalibrate_detector_weight(detector_id, multiplier)` → ⚡ **the action.** Writes an override weight to Firestore that `get_learned_weights()` returns, so future verdicts change. This is "the agent takes charge."
+- `bench_detector(detector_id)` / `reactivate_detector(detector_id)` → stronger governance action + human override. Benching writes `agent_benched` so future verdict influence is `0.0x`; reactivation clears the bench and any override.
 - `draft_fact_check_note()` / `flag_for_human_review()` → the per-case action artifacts.
 
 - **Status:** Implemented and locally verified with a behavior-neutral `1.0x` write for `spectral_artifacts`. A real demo recalibration can use a visible multiplier such as `0.75x` or `1.25x` when the narrative justifies it.
@@ -164,6 +169,7 @@ Expose these as OpenAPI tools (new thin backend endpoints over existing `analysi
 | `detect_accuracy_drift` | Firestore rolling window | read | recent vs historical accuracy |
 | `get_similar_past_cases` | Firestore `analyses` | read | prior same-media verdicts |
 | `recalibrate_detector_weight` | Firestore → `get_learned_weights()` | **write/action** | agent changes future verdicts |
+| `bench_detector` / `reactivate_detector` | Firestore → `get_learned_weights()` | **write/action + human override** | agent removes a detector from verdict influence, human restores it |
 | `draft_fact_check_note` / `flag_for_human_review` | new | action | per-case output artifact |
 
 ## Project-complete checklist (when ALL true, stop building)
@@ -172,6 +178,7 @@ Expose these as OpenAPI tools (new thin backend endpoints over existing `analysi
 - [x] Public follow-up agent plans bounded multi-tool investigations from one user question, no hardcoded order. Build/smoke verified; still rehearse on final demo media.
 - [x] Agent can call a Phoenix MCP tool through ADK.
 - [x] `recalibrate_detector_weight` writes to Firestore and appears in `/stats` (verified with no-op `1.0x`).
+- [x] `bench_detector` and `reactivate_detector` are wired through backend endpoints, Firestore, verdict weights, operator feed, and Detector Influence controls.
 - [x] `detect_accuracy_drift` returns a real recent-vs-historical signal shape from Firestore feedback.
 - [ ] The money-shot conversation reproduces cleanly on demand.
 - [x] Repo clearly contains real Agent Builder/ADK + Phoenix MCP usage (judges can see it).

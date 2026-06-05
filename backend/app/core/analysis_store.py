@@ -404,6 +404,8 @@ def get_stats() -> Optional[dict[str, Any]]:
                 "agent_weight_override": _bounded_multiplier(data.get("agent_weight_override")),
                 "agent_override_reason": data.get("agent_override_reason"),
                 "agent_override_updated_at": data.get("agent_override_updated_at"),
+                "agent_benched": bool(data.get("agent_benched")),
+                "agent_bench_reason": data.get("agent_bench_reason"),
                 "avg_latency_seconds": float(data.get("avg_latency_seconds") or 0.0),
                 "last_updated": data.get("last_updated"),
             }
@@ -466,6 +468,10 @@ def get_learned_weights(media_type: str = "image") -> dict[str, float]:
         try:
             for doc in db.collection("detector_stats").stream():
                 data = doc.to_dict() or {}
+                if data.get("agent_benched"):
+                    # The agent took this detector out of rotation: zero influence on the verdict.
+                    weights[doc.id] = 0.0
+                    continue
                 override = _bounded_multiplier(data.get("agent_weight_override"))
                 if override is not None:
                     mult = override
@@ -605,8 +611,9 @@ def compute_detector_roi() -> dict[str, Any]:
             override_active = override is not None and abs(float(override) - 1.0) > 0.01
         except (TypeError, ValueError):
             override_active = False
-        weight_source = "agent" if override_active else "calibrated"
-        override_reason = row.get("agent_override_reason") if override_active else None
+        benched = bool(row.get("agent_benched"))
+        weight_source = "benched" if benched else ("agent" if override_active else "calibrated")
+        override_reason = row.get("agent_bench_reason") if benched else (row.get("agent_override_reason") if override_active else None)
         fs_latency = float(row.get("avg_latency_seconds") or 0.0)
         phx = phx_detectors.get(detector_id) or {}
         phx_latency = phx.get("avg_latency_seconds")
@@ -643,18 +650,21 @@ def compute_detector_roi() -> dict[str, Any]:
                 insight = f"Only {acc_pct}% confirmed accuracy for limited verdict value. Down-weighted to {weight:.2f}x."
         if phx_available and error_rate > 0 and phx_runs:
             insight += f" Phoenix shows a {round(error_rate * 100)}% error rate across {phx_runs} recent runs."
+        if benched:
+            insight = f"Benched by agent: {acc_pct}% confirmed accuracy at {lat_str} per run, not earning its compute. Excluded from the verdict until a human reactivates it."
 
         rows.append(
             {
                 "detector_id": detector_id,
                 "confirmed_accuracy": round(accuracy, 4),
                 "confirmed_total": confirmed_total,
-                "weight_multiplier": round(weight, 2),
+                "weight_multiplier": 0.0 if benched else round(weight, 2),
                 "avg_latency_seconds": round(latency, 2),
                 "phoenix_runs": phx_runs,
                 "phoenix_error_rate": round(error_rate, 4),
                 "efficiency": efficiency,
                 "tier": tier,
+                "benched": benched,
                 "insight": insight,
                 "weight_source": weight_source,
                 "override_reason": override_reason,
@@ -828,6 +838,69 @@ def recalibrate_detector_weight(detector_id: str, multiplier: float, reason: str
     except Exception as exc:
         log.warning("Could not recalibrate detector %s: %s", detector, exc)
         return {"ok": False, "error": "Could not persist recalibration.", "detector_id": detector}
+
+
+def bench_detector(detector_id: str, reason: str = "agent_bench") -> dict[str, Any]:
+    """Take a detector out of rotation: the verdict engine gives it zero influence
+    until a human reactivates it. This is the agent's strongest governance action,
+    reserved for detectors that are both unreliable and expensive (a cost-and-accuracy
+    call the passive accuracy-only loop cannot make). Reversible via reactivate_detector."""
+    db = get_db()
+    detector = (detector_id or "").strip()
+    if db is None or not detector:
+        return {"ok": False, "error": "Firebase unavailable or detector_id missing.", "detector_id": detector}
+    try:
+        db.collection("detector_stats").document(detector).set(
+            {
+                "agent_benched": True,
+                "agent_bench_reason": (reason or "agent_bench")[:500],
+                "agent_bench_updated_at": _now_iso(),
+                "last_updated": _now_iso(),
+            },
+            merge=True,
+        )
+        clear_learned_weights_cache()
+        log_agent_action(
+            "bench",
+            f"Benched {detector}: {(reason or 'agent_bench')[:200]}",
+            {"detector_id": detector, "reason": (reason or "agent_bench")[:300]},
+        )
+        return {"ok": True, "detector_id": detector, "benched": True, "reason": (reason or "agent_bench")[:500]}
+    except Exception as exc:
+        log.warning("Could not bench detector %s: %s", detector, exc)
+        return {"ok": False, "error": "Could not persist bench.", "detector_id": detector}
+
+
+def reactivate_detector(detector_id: str) -> dict[str, Any]:
+    """Human override: bring a benched detector back into rotation and clear any
+    agent weight override. This is the human-in-the-loop control over the agent."""
+    db = get_db()
+    detector = (detector_id or "").strip()
+    if db is None or not detector:
+        return {"ok": False, "error": "Firebase unavailable or detector_id missing.", "detector_id": detector}
+    try:
+        from firebase_admin import firestore
+
+        db.collection("detector_stats").document(detector).set(
+            {
+                "agent_benched": firestore.DELETE_FIELD,
+                "agent_bench_reason": firestore.DELETE_FIELD,
+                "agent_weight_override": firestore.DELETE_FIELD,
+                "agent_override_reason": firestore.DELETE_FIELD,
+                "last_updated": _now_iso(),
+            },
+            merge=True,
+        )
+        clear_learned_weights_cache()
+        log_agent_action(
+            "reactivate",
+            f"Reactivated {detector} (human override)",
+            {"detector_id": detector},
+        )
+        return {"ok": True, "detector_id": detector, "benched": False}
+    except Exception as exc:
+        log.warning("Could not reactivate detector %s: %s", detector, exc)
+        return {"ok": False, "error": "Could not reactivate.", "detector_id": detector}
 
 
 def log_agent_action(action_type: str, summary: str, detail: Optional[dict[str, Any]] = None) -> None:

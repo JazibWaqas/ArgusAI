@@ -16,11 +16,13 @@ from .chat.store import store as session_store
 from .core.analysis_store import (
     annotate_phoenix_feedback,
     apply_feedback,
+    bench_detector,
     build_history_context,
     compute_confidence_calibration,
     compute_detector_roi,
     detect_accuracy_drift,
     get_review_queue,
+    reactivate_detector,
     fallback_stats_from_xray,
     get_agent_actions,
     get_detector_reliability,
@@ -382,6 +384,28 @@ async def agent_review_queue(limit: int = 12) -> dict:
     return get_review_queue(limit)
 
 
+class ReactivateDetectorRequest(BaseModel):
+    detector_id: str = Field(..., min_length=1, max_length=120)
+
+
+class BenchDetectorRequest(BaseModel):
+    detector_id: str = Field(..., min_length=1, max_length=120)
+    reason: str | None = Field(default=None, max_length=500)
+
+
+@app.post("/agent/tools/bench-detector")
+async def agent_tool_bench_detector(body: BenchDetectorRequest) -> dict:
+    """Human override: take a detector out of verdict rotation until reactivated."""
+    return bench_detector(body.detector_id, body.reason or "manual operator bench")
+
+
+@app.post("/agent/tools/reactivate-detector")
+async def agent_tool_reactivate_detector(body: ReactivateDetectorRequest) -> dict:
+    """Human override: bring a benched detector back into rotation (and clear any
+    agent weight override). This is the human-in-the-loop control over the agent."""
+    return reactivate_detector(body.detector_id)
+
+
 @app.post("/agent/investigate")
 async def agent_investigate() -> dict:
     """In-app reliability analyst: fuses Firestore outcome truth (confirmed accuracy,
@@ -463,6 +487,34 @@ async def agent_investigate() -> dict:
                 "summary": f"Recalibrated {det}: {res.get('previous_multiplier')}x to {res.get('weight_multiplier')}x weight.",
             })
 
+    # Governance action only the agent can make: bench a detector that is both
+    # unreliable AND expensive. The cost/latency signal lives only in Phoenix, so
+    # the accuracy-only self-calibration loop could never make this call. Reserved
+    # for low-value detectors costing >= 5s/run and not already benched. Reversible
+    # by a human from the console.
+    BENCH_LATENCY_THRESHOLD = 5.0
+    benched_this_run = []
+    for r in roi_rows:
+        if (
+            r.get("tier") == "low_value"
+            and not r.get("benched")
+            and float(r.get("avg_latency_seconds") or 0) >= BENCH_LATENCY_THRESHOLD
+        ):
+            det = r.get("detector_id")
+            acc_pct = round(float(r.get("confirmed_accuracy") or 0) * 100)
+            lat = float(r.get("avg_latency_seconds") or 0)
+            reason = f"{acc_pct}% confirmed accuracy at {lat:.1f}s per run, cost-to-value below threshold"
+            res = bench_detector(det, reason=reason)
+            if res.get("ok"):
+                name = _detector_display_name(det)
+                actions.append({"type": "bench", "detector_id": det, "summary": f"Benched {name}"})
+                benched_this_run.append({"id": det, "name": name, "reason": reason})
+                steps.append({
+                    "tool": "bench_detector",
+                    "summary": f"Benched {name}: {reason}. Excluded from the verdict until a human reactivates it.",
+                })
+            break  # one decisive bench per run keeps the action legible
+
     detector_decisions = [
         {
             "id": r.get("detector_id"),
@@ -496,6 +548,7 @@ async def agent_investigate() -> dict:
         ],
         "low_value_detectors": low_value_detectors,
         "low_value_detector_names": low_value_names,
+        "benched_detectors": benched_this_run,
         "least_efficient_detector": (roi.get("system") or {}).get("least_efficient_detector"),
         "drifted_detectors": [{"id": d.get("detector_id"), "name": _detector_display_name(d.get("detector_id")), "recent": d.get("recent_accuracy"), "historical": d.get("historical_accuracy")} for d in drifted],
         "recalibrations": actions,
@@ -503,24 +556,32 @@ async def agent_investigate() -> dict:
     client = LLMClient()
     narration = await client.followup_answer(
         "You are the ArgusAI reliability analyst. You have just fused human-confirmed "
-        "accuracy from Firestore with behavioral telemetry from Arize Phoenix (model "
-        "calls, token usage, fallback rate, detector latency and error rate). In 3 to 5 "
-        "sentences, explain what you checked across both Phoenix and Firestore, name any "
-        "low-value detectors from low_value_detectors, identify detectors earning their place, "
-        "and state what action you took. "
-        "CRITICAL about actions: you changed detector weights ONLY if the recalibrations list "
-        "is non-empty. If recalibrations is empty, do NOT say you down-weighted, reduced, lowered, "
-        "or changed any weight in this review. The low-value detectors are already carrying reduced "
-        "weight from earlier learning, so describe them as already down-weighted and say you flagged "
-        "them and made no new change this run. If recalibrations is non-empty, describe exactly those "
-        "before-to-after weight changes and why. "
-        "Do not say all detectors are earning if low_value_detectors is non-empty. "
+        "accuracy from Firestore with behavioral telemetry from Arize Phoenix (model calls, "
+        "token usage, fallback rate, detector latency and error rate). Write 3 to 5 sentences. "
+        "LEAD with the strongest action you took this run. "
+        "If benched_detectors is non-empty: lead with the bench. State that you took that detector "
+        "OUT of the verdict because it is both unreliable and expensive (cite its accuracy and "
+        "latency), and stress this is a cost-and-reliability call the accuracy-only self-calibration "
+        "loop cannot make, because the cost and latency signal lives only in Arize Phoenix. Note a "
+        "human can reactivate it from the console. "
+        "If recalibrations is non-empty: also state those before-to-after weight changes and why. "
+        "CRITICAL: you changed weights or benched ONLY if those lists are non-empty. If both are empty, "
+        "do NOT claim you down-weighted, benched, or changed anything this run; say the low-value detectors "
+        "are already carrying reduced weight and you flagged them with no new change. "
+        "Then briefly name detectors earning their place. "
         "Cite specific numbers. Plain professional language, no em dashes, no lists.",
         "reliability_review",
         findings,
     )
     if not narration:
-        if actions:
+        if benched_this_run:
+            b = benched_this_run[0]
+            narration = (
+                f"I reviewed the pipeline through Arize Phoenix and Firestore across {len(roi_rows)} detectors and took one governance action: "
+                f"I benched {b['name']} ({b['reason']}), removing it from the verdict until a human reactivates it. "
+                "This is a cost-and-reliability call the accuracy-only self-calibration loop cannot make, because the cost signal lives only in Phoenix."
+            )
+        elif actions:
             names = ", ".join(a["detector_id"] for a in actions)
             narration = (
                 f"I fused confirmed accuracy from Firestore with Phoenix telemetry across {len(roi_rows)} detectors. "
@@ -539,7 +600,10 @@ async def agent_investigate() -> dict:
                 f"No detector has drifted beyond tolerance, so the current weighting stands.{tail}"
             )
 
-    review_summary = f"Fused Firestore accuracy with Phoenix telemetry across {len(roi_rows)} detectors; {len(actions)} recalibrated"
+    recalibrated_count = sum(1 for a in actions if a.get("type") == "recalibrate")
+    review_summary = f"Fused Firestore accuracy with Phoenix telemetry across {len(roi_rows)} detectors; {recalibrated_count} recalibrated"
+    if benched_this_run:
+        review_summary += f", {len(benched_this_run)} benched ({', '.join(b['name'] for b in benched_this_run)})"
     if low_value:
         review_summary += f", {len(low_value)} flagged low value"
     report_detail = {
@@ -550,12 +614,14 @@ async def agent_investigate() -> dict:
         "phoenix_telemetry": findings["phoenix_telemetry"],
         "detectors_evaluated": detector_decisions,
         "low_value_detectors": low_value_detectors,
+        "benched_detectors": benched_this_run,
         "recalibrations": actions,
         "drifted_detectors": findings["drifted_detectors"],
         "decision": {
             "detectors_reviewed": len(roi_rows),
             "drifted": len(drifted),
-            "recalibrated": len(actions),
+            "recalibrated": recalibrated_count,
+            "benched": len(benched_this_run),
             "low_value": len(low_value),
             "summary": review_summary,
         },

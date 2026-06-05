@@ -156,6 +156,13 @@ const AUDIO_SCAN_STEPS = [
   "Generating audio report...",
 ];
 
+const FOLLOWUP_AGENT_STEPS = [
+  "Reviewing current evidence",
+  "Checking detector reliability",
+  "Reading Phoenix and Firestore context",
+  "Preparing investigator response",
+];
+
 const CAROUSEL_IMAGES = [
   "/carousel/1.jpg",
   "/carousel/2.jpg",
@@ -1143,6 +1150,32 @@ function AdminConsole({ onExit, onLogout, arizeHealth, onHealthUpdate, statsData
     }
   }, [loadAdminData, roi]);
 
+  const reactivateDetector = useCallback(async (detectorId) => {
+    try {
+      await fetch(`${API_BASE}/agent/tools/reactivate-detector`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ detector_id: detectorId }),
+      });
+      loadAdminData();
+    } catch {
+      /* best effort */
+    }
+  }, [loadAdminData]);
+
+  const benchDetectorManually = useCallback(async (detectorId) => {
+    try {
+      await fetch(`${API_BASE}/agent/tools/bench-detector`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ detector_id: detectorId, reason: "manual operator bench" }),
+      });
+      loadAdminData();
+    } catch {
+      /* best effort */
+    }
+  }, [loadAdminData]);
+
   const BOOT_LINES = [
     "Google Agent Builder · session started",
     "Arize Phoenix MCP · connected",
@@ -1159,7 +1192,7 @@ function AdminConsole({ onExit, onLogout, arizeHealth, onHealthUpdate, statsData
   // The operator feed shows what the reliability agent does to govern the system.
   // Per-case consumer artifacts (fact-check notes drafted from the public chat)
   // belong to that case, not this system-governance feed.
-  const GOVERNANCE_ACTIONS = new Set(["review", "recalibrate", "flag_review"]);
+  const GOVERNANCE_ACTIONS = new Set(["review", "recalibrate", "flag_review", "bench", "reactivate"]);
   const governanceActions = agentActions.filter((a) => GOVERNANCE_ACTIONS.has(a.type));
   const roiRows = roi?.detectors || [];
   const roiSystem = roi?.system || {};
@@ -1329,7 +1362,7 @@ function AdminConsole({ onExit, onLogout, arizeHealth, onHealthUpdate, statsData
                       <>
                         <ol className="agent-steps">
                           {(agentResult?.steps || []).slice(0, revealedSteps).map((s, i) => (
-                            <li key={i} className={s.tool === "recalibrate_detector_weight" ? "agent-step-action" : ""}>
+                            <li key={i} className={(s.tool === "recalibrate_detector_weight" || s.tool === "bench_detector") ? "agent-step-action" : ""}>
                               <span className={`step-platform ${stepPlatform(s) === "Arize MCP" ? "mcp" : ""}`}>{stepPlatform(s)}</span>
                               <span className="mono">{s.tool}</span> {s.summary}
                             </li>
@@ -1345,8 +1378,8 @@ function AdminConsole({ onExit, onLogout, arizeHealth, onHealthUpdate, statsData
 
                 <div className="admin-events">
                   {governanceActions.length ? governanceActions.map((a) => {
-                    const cls = a.type === "recalibrate" ? "calib" : a.type === "flag_review" ? "warn" : "";
-                    const label = a.type === "recalibrate" ? "Recalibrated" : a.type === "flag_review" ? "Flagged" : "Reviewed";
+                    const cls = a.type === "bench" ? "warn" : a.type === "recalibrate" ? "calib" : a.type === "flag_review" ? "warn" : "";
+                    const label = a.type === "bench" ? "Benched" : a.type === "reactivate" ? "Reactivated" : a.type === "recalibrate" ? "Recalibrated" : a.type === "flag_review" ? "Flagged" : "Reviewed";
                     const actionId = a.id || `${a.timestamp}-${a.summary}`;
                     const expanded = expandedAgentActionId === actionId;
                     const report = a.detail?.report || null;
@@ -1508,17 +1541,33 @@ function AdminConsole({ onExit, onLogout, arizeHealth, onHealthUpdate, statsData
                                       {driftDelta < 0 ? "↘" : "↗"} {Math.abs(Math.round(driftDelta * 100))}% recent
                                     </span>
                                   )}
-                                  {r.weight_source === "agent" && (
-                                    <span className="lb-source-agent" title={r.override_reason || "The reliability agent set this weight"}>
-                                      Agent override
-                                    </span>
+                                  {r.weight_source === "benched" ? (
+                                    <>
+                                      <span className="lb-source-benched" title={r.override_reason || "Benched by the reliability agent"}>
+                                        Benched by agent
+                                      </span>
+                                      <button className="lb-reactivate" onClick={() => reactivateDetector(r.detector_id)} title="Bring this detector back into rotation">
+                                        Reactivate
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <>
+                                      {r.weight_source === "agent" && (
+                                        <span className="lb-source-agent" title={r.override_reason || "The reliability agent set this weight"}>
+                                          Agent override
+                                        </span>
+                                      )}
+                                      <span className="lb-weight" style={{ color: tier.color, borderColor: `${tier.color}55` }}>
+                                        {r.weight_multiplier?.toFixed(2)}× weight
+                                      </span>
+                                      <span className="lb-trust" style={{ color: tier.color, borderColor: `${tier.color}55`, background: `${tier.color}14` }}>
+                                        {tier.label}
+                                      </span>
+                                      <button className="lb-disable" onClick={() => benchDetectorManually(r.detector_id)} title="Disable this detector until it is reactivated">
+                                        Disable
+                                      </button>
+                                    </>
                                   )}
-                                  <span className="lb-weight" style={{ color: tier.color, borderColor: `${tier.color}55` }}>
-                                    {r.weight_multiplier?.toFixed(2)}× weight
-                                  </span>
-                                  <span className="lb-trust" style={{ color: tier.color, borderColor: `${tier.color}55`, background: `${tier.color}14` }}>
-                                    {tier.label}
-                                  </span>
                                 </div>
                               </div>
                               <div className="lb-bar-track">
@@ -1869,6 +1918,7 @@ export default function App() {
   const [followUp, setFollowUp]         = useState("");
   const [showJsonById, setShowJsonById] = useState({});
   const [scanStep, setScanStep]         = useState(0);
+  const [followUpStep, setFollowUpStep] = useState(0);
   const [pdfLoadingForId, setPdfLoadingForId] = useState(null);
   const [arizeHealth, setArizeHealth] = useState(null);
   const [statsData, setStatsData] = useState(null);
@@ -1888,6 +1938,13 @@ export default function App() {
     const id = setInterval(() => setScanStep((s) => s + 1), 2200);
     return () => clearInterval(id);
   }, [isAnalyzing]);
+
+  useEffect(() => {
+    if (!isSending) return;
+    setFollowUpStep(0);
+    const id = setInterval(() => setFollowUpStep((s) => s + 1), 1800);
+    return () => clearInterval(id);
+  }, [isSending]);
 
   const createFreshSession = useCallback(async () => {
     let coldStartTimer = null;
@@ -2102,8 +2159,15 @@ export default function App() {
   const handleFollowUp = async () => {
     const text = followUp.trim();
     if (!text || !sessionId) return;
-    setIsSending(true); setFollowUp("");
-    setMessages((prev) => [...prev, { id: `u-${Date.now()}`, role: "user", kind: "text", text }]);
+    const now = Date.now();
+    const pendingId = `pending-${now}`;
+    setIsSending(true);
+    setFollowUp("");
+    setMessages((prev) => [
+      ...prev,
+      { id: `u-${now}`, role: "user", kind: "text", text },
+      { id: pendingId, role: "assistant", kind: "agent_pending" },
+    ]);
     try {
       const res  = await fetch(`${API_BASE}/sessions/${sessionId}/messages`, {
         method: "POST",
@@ -2113,9 +2177,17 @@ export default function App() {
       const data = await res.json();
       const reply = res.ok ? data.reply : (data.error || "Could not answer.");
       const toolCalls = Array.isArray(data.tool_calls) ? data.tool_calls : [];
-      setMessages((prev) => [...prev, { id: `a-${Date.now()}`, role: "assistant", kind: "text", text: reply, toolCalls }]);
+      setMessages((prev) => prev.map((m) => (
+        m.id === pendingId
+          ? { id: `a-${Date.now()}`, role: "assistant", kind: "text", text: reply, toolCalls }
+          : m
+      )));
     } catch {
-      setMessages((prev) => [...prev, { id: `a-${Date.now()}`, role: "assistant", kind: "text", text: "Network error." }]);
+      setMessages((prev) => prev.map((m) => (
+        m.id === pendingId
+          ? { id: `a-${Date.now()}`, role: "assistant", kind: "text", text: "Network error." }
+          : m
+      )));
     } finally {
       setIsSending(false);
     }
@@ -2289,6 +2361,26 @@ export default function App() {
                     <p>{m.text}</p>
                   </div>
                 )}
+                {m.role === "assistant" && m.kind === "agent_pending" && (
+                  <div className="assistant-bubble agent-pending-bubble">
+                    <div className="agent-pending-head">
+                      <div className="spin-ring" />
+                      <span>Investigator agent is working</span>
+                    </div>
+                    <div className="tool-call-strip pending-tool-strip">
+                      {FOLLOWUP_AGENT_STEPS.map((step, idx) => {
+                        const active = idx === followUpStep % FOLLOWUP_AGENT_STEPS.length;
+                        const complete = idx < followUpStep % FOLLOWUP_AGENT_STEPS.length;
+                        return (
+                          <span key={step} className={`tool-call-chip pending-tool-chip ${active ? "active" : ""} ${complete ? "complete" : ""}`}>
+                            <Target size={12} />
+                            {step}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
                 {m.role === "assistant" && m.kind === "audio_report" && m.report && (
                   <AudioReportCard
                     reportData={m.report}
@@ -2333,7 +2425,7 @@ export default function App() {
                 <Send size={16} className="followup-icon" />
                 <input
                   className="followup-input"
-                  placeholder="Ask a follow-up question about this report…"
+                  placeholder={isSending ? "Investigator agent is working..." : "Ask a follow-up question about this report..."}
                   value={followUp}
                   onChange={(e) => setFollowUp(e.target.value)}
                   onKeyDown={(e) => {

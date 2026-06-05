@@ -1,6 +1,6 @@
 # ArgusAI Current Handoff
 
-Last updated: June 5, 2026.
+Last updated: June 6, 2026.
 
 This is the current source of truth for the next LLM/session. Read this before making new implementation decisions.
 
@@ -63,9 +63,39 @@ They operate on different signals and timescales, so the agent is not redundant.
 
 **Run order for recording (important):** start local backend on the new code + Docker Phoenix; run the real image/audio/video analyses and confirm verdicts (fills latency, calibration, annotations, accuracy); then record. The running backend must be restarted to pick up all the new code.
 
-**Honest notes carried forward:** (1) The console agent (`/agent/investigate`) is a fixed pipeline that narrates, not an open-ended tool-planner; the genuine tool-planning agents are the consumer follow-up chat and the ADK agent. Do not claim the console agent "chooses its tools." (2) The literal `@arizeai/phoenix-mcp` integration is the ADK agent in `agents/argusai_investigator`; the console's Phoenix reads are REST and labeled "Arize MCP". (3) Optional, not built: a telemetry-only agent action (down-weight/flag on Phoenix error/latency regardless of accuracy) would be the one thing the passive loop structurally cannot do; skipped because current Phoenix error rate is 0.
+**Honest notes carried forward:** (1) The console agent (`/agent/investigate`) is a fixed pipeline that narrates, not an open-ended tool-planner; the genuine tool-planning agents are the consumer follow-up chat and the ADK agent. Do not claim the console agent "chooses its tools." (2) The literal `@arizeai/phoenix-mcp` integration is the ADK agent in `agents/argusai_investigator`; the console's Phoenix reads are REST and labeled "Arize MCP". (3) The June 6 bench action is the strongest telemetry-aware governance action now built: it combines Phoenix cost/latency with Firestore outcome truth and removes a detector from future verdict influence when it is not worth its compute.
 
 **Files touched this session (June 5):** `backend/app/core/observability.py` (Phoenix instrumentation, telemetry reader, root-latency reader, span annotations), `backend/app/core/llm_client.py` (LLM spans + tokens), `backend/app/core/pipeline.py` + `audio_pipeline.py` (span kinds/sessions/ids, latency persistence), `backend/app/core/analysis_store.py` (`compute_detector_roi`, `compute_confidence_calibration`, `get_review_queue`, `annotate_phoenix_feedback` rewrite, latency backfill, weight_source), `backend/app/main.py` (`/agent/investigate` fusion + narration fix, `/agent/detector-roi`, `/agent/calibration`, `/agent/review-queue`), `backend/app/models/report.py` + `audio_report.py` (`phoenix_span_id`), `frontend/src/App.jsx` + `styles.css` (stack strip, boot/stream choreography, weight pulse, merged detector panel, calibration card, review queue, latency formatting, override badge, polish), plus em-dash/double-period/OSINT-cutoff copy fixes across detectors/PDF. All changes pass `python -m compileall backend/app` and `npm run build`.
+
+## June 6, 2026 - Agent Builder governance proof and controllability
+
+This pass made the Agent Builder story stronger and easier to defend. It added a real governance action beyond recalibration: the reliability agent can now bench a detector when Phoenix shows it is expensive and Firestore shows it is unreliable, and a human operator can reactivate it from the console.
+
+### Implemented locally, build verified
+
+- **Detector bench action is real and causal.** `bench_detector()` in `backend/app/core/analysis_store.py` writes `agent_benched: true` and `agent_bench_reason` to Firestore `detector_stats`, clears the learned-weight cache, logs an `agent_actions` row of type `bench`, and makes `get_learned_weights()` return `0.0` for that detector. This removes the detector from future verdict influence until reactivated.
+- **Human override is real.** `reactivate_detector()` clears `agent_benched`, `agent_bench_reason`, `agent_weight_override`, and `agent_override_reason`, clears the learned-weight cache, and logs a `reactivate` action. This is the human-in-the-loop control over the agent.
+- **New backend tool endpoints.** `POST /agent/tools/bench-detector` and `POST /agent/tools/reactivate-detector` exist in `backend/app/main.py`.
+- **Autonomous console agent can bench one detector per run.** `/agent/investigate` now benches a detector when it is `low_value`, not already benched, and has latency at or above 5.0s/run. It names the detector, cites accuracy and latency, appends a `bench_detector` step, includes `benched_detectors` in the persisted report, and leads the Gemini narration with the bench action when it happens. The one-bench-per-run rule keeps the demo legible and avoids a scary mass-disable moment.
+- **Detector Influence panel has full control.** Every non-benched detector row shows `Disable`; every benched row shows `Benched by agent` plus `Reactivate`. Manual disable posts to `/agent/tools/bench-detector` with reason `manual operator bench`; reactivation posts to `/agent/tools/reactivate-detector`.
+- **Follow-up chat has visible work indicators.** While `/sessions/{id}/messages` is running, the UI inserts an assistant pending bubble with rotating chips for reviewing evidence, checking detector reliability, reading Phoenix/Firestore context, and preparing the investigator response. It then replaces the pending bubble with the real answer and tool chips.
+- **Governance feed includes bench/reactivate.** `bench` and `reactivate` now appear in the operator feed. Expandable full reports remain the proof surface for `review` runs, including narration, tool trail, Phoenix telemetry snapshot, detector table, and decisions.
+
+### What this proves in the demo
+
+- The public follow-up Investigator Agent is a bounded Gemini function-calling agent. It can inspect cached media, query Firestore case history, explain detector influence, run live provenance, draft fact-check notes, and flag human review.
+- The operator Reliability Agent is a system-governance agent. It reads Phoenix telemetry plus Firestore outcomes, then changes how future verdicts are made by recalibrating or benching detector influence.
+- The Arize/Phoenix role is load-bearing: latency, error, model-call, token, and fallback telemetry are not just displayed. They inform whether a detector earns influence or is benched for cost-to-value.
+
+### Verification
+
+```powershell
+python -m compileall backend\app
+cd frontend
+npm run build
+```
+
+Both passed after the June 6 local changes.
 
 ## Fresh Session Instructions
 
@@ -358,7 +388,7 @@ All verified with `vite build` (passes) and backend syntax/import checks. The im
 Login + console as the command center:
 - Soft-gate **login modal** (header "Sign in"). Admin credential (`argusai2026`) routes to a separate full-page **operator console**; everyone else uses the product as guest. Demo-grade credential check in localStorage. The old floating-lock entry and modal admin panel were removed.
 - The console is now a real dashboard page (own header, Arize "why it's in the loop" band, agent status strip, trust leaderboard, drift arrows, agent activity, recent investigations, calibration events).
-- **In-app investigator agent**: `POST /agent/investigate` reviews drift + reliability + Phoenix health, recalibrates drifted detectors (real, logged), and narrates via Gemini. Triggered by a "Run investigator agent" button in the console; logs a `review` action every run so the Agent Activity feed always populates. This drives the agent from the website, not the terminal. It calls the tool functions directly to avoid an HTTP self-call deadlock (the ADK agent's tools hit the backend over HTTP, so the ADK agent must run as its own process).
+- **In-app investigator agent**: `POST /agent/investigate` reviews drift + reliability + Phoenix health, recalibrates drifted detectors, can bench one low-value high-latency detector per run, and narrates via Gemini. Triggered by a "Run investigator agent" button in the console; logs a full `review` report plus any `recalibrate` or `bench` action, so the Agent Activity feed is auditable. This drives the agent from the website, not the terminal. It calls the tool functions directly to avoid an HTTP self-call deadlock (the ADK agent's tools hit the backend over HTTP, so the ADK agent must run as its own process).
 - `GET /agent/activity` + Firestore `agent_actions` logging behind every agent tool action (recalibrate/flag/draft/review) with before→after detail.
 
 Two new measured, fundamental signals (additive, fully guarded — failure just hides the card):
@@ -576,41 +606,44 @@ False
 
 These need user/browser interaction or product judgment.
 
-1. Configure Google Cloud Agent Builder.
+1. Run the final local demo stack and confirm the operator agent shows a clear recalibrate or bench action.
+
+2. Configure Google Cloud Agent Builder if extra console proof is still desired.
    - Tool 1: `POST https://argusai-backend-1007754127412.us-central1.run.app/agent/analyze`
    - Tool 2: `POST https://argusai-backend-1007754127412.us-central1.run.app/agent/chat`
    - See `ContextFiles/AgentBuilderPhoenixSetup.md`.
 
-2. Connect Phoenix MCP.
+3. Connect Phoenix MCP.
    - Use `mcp/phoenix-mcp.json`.
    - Set `PHOENIX_DASHBOARD_URL=https://argusai-phoenix-ddmxiumrdq-uc.a.run.app`.
    - `PHOENIX_API_KEY` is blank for current unauthenticated self-hosted Phoenix.
    - Some UIs may not like an empty `--apiKey`; if so, remove the `--apiKey` args manually for this self-hosted setup.
 
-3. Run the actual Pope puffer demo image end to end.
+4. Run the actual Pope puffer demo image end to end.
    - Need the chosen demo image ready.
    - Suggested context: `Pope Francis wearing a Balenciaga-style puffer jacket, March 2023.`
    - Confirm OSINT names useful sources/dates.
 
-4. Prepare calibration-divergence demo shot.
-   - The feature exists, but the admin panel currently shows no active divergence because latest live tests agreed: spectral and semantic both said AI.
-   - For the video, either prepare a fixture/sequence that creates disagreement or use a pre-recorded trace/admin state if the demo needs this exact moment.
+5. Prepare a calibration/recalibration/bench demo shot.
+   - The strongest current money shot is the operator agent taking a real action, then showing the Detector Influence row with `Agent override` or `Benched by agent`.
+   - If no natural bench triggers, manual `Disable`/`Reactivate` proves human controllability, but the recorded demo should prefer an autonomous agent action.
 
-5. Record the 3-minute demo video.
+6. Record the 3-minute demo video.
    - Show frontend upload.
    - Show evidence trail.
    - Show admin panel with Phoenix traces.
-   - Show Agent Builder configured/calling tools.
+   - Show the operator agent's expandable report and Detector Influence action.
+   - Show Agent Builder configured/calling tools only if useful.
    - Show Phoenix UI if useful.
 
-6. Devpost submission.
+7. Devpost submission.
    - Hosted project URL: frontend Cloud Run URL.
    - Code repo URL: public GitHub repo.
    - Demo video URL.
    - Track: Arize.
    - Description should emphasize forensic investigation, Gemini, Agent Builder, and Arize/Phoenix reliability governance.
 
-7. Consider setting `min-instances=1` near demo/judging.
+8. Consider setting `min-instances=1` near demo/judging.
    - Backend and Phoenix currently use `min-instances=0` to avoid idle spend.
    - Cold starts may be annoying during recording/judging.
    - Phoenix Cloud Run is ephemeral. If it scales to zero/restarts, in-memory Phoenix data can disappear.
@@ -634,8 +667,8 @@ These need user/browser interaction or product judgment.
 
 1. Open the public frontend and run one image/video/audio manually.
 2. Confirm admin login works with `argusai2026`.
-3. Configure Agent Builder tools.
-4. Connect Phoenix MCP.
-5. Run and record Pope puffer OSINT.
-6. Prepare one clean calibration-governor demo artifact or decide to show the detector health/admin traces without forcing divergence.
+3. Run the operator agent and capture one clean recalibrate or bench action.
+4. Run and record Pope puffer OSINT.
+5. Configure Agent Builder/Phoenix MCP only if extra setup proof is still desired.
+6. Record the 3-minute demo.
 7. Write final Devpost copy.

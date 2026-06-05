@@ -1,6 +1,6 @@
 # ArgusAI Implementation Progress
 
-Last updated: June 5, 2026.
+Last updated: June 6, 2026.
 
 For full details, read `ContextFiles/CurrentHandoff.md`. This file is the concise progress tracker. See the June 5 section in `CurrentHandoff.md` for the operator-console strategy, the Phoenix instrumentation, and the cross-store reliability analyst.
 
@@ -12,6 +12,15 @@ For full details, read `ContextFiles/CurrentHandoff.md`. This file is the concis
 - Operator console fully implemented (Claude, not Codex): stack strip with Agent Builder pill, agent-run choreography (boot sequence + streamed steps + platform tags + live weight pulse), merged detector panel (Trust Leaderboard removed, drift arrows + self-calibration banner folded into Detector Influence), confidence-calibration card (`/agent/calibration`), human-review queue (`/agent/review-queue`), agent-vs-passive weight distinction (`weight_source` + "Agent override" badge), two-tier framing copy. Builds clean.
 - Latency fixed: image/video pipeline now persists `latency_seconds`; old rows backfill from Phoenix root-span durations via `get_phoenix_root_latencies()`; display formats minutes (`2m 52s`).
 - Agent run verified live (agent recalibrated a drifted detector with Phoenix MCP-labeled steps and honest narration). See the June 5 (continued) section in `CurrentHandoff.md` for the complete record, run order, and caveats.
+
+## June 6, 2026 snapshot
+
+- Reliability governance now includes detector benching, not only weight recalibration. `bench_detector()` persists `agent_benched` and a reason to Firestore, clears the learned-weight cache, and makes `get_learned_weights()` return `0.0` so that detector has no future verdict influence until reactivated.
+- Human control is wired end to end. `reactivate_detector()` clears the bench and any agent override, and the Detector Influence panel shows `Disable` on active detectors and `Reactivate` on benched detectors.
+- New backend endpoints are live in code: `POST /agent/tools/bench-detector` and `POST /agent/tools/reactivate-detector`.
+- `/agent/investigate` can autonomously bench one low-value high-latency detector per run, names the detector, cites accuracy and latency, stores `benched_detectors` in the expandable report, and logs a `bench` governance action.
+- Follow-up chat now has visible pending UI while the Investigator Agent works, then replaces it with the actual answer and tool chips.
+- Latest local verification passed: `python -m compileall backend\app` and `npm run build`.
 
 ## Status
 
@@ -63,6 +72,7 @@ Google Cloud:
 - Local ADK agent package added at `agents/argusai_investigator`.
 - ADK agent uses Gemini, ArgusAI backend tools, and Phoenix MCP via `npx @arizeai/phoenix-mcp`.
 - Agent action endpoints added: detector reliability, similar cases, drift detection, detector recalibration, fact-check note, and human-review artifact.
+- Agent bench/reactivate endpoints added. The agent can remove a detector from future verdict influence by benching it, and the operator can manually disable or reactivate any detector from the Detector Influence panel.
 - Fused Firestore outcomes with Phoenix telemetry for causal system self-calibration (June 4):
   - Advanced OpenInference tracing: mapped `CHAIN`, `LLM`, and `TOOL` span kinds, captured inputs/outputs, tracked `session.id`, and tagged LLM model names + prompt/completion/total tokens.
   - Span evaluations: Feedback widget writes real human-evaluation annotations to `/v1/span_annotations` of Phoenix by capturing and mapping `phoenix_span_id`.
@@ -70,6 +80,11 @@ Google Cloud:
   - Cross-Store ROI Synthesis: `/agent/detector-roi` fuses Phoenix behavioral telemetry (latency, errors, runs) with Firestore outcome truth (confirmed accuracy, weight overrides) to rank detector efficiency and generate agent insights.
   - Upgraded Operator Console UI: Monospace styled Detector ROI Panel showing average tokens, latency, cost-efficiency tier, and custom agent insights. Activity feed scoped to system-level governance events; empty cards hide dynamically.
   - Upgraded Investigator Agent: `/agent/investigate` reads Phoenix telemetry, checks accuracy drift, recalibrates drifted detector weights (writes to Firestore), and narrates a reliability summary with concrete cost/latency/accuracy metrics.
+- Agent governance update (June 6):
+  - `bench_detector()` writes `agent_benched` to Firestore, logs a `bench` action, and forces detector influence to `0.0x` through `get_learned_weights()`.
+  - `reactivate_detector()` clears the bench and override fields, restoring human control.
+  - Detector Influence rows show manual `Disable` or `Reactivate` controls.
+  - Expandable governance reports include bench decisions when the agent takes them.
 
 ## Live Verification
 
@@ -115,6 +130,7 @@ Firestore/Gemini:
 - Live frontend revision after Agent Builder/chain-of-custody work: `argusai-frontend-00005-r54`.
 - Live `/stats` after the admin consistency fix returned matching Firestore global totals and media/verdict breakdowns; admin dashboard now polls every 15 seconds while open.
 - Backend agent action endpoints verified locally on port `8001`; `recalibrate-detector` wrote a bounded `1.0x` no-op override to Firestore for `spectral_artifacts`.
+- Latest local syntax/build verification after bench/reactivate and follow-up pending UI passed: `python -m compileall backend\app` and `npm run build`.
 - Backend agent action endpoints verified on Cloud Run after deploy: `/agent/tools/detectors/spectral_artifacts/reliability` and `/agent/tools/accuracy-drift` returned Firestore-backed responses.
 - ADK default model is `gemini-3.5-flash`; during verification Gemini 3.5 returned temporary `503 high demand`, so `ADK_GEMINI_MODEL=gemini-2.5-flash` was used once to prove tool execution.
 
@@ -129,7 +145,7 @@ Firestore/Gemini:
    - `POST https://argusai-backend-1007754127412.us-central1.run.app/agent/chat`
    - These endpoints are no longer generic Gemini wrappers; they now query Firestore-backed history context.
 3. Run the Pope puffer demo image end to end and confirm OSINT output.
-4. Prepare or capture a calibration/recalibration demo moment.
+4. Prepare or capture a calibration/recalibration/bench demo moment.
 5. Record the 3-minute demo.
 6. Complete Devpost submission.
 7. Optionally set backend/Phoenix `min-instances=1` during recording/judging to avoid cold starts and Phoenix data reset.

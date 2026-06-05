@@ -7,6 +7,7 @@ Critical framing:
 - ArgusAI is a forensic investigation platform, not a classifier.
 - Evidence trail, not score.
 - Arize Phoenix must be load-bearing: detector health events affect verdict influence.
+- The operator Reliability Agent can now recalibrate or bench detector influence from Phoenix telemetry plus Firestore outcomes. Benching is causal: a benched detector gets `0.0x` future verdict influence until a human reactivates it.
 - OSINT is the user-facing showstopper: provenance, sources, dates, research hops.
 - Do not add more detectors or redesign the UI unless explicitly asked.
 - **JUDGES ARE NOT OPENING AND TESTING the admin panel, nor do they get admin access.** They only watch the recorded demo video. At most, they will open the public site and browse standard user flows. Do not suggest adding password hints, exposing admin credentials in the UI, or modifying admin-panel security for judges. Everything they need is shown in the demo.
@@ -35,6 +36,10 @@ Current implemented hackathon additions:
 - Admin dashboard stats are live and consistent: `/stats` derives global counts from Firestore `/analyses`, the admin console polls every 15s, and the main app refreshes stats after each completed analysis.
 - Firestore is active on Cloud Run with Firebase project `argusai-8d9fe`.
 - Agent Builder endpoints now query Firestore history context before responding, including total analyses, same-media counts, detector reliability, recent same-media cases, and `phoenix_trace_id`.
+- Public follow-up chat is a bounded Gemini tool-using Investigator Agent with visible pending UI and tool chips. It can inspect cached media, query case history, explain detector influence, run live provenance, draft a fact-check note, and flag human review.
+- Agent governance endpoints now include detector reliability, similar cases, accuracy drift, recalibration, bench detector, reactivate detector, draft fact-check note, and human review.
+- `/agent/investigate` fuses Phoenix telemetry and Firestore outcomes, persists expandable auditable reports, can recalibrate drifted detectors, and can bench one low-value high-latency detector per run.
+- Detector Influence rows expose human controls: `Disable` for active detectors and `Reactivate` for benched detectors.
 - Verdict cards and official PDFs surface Phoenix chain-of-custody links/trace IDs.
 - Admin dashboard includes a concise Firestore/Phoenix framing line for judges.
 - Arize badge, OSINT research UI, dynamic media UX, and password-gated admin dashboard in `frontend/src/App.jsx`.
@@ -51,12 +56,13 @@ Current implemented hackathon additions:
 
 Next highest-leverage work:
 
-1. Configure Agent Builder tools against `/agent/analyze` and `/agent/chat`.
-2. Connect the Phoenix MCP server using `mcp/phoenix-mcp.json`.
-3. Run the Pope puffer demo image end to end and confirm OSINT sources/dates.
-4. Capture a prepared calibration-governor or spectral circuit-breaker trace for the demo.
-5. Record the 3-minute demo.
-6. Complete Devpost copy emphasizing “forensic investigation platform.”
+1. Run the final demo stack locally and confirm the operator agent can show a clear recalibrate or bench action.
+2. Configure Agent Builder tools against `/agent/analyze` and `/agent/chat` if extra console proof is still desired.
+3. Connect the Phoenix MCP server using `mcp/phoenix-mcp.json`.
+4. Run the Pope puffer demo image end to end and confirm OSINT sources/dates.
+5. Capture a prepared calibration/recalibration/bench trace for the demo.
+6. Record the 3-minute demo.
+7. Complete Devpost copy emphasizing "forensic investigation platform."
 
 Known caveat:
 

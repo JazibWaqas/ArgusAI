@@ -1,6 +1,6 @@
 # Agent Builder and Phoenix MCP Setup
 
-Last updated: June 2, 2026.
+Last updated: June 6, 2026.
 
 Read `ContextFiles/CurrentHandoff.md` first for the complete deployed state.
 
@@ -34,6 +34,14 @@ Verified locally:
 - Phoenix returned project `argusai-forensics` with internal ID `UHJvamVjdDoy` and real traces/spans.
 
 If Gemini 3.5 returns temporary `503 high demand`, use `ADK_GEMINI_MODEL=gemini-2.5-flash` for the recording fallback.
+
+## Current Agent Surfaces
+
+There are now three agent-facing surfaces. Do not confuse their roles in the demo:
+
+1. **Repo-local ADK agent** at `agents/argusai_investigator`: canonical Agent Builder plus Phoenix MCP artifact. It uses Gemini, backend tools, and `@arizeai/phoenix-mcp`.
+2. **Public follow-up Investigator Agent** at `/sessions/{session_id}/messages`: bounded Gemini function-calling loop. It can inspect cached media, query case history, explain detector influence, run live provenance, draft fact-check notes, and flag human review. The UI shows tool-use chips and a pending work indicator.
+3. **Operator Reliability Agent** at `/agent/investigate`: system-governance loop. It reads Phoenix telemetry and Firestore outcomes, then recalibrates or benches detector influence under human oversight.
 
 Create two tools in Google Cloud Agent Builder.
 
@@ -102,6 +110,24 @@ Recommended Agent Builder instruction:
 You are ArgusAI, a forensic investigation agent. Do not describe the product as a simple classifier. Use analyze_media for media authenticity questions. Use ask_forensic_followup for follow-up questions after analysis. Emphasize evidence trail, OSINT provenance, detector reliability, Firestore history, and Phoenix auditability. If history_context is present, use it to explain accumulated reliability, but do not overclaim legal certainty.
 ```
 
+## Backend Tool Endpoints
+
+These endpoints back the ADK agent, public follow-up agent, and operator reliability surface:
+
+- `GET /agent/tools/detectors/{detector_id}/reliability`: Firestore detector accuracy, confirmations, and weight.
+- `GET /agent/tools/similar-cases`: recent same-media Firestore cases.
+- `GET /agent/tools/accuracy-drift`: recent-vs-historical confirmed accuracy drift.
+- `POST /agent/tools/recalibrate-detector`: writes a bounded `agent_weight_override` consumed by `get_learned_weights()`.
+- `POST /agent/tools/bench-detector`: writes `agent_benched`, logs a `bench` action, and removes the detector from future verdict influence by making its learned weight `0.0`.
+- `POST /agent/tools/reactivate-detector`: clears bench and override fields so a human can bring a detector back into rotation.
+- `POST /agent/tools/draft-fact-check-note`: creates a citable note artifact from the current case.
+- `POST /agent/tools/flag-for-human-review`: queues a case for human review and logs the action.
+
+The demo-friendly distinction:
+
+- Recalibration changes how much a detector counts, bounded between `0.5x` and `1.5x`.
+- Benching removes a detector from the verdict entirely until a human reactivates it.
+
 ## Phoenix MCP
 
 Template config:
@@ -167,6 +193,8 @@ Phoenix trace IDs are surfaced in:
 - Firestore analysis records
 - Agent Builder responses
 
+Phoenix telemetry is also consumed by `/agent/detector-roi` and `/agent/investigate` to compute detector value-for-cost. The agent uses this telemetry with Firestore outcomes to decide which detectors earn influence, which should be watched, and which should be benched.
+
 ## Local Self-Hosted Phoenix Fallback
 
 Start local Phoenix:
@@ -200,4 +228,4 @@ For the 3-minute video, spend only 10-20 seconds on Agent Builder:
 2. Run one quick call or show the successful configuration.
 3. Return to the ArgusAI frontend/admin panel.
 
-The main Arize proof is Phoenix-backed detector health, chain-of-custody links, and the admin trace view, not the Agent Builder configuration screen.
+The main Arize proof is the operator console: Phoenix-backed detector telemetry, expandable agent reports, and a visible action where the agent recalibrates or benches a detector while the human can reactivate it.

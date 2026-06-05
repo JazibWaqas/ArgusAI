@@ -112,7 +112,7 @@ class OpenSourceIntelligenceDetector(Detector):
                 if research_context:
                     observations.append(f"Grounded synthesis: {research_context}")
 
-                context_preview = (research_context[:450].rstrip() + ("..." if len(research_context) > 450 else "")) if research_context else ""
+                context_preview = _trim_to_sentence(research_context, 1200) if research_context else ""
                 if is_deepfake:
                     summary = f"The research agent found credible public sources flagging this {subject} or claim as fabricated."
                     supports = SignalSupport.AI_GENERATED
@@ -176,7 +176,7 @@ class OpenSourceIntelligenceDetector(Detector):
                 is_deepfake = fact_check.get("known_deepfake", False)
                 is_real = fact_check.get("verified_real", False)
                 grounded_context = fact_check.get("context", "")
-                context_preview = (grounded_context[:350].rstrip() + ("..." if len(grounded_context) > 350 else "")) if grounded_context else ""
+                context_preview = _trim_to_sentence(grounded_context, 1000) if grounded_context else ""
                 queries_used = []
                 if isinstance(meta, dict):
                     queries_used = meta.get("webSearchQueries") or meta.get("web_search_queries") or []

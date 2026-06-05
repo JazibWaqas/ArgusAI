@@ -12,6 +12,54 @@ const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
 const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || "argusai2026";
 const PHOENIX_FALLBACK_BASE = "https://argusai-phoenix-ddmxiumrdq-uc.a.run.app";
 
+function renderInlineMarkdown(text) {
+  const parts = String(text || "").split(/(\*\*[^*]+\*\*)/g);
+  return parts.map((part, idx) => {
+    const bold = part.match(/^\*\*([^*]+)\*\*$/);
+    return bold ? <strong key={idx}>{bold[1]}</strong> : <React.Fragment key={idx}>{part}</React.Fragment>;
+  });
+}
+
+function AssistantMessageText({ text }) {
+  const normalized = String(text || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/\s*###\s*/g, "\n### ")
+    .replace(/\s+\*\s+(?=\*\*|\w)/g, "\n- ")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  const lines = normalized.split("\n").map((line) => line.trim()).filter(Boolean);
+  const nodes = [];
+  let listItems = [];
+
+  const flushList = () => {
+    if (!listItems.length) return;
+    const items = listItems;
+    listItems = [];
+    nodes.push(
+      <ul className="assistant-list" key={`list-${nodes.length}`}>
+        {items.map((item, idx) => <li key={idx}>{renderInlineMarkdown(item)}</li>)}
+      </ul>
+    );
+  };
+
+  lines.forEach((line) => {
+    if (/^###\s+/.test(line)) {
+      flushList();
+      nodes.push(<h4 className="assistant-section-title" key={`h-${nodes.length}`}>{renderInlineMarkdown(line.replace(/^###\s+/, ""))}</h4>);
+      return;
+    }
+    if (/^[-*]\s+/.test(line)) {
+      listItems.push(line.replace(/^[-*]\s+/, ""));
+      return;
+    }
+    flushList();
+    nodes.push(<p key={`p-${nodes.length}`}>{renderInlineMarkdown(line)}</p>);
+  });
+  flushList();
+
+  return <div className="assistant-markdown">{nodes}</div>;
+}
+
 // Resolved at runtime from /arize/health so deep-links point at whichever
 // Phoenix actually received the traces (local Docker or Cloud Run) and use the
 // project's internal ID, which is what Phoenix URLs require.
@@ -611,7 +659,7 @@ function AnimatedSignalCard({ signal, index, mediaType = "image", detectorStats 
             {signal.what_found && (
               <div className="signal-osint-finding">
                 <span className="signal-detail-label">What the web found</span>
-                <p className="signal-detail-text signal-detail-text-compact">{signal.what_found}</p>
+                <p className="signal-detail-text">{signal.what_found}</p>
               </div>
             )}
             <div className="signal-osint-primary">
@@ -2358,7 +2406,7 @@ export default function App() {
                         ))}
                       </div>
                     )}
-                    <p>{m.text}</p>
+                    <AssistantMessageText text={m.text} />
                   </div>
                 )}
                 {m.role === "assistant" && m.kind === "agent_pending" && (

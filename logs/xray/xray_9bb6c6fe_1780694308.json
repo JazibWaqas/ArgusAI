@@ -1,0 +1,218 @@
+{
+    "timestamp": "2026-06-05T21:18:28.132625+00:00",
+    "image_hash": "9bb6c6fe8c229fb142d2964f839b921b78847cce78c29e30c9e2e8d5a1aad2b0",
+    "media_type": "image",
+    "image_info": {
+        "width": 2688,
+        "height": 1536,
+        "mode": "RGB",
+        "sha256": "9bb6c6fe8c229fb142d2964f839b921b78847cce78c29e30c9e2e8d5a1aad2b0",
+        "format": "JPEG"
+    },
+    "global_execution_time": 68.8052,
+    "reasoning_execution_time": 30.4945,
+    "detector_metrics": {
+        "spectral_artifacts": {
+            "status": "ok",
+            "support": "ai_generated",
+            "time_seconds": 11.4822,
+            "reliability": 0.7,
+            "confidence": 0.6154903769493103,
+            "summary": "The Six-Lens model scored this image 61.5% AI and 38.5% authentic, a moderate-confidence finding toward synthetic generation.",
+            "top_observation": "Six-Lens fusion result. AI score: 0.6155 (61.5%), authentic score: 0.3845 (38.5%).",
+            "visible": true
+        },
+        "metadata_analysis": {
+            "status": "ok",
+            "support": "ai_generated",
+            "time_seconds": 0.006,
+            "reliability": 0.92,
+            "confidence": null,
+            "summary": "The file's embedded provenance marks it as AI-generated.",
+            "top_observation": "Content Credentials (C2PA) digital source type is 'trained algorithmic media', a standardized AI-generated marker.",
+            "visible": true
+        },
+        "noise_pattern_analysis": {
+            "status": "ok",
+            "support": "inconclusive",
+            "time_seconds": 0.1497,
+            "reliability": 0.2,
+            "confidence": null,
+            "summary": "The noise profile is ambiguous - variance 5119.8, 12.9% smooth blocks - midrange values that could belong to either a compressed real photo or a noise-augmented AI image.",
+            "top_observation": "Global pixel variance: 5119.8 | Mean brightness: 126.5/255 | Std deviation: 71.6",
+            "visible": true
+        },
+        "lighting_consistency": {
+            "status": "ok",
+            "support": "inconclusive",
+            "time_seconds": 0.07,
+            "reliability": 0.3,
+            "confidence": null,
+            "summary": "The lighting is balanced and well-behaved (255/255 range, 126.5/255 mean, 0.001% clipping) - matching both a well-exposed real photo and a capable AI generator.",
+            "top_observation": "Dynamic range: 255/255 (darkest pixel: 0, brightest: 255)",
+            "visible": true
+        },
+        "error_level_analysis": {
+            "status": "ok",
+            "support": "unknown",
+            "time_seconds": 2.391,
+            "reliability": 0.25,
+            "confidence": null,
+            "summary": "The ELA map shows moderate, fairly uniform compression residuals (mean: 1.44, quadrant spread: 0.84). No editing seams or compositing artifacts were detected.",
+            "top_observation": "Image: 2688x1536px | JPEG recompressed at quality 90",
+            "visible": true
+        },
+        "osint_verification": {
+            "status": "unavailable",
+            "support": "unknown",
+            "time_seconds": 0.0002,
+            "reliability": 0.0,
+            "confidence": null,
+            "summary": "Web verification was skipped. Add context to enable it.",
+            "top_observation": "OSINT skipped: no user context provided.",
+            "visible": true
+        },
+        "semantic_inconsistencies": {
+            "status": "ok",
+            "support": "ai_generated",
+            "time_seconds": 24.8543,
+            "reliability": 0.55,
+            "confidence": 0.7,
+            "summary": "The image displays several signs of AI generation, primarily distorted and illegible text on the clothing and gear. The characters on the blue shirt and the logos on the gloves are malformed, which is typical of AI-generated images.",
+            "top_observation": "The text on the back of the blue shirt consists of distorted, gibberish characters.",
+            "visible": true
+        }
+    },
+    "final_verdict": "likely_ai_generated",
+    "certainty": 0.92,
+    "warnings": [
+        "Live Web Fact-Checking (OSINT): Web verification was skipped. Add context to enable it."
+    ],
+    "score_breakdown": {
+        "authentic": 0.0,
+        "ai_generated": 1.885,
+        "inconclusive": 0.216,
+        "total_considered": 2.101
+    },
+    "reasoning_summary": {
+        "verdict": "likely_ai_generated",
+        "certainty": 0.92,
+        "certainty_percent": 92,
+        "confidence_label": "high",
+        "leaning": "likely_ai_generated",
+        "media_type": "image",
+        "short_summary": "This looks AI-generated, with 92% confidence. The strongest signal is Metadata & Provenance.",
+        "scores": {
+            "authentic": 0,
+            "ai_generated": 1.885,
+            "inconclusive": 0.216,
+            "total_considered": 2.101
+        },
+        "signal_coverage": {
+            "usable_signal_count": 6,
+            "blocked_signal_count": 1,
+            "total_signal_count": 7
+        },
+        "top_authentic_signals": [],
+        "top_ai_signals": [
+            {
+                "name": "Metadata & Provenance",
+                "summary": "The file's embedded provenance marks it as AI-generated.",
+                "what_found": "The provenance metadata flags this as trained-algorithmic (AI-generated) media.",
+                "why_it_matters": "Provenance markers like C2PA are an industry-standard, hard-to-fake trace written by the generator itself. Finding one is among the strongest provenance signals available.",
+                "caveat": "Provenance can be stripped or, rarely, forged. Absence of a marker is not proof of authenticity.",
+                "support": "ai_generated",
+                "contribution": 0.828
+            },
+            {
+                "name": "Semantic & Physical Consistency",
+                "summary": "The image displays several signs of AI generation, primarily distorted and illegible text on the clothing and gear. The characters on the blue shirt and the logos on the gloves are malformed, which is typical of AI-generated images.",
+                "what_found": "The image displays several signs of AI generation, primarily distorted and illegible text on the clothing and gear. The characters on the blue shirt and the logos on the gloves are malformed, which is typical of AI-generated images.",
+                "why_it_matters": "When an image has broken anatomy, impossible geometry, or missing shadows, that is strong evidence it was generated rather than photographed.",
+                "caveat": "This detector is useful, but it can still be wrong and should be treated as one part of the full picture.",
+                "support": "ai_generated",
+                "contribution": 0.551
+            },
+            {
+                "name": "Spectral Artifacts",
+                "summary": "The Six-Lens model scored this image 61.5% AI and 38.5% authentic, a moderate-confidence finding toward synthetic generation.",
+                "what_found": "All six spectral lenses, covering visual texture (ConvNeXt), frequency grids (FFT), sensor noise simulation (SRM), color-space fingerprints (YCbCr), spatial reconstruction (SPAI), and robustness testing, collectively scored this image 61.5% AI. At this level, the majority of lenses independently flagged patterns like periodic frequency grids and noise distributions inconsistent with any known camera sensor profile.",
+                "why_it_matters": "This model looks for patterns invisible to the human eye, buried in the pixel-level math of the image. A 61.5% score means the statistical fingerprint aligns significantly more with AI generation than camera physics, and these frequency-domain traces are very hard to remove without visibly degrading the image.",
+                "caveat": "Heavy JPEG compression, aggressive resizing, or strong image filters can partially destroy the frequency-domain signals this model depends on, potentially softening a confident AI detection into an inconclusive result. Conversely, very new or unusual AI generators not present in training data may produce lower-than-expected scores.",
+                "support": "ai_generated",
+                "contribution": 0.506
+            }
+        ],
+        "top_inconclusive_signals": [
+            {
+                "name": "Lighting Physics & Contrast Geometry",
+                "summary": "The lighting is balanced and well-behaved (255/255 range, 126.5/255 mean, 0.001% clipping) - matching both a well-exposed real photo and a capable AI generator.",
+                "what_found": "The image has a 255/255 dynamic range, 126.5/255 mean brightness, and only 0.001% clipped highlights with 0.445% crushed shadows. This balanced exposure is realistic-looking but not diagnostic - it fits equally well for a careful real photograph and a modern AI generator.",
+                "why_it_matters": "Lighting is most useful when it's either suspiciously perfect (AI) or clearly clipping (real). A balanced middle-ground doesn't give us enough to work with, so this signal defers to others.",
+                "caveat": "HDR post-processing, tone mapping, strong flash, and professional retouching can all alter exposure profiles - introducing 'AI-like' qualities into real photos or vice versa.",
+                "support": "inconclusive",
+                "contribution": 0.133
+            },
+            {
+                "name": "Thermal Noise & Sensor Consistency",
+                "summary": "The noise profile is ambiguous - variance 5119.8, 12.9% smooth blocks - midrange values that could belong to either a compressed real photo or a noise-augmented AI image.",
+                "what_found": "The image has variance 5119.8 and 12.9% flat blocks - neither extreme enough to trigger a clear verdict. This ambiguity typically means the image has been compressed, resized, or otherwise processed in a way that erased the original noise fingerprint.",
+                "why_it_matters": "When noise falls in the middle range, it can belong to either side - meaning this signal cannot meaningfully contribute to the verdict. The other detectors carry more weight here.",
+                "caveat": "Heavy compression, denoising, upscaling, or added grain filters can all change the noise profile independently of whether the image was generated or photographed.",
+                "support": "inconclusive",
+                "contribution": 0.052
+            },
+            {
+                "name": "Error Level Analysis (ELA)",
+                "summary": "The ELA map shows moderate, fairly uniform compression residuals (mean: 1.44, quadrant spread: 0.84). No editing seams or compositing artifacts were detected.",
+                "what_found": "Re-saving at quality 90 produced a mean residual of 1.44 with a quadrant spread of only 0.84. The compression stress is consistent across all four quadrants, and only 0.00% of pixels show elevated residuals. This uniform profile suggests the image has a consistent compression history - no obvious signs of region-level editing or compositing.",
+                "why_it_matters": "A uniform ELA profile removes one red flag - there are no obvious editing seams. However, ELA does not tell us whether the image is AI-generated, only that it has not been obviously composited. The other detectors handle the AI vs. real question.",
+                "caveat": "ELA detects editing and compression inconsistency, not AI generation. Social media uploads, repeated saves, and WhatsApp forwarding all degrade this test. It's treated as a weak supporting check.",
+                "support": "unknown",
+                "contribution": 0.031
+            }
+        ]
+    },
+    "pipeline_health": {
+        "arize": {
+            "configured": true,
+            "enabled": true,
+            "project_name": "argusai-forensics",
+            "collector_endpoint": "http://localhost:6006/v1/traces",
+            "dashboard_url": "http://localhost:6006",
+            "error": null
+        },
+        "detector_governor": {
+            "enabled": true,
+            "status": "ok",
+            "active_anomaly_count": 0,
+            "detectors": {},
+            "calibration_divergence": null,
+            "spectral_attenuation_factor": 1.0,
+            "last_calibration_observation": {
+                "spectral_support": "ai_generated",
+                "semantic_support": "ai_generated",
+                "disagreed": false,
+                "recorded_at": "2026-06-05T21:17:56.201176+00:00",
+                "streak": 0
+            },
+            "recent_events": []
+        },
+        "model_health_label": "All detector health gates operational",
+        "latency_seconds": 68.8052
+    },
+    "phoenix_trace_id": "3adb48c5deb40a2b18ff5227d7556a21",
+    "llm_health": {
+        "gemini_key_count": 32,
+        "gemini_available": true,
+        "gemini_model": "gemini-3.5-flash",
+        "gemini_vision_model": "gemini-3.5-flash",
+        "gemini_grounding_model": "gemini-3.5-flash",
+        "gemini_fallback_model": "gemini-2.5-flash",
+        "osint_use_grounding": true,
+        "explanation_provider": "gemini",
+        "explanation_model": "gemini-3.1-flash-lite",
+        "explanation_timeout_seconds": 30.0,
+        "provider_ready": "gemini"
+    }
+}

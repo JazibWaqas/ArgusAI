@@ -1,0 +1,262 @@
+{
+    "timestamp": "2026-06-05T20:52:00.260779+00:00",
+    "image_hash": "d807559c74f20b3faab9220b83923c192ef2906fc762e343314984cd685e8be5",
+    "media_type": "video",
+    "image_info": {
+        "width": 640,
+        "height": 480,
+        "mode": "RGB",
+        "sha256": "d807559c74f20b3faab9220b83923c192ef2906fc762e343314984cd685e8be5",
+        "format": "VIDEO"
+    },
+    "global_execution_time": 54.7233,
+    "reasoning_execution_time": 10.1284,
+    "detector_metrics": {
+        "spectral_artifacts": {
+            "status": "ok",
+            "support": "ai_generated",
+            "time_seconds": 2.375,
+            "reliability": 0.7,
+            "confidence": 0.7918496131896973,
+            "summary": "The Six-Lens model scored this image 79.2% AI and 20.8% authentic, a extremely high-confidence finding toward synthetic generation.",
+            "top_observation": "Six-Lens fusion result. AI score: 0.7918 (79.2%), authentic score: 0.2082 (20.8%).",
+            "visible": true
+        },
+        "metadata_analysis": {
+            "status": "warning",
+            "support": "unknown",
+            "time_seconds": 0.0814,
+            "reliability": 0.3,
+            "confidence": null,
+            "summary": "The file does not contain any usable metadata.",
+            "top_observation": "The file contains no EXIF metadata, so provenance clues are limited.",
+            "visible": true
+        },
+        "noise_pattern_analysis": {
+            "status": "unavailable",
+            "support": "unknown",
+            "time_seconds": 0.0,
+            "reliability": 0.0,
+            "confidence": null,
+            "summary": "Thermal Noise & Sensor Consistency is calibrated for still images and is hidden for video reports.",
+            "visible": false
+        },
+        "lighting_consistency": {
+            "status": "unavailable",
+            "support": "unknown",
+            "time_seconds": 0.0,
+            "reliability": 0.0,
+            "confidence": null,
+            "summary": "Lighting Physics & Contrast Geometry is calibrated for still images and is hidden for video reports.",
+            "visible": false
+        },
+        "error_level_analysis": {
+            "status": "ok",
+            "support": "unknown",
+            "time_seconds": 0.4061,
+            "reliability": 0.1,
+            "confidence": null,
+            "summary": "ELA found essentially no compression residual (mean: 0.47, max: 19.00). The image's original quality setting is too close to the test quality for ELA to produce meaningful results.",
+            "top_observation": "Image: 640x480px | JPEG recompressed at quality 90",
+            "visible": true
+        },
+        "osint_verification": {
+            "status": "ok",
+            "support": "authentic",
+            "time_seconds": 21.9055,
+            "reliability": 0.75,
+            "confidence": null,
+            "summary": "The research agent found credible reporting that corroborates the depicted event or scene.",
+            "top_observation": "OSINT mode: Gemini vision + Google Search grounding.",
+            "visible": true
+        },
+        "semantic_inconsistencies": {
+            "status": "ok",
+            "support": "inconclusive",
+            "time_seconds": 23.7416,
+            "reliability": 0.25,
+            "confidence": 0.3,
+            "summary": "The footage is the authentic, declassified US Navy 'Gimbal' video showing an unidentified aerial phenomenon. The HUD data, thermal imaging characteristics, and audio track are consistent with genuine military sensor recordings rather than AI generation.",
+            "top_observation": "No obvious semantic anomalies reported.",
+            "visible": false
+        },
+        "temporal_coherence": {
+            "status": "ok",
+            "support": "inconclusive",
+            "time_seconds": 0.0,
+            "reliability": 0.75,
+            "confidence": 0.3,
+            "summary": "The footage is the authentic, declassified US Navy 'Gimbal' video showing an unidentified aerial phenomenon. The HUD data, thermal imaging characteristics, and audio track are consistent with genuine military sensor recordings rather than AI generation.",
+            "visible": true
+        },
+        "temporal_noise_coherence": {
+            "status": "ok",
+            "support": "ai_generated",
+            "time_seconds": 0.0,
+            "reliability": 0.55,
+            "confidence": null,
+            "summary": "The frames carry almost no real sensor noise (floor 0.00), which is unusual for genuine camera footage.",
+            "visible": true
+        },
+        "audio_track": {
+            "status": "ok",
+            "support": "authentic",
+            "time_seconds": 12.1088,
+            "reliability": 0.82,
+            "confidence": 0.9954,
+            "summary": "Embedded video audio: This audio appears to be authentic human speech. Confidence: 100%. Inference via local wav2vec2.",
+            "visible": true
+        },
+        "audio_track_acoustics": {
+            "status": "ok",
+            "support": "inconclusive",
+            "time_seconds": 0.0,
+            "reliability": 0.3,
+            "confidence": null,
+            "summary": "The acoustic micro-signature was measured but did not point strongly either way.",
+            "visible": true
+        }
+    },
+    "final_verdict": "likely_ai_generated",
+    "certainty": 0.481,
+    "warnings": [
+        "Metadata & Provenance: The file does not contain any usable metadata."
+    ],
+    "score_breakdown": {
+        "authentic": 0.602,
+        "ai_generated": 0.962,
+        "inconclusive": 0.785,
+        "total_considered": 2.348
+    },
+    "reasoning_summary": {
+        "verdict": "likely_ai_generated",
+        "certainty": 0.481,
+        "certainty_percent": 48,
+        "confidence_label": "guarded",
+        "leaning": "likely_ai_generated",
+        "media_type": "video",
+        "short_summary": "This looks AI-generated, with 48% confidence. The strongest signal is Spectral Artifacts.",
+        "scores": {
+            "authentic": 0.602,
+            "ai_generated": 0.962,
+            "inconclusive": 0.785,
+            "total_considered": 2.348
+        },
+        "signal_coverage": {
+            "usable_signal_count": 8,
+            "blocked_signal_count": 0,
+            "total_signal_count": 8
+        },
+        "top_authentic_signals": [
+            {
+                "name": "Live Web Fact-Checking (OSINT)",
+                "summary": "The research agent found credible reporting that corroborates the depicted event or scene.",
+                "what_found": "The video clip is a genuine, declassified U.S. Navy infrared footage known as the 'Gimbal' video, which first gained public attention in a December 2017 New York Times article. It depicts an Unidentified Aerial Phenomenon (UAP) encountered by Navy F/A-18 Super Hornet pilots off the eastern seaboard, near the Florida coast, in 2015. While the U.S. government has confirmed the authenticity of the footage as unclassified military video of an unexpla...",
+                "why_it_matters": "Corroborated public reporting supports the underlying event or statement. It still does not prove the file is untouched, so the media-specific detectors remain important.",
+                "caveat": "OSINT is strongest for public figures, viral claims, and news events. Generic private video clips may have no searchable provenance.",
+                "support": "authentic",
+                "contribution": 0.527
+            },
+            {
+                "name": "Audio Track",
+                "summary": "Embedded video audio: This audio appears to be authentic human speech. Confidence: 100%. Inference via local wav2vec2.",
+                "what_found": "The model classified this audio as a authentic human voice with 100% directional confidence. Probability real: 100% | Probability fake: 0%.",
+                "why_it_matters": "AI voice cloning is increasingly used to fabricate statements by public figures. This check catches spectral artifacts in the audio that TTS models leave behind.",
+                "caveat": "The model was fine-tuned on 6 TTS engines. Novel cloning systems not in its training set may evade detection. Short clips (<2.5 s) or heavily compressed audio may reduce accuracy.",
+                "support": "authentic",
+                "contribution": 0.074
+            }
+        ],
+        "top_ai_signals": [
+            {
+                "name": "Spectral Artifacts",
+                "summary": "The Six-Lens model scored this image 79.2% AI and 20.8% authentic, a extremely high-confidence finding toward synthetic generation.",
+                "what_found": "All six spectral lenses, covering visual texture (ConvNeXt), frequency grids (FFT), sensor noise simulation (SRM), color-space fingerprints (YCbCr), spatial reconstruction (SPAI), and robustness testing, collectively scored this image 79.2% AI. At this level, the majority of lenses independently flagged patterns like periodic frequency grids and noise distributions inconsistent with any known camera sensor profile.",
+                "why_it_matters": "This model looks for patterns invisible to the human eye, buried in the pixel-level math of the image. A 79.2% score means the statistical fingerprint aligns significantly more with AI generation than camera physics, and these frequency-domain traces are very hard to remove without visibly degrading the image.",
+                "caveat": "Heavy JPEG compression, aggressive resizing, or strong image filters can partially destroy the frequency-domain signals this model depends on, potentially softening a confident AI detection into an inconclusive result. Conversely, very new or unusual AI generators not present in training data may produce lower-than-expected scores.",
+                "support": "ai_generated",
+                "contribution": 0.859
+            },
+            {
+                "name": "Sensor Noise Coherence",
+                "summary": "The frames carry almost no real sensor noise (floor 0.00), which is unusual for genuine camera footage.",
+                "what_found": "The frames carry almost no real sensor noise (floor 0.00), which is unusual for genuine camera footage.",
+                "why_it_matters": "A real camera leaves a steady noise floor in every frame. AI video generators rarely model true sensor noise, so it is often missing or flickers across frames, which is hard to fake.",
+                "caveat": "Heavy compression, denoising, and very detailed scenes affect this measurement, so it is weighed with the other signals.",
+                "support": "ai_generated",
+                "contribution": 0.103
+            }
+        ],
+        "top_inconclusive_signals": [
+            {
+                "name": "Temporal Coherence",
+                "summary": "The footage is the authentic, declassified US Navy 'Gimbal' video showing an unidentified aerial phenomenon. The HUD data, thermal imaging characteristics, and audio track are consistent with genuine military sensor recordings rather than AI generation.",
+                "what_found": "The footage is the authentic, declassified US Navy 'Gimbal' video showing an unidentified aerial phenomenon. The HUD data, thermal imaging characteristics, and audio track are consistent with genuine military sensor recordings rather than AI generation.",
+                "why_it_matters": "AI video generators often fail across time even when individual frames look convincing.",
+                "caveat": "Low bitrate, motion blur, and heavy compression can resemble temporal artifacts, so this signal is weighed with the rest of the evidence.",
+                "support": "inconclusive",
+                "contribution": 0.63
+            },
+            {
+                "name": "Metadata & Provenance",
+                "summary": "The file does not contain any usable metadata.",
+                "what_found": "This image has no EXIF metadata at all, so we cannot see what device or software created it.",
+                "why_it_matters": "Missing metadata removes a useful source of provenance, but it does not automatically mean the image is AI-generated.",
+                "caveat": "Many social media platforms strip metadata during upload, so this signal is weak on its own.",
+                "support": "unknown",
+                "contribution": 0.101
+            },
+            {
+                "name": "Embedded Audio Micro-Signature",
+                "summary": "The acoustic micro-signature was measured but did not point strongly either way.",
+                "what_found": "The acoustic micro-signature was measured but did not point strongly either way.",
+                "why_it_matters": "Real vocal folds never repeat a cycle perfectly. Text-to-speech and voice clones tend to be smoother and more regular, so this measured signature is hard for a generator to fake without modelling true vocal physics.",
+                "caveat": "Heavy compression, noise reduction, and short or noisy clips can distort these measurements, so this is weighed with the other audio signals.",
+                "support": "inconclusive",
+                "contribution": 0.042
+            }
+        ]
+    },
+    "pipeline_health": {
+        "arize": {
+            "configured": true,
+            "enabled": true,
+            "project_name": "argusai-forensics",
+            "collector_endpoint": "http://localhost:6006/v1/traces",
+            "dashboard_url": "http://localhost:6006",
+            "error": null
+        },
+        "detector_governor": {
+            "enabled": true,
+            "status": "ok",
+            "active_anomaly_count": 0,
+            "detectors": {},
+            "calibration_divergence": null,
+            "spectral_attenuation_factor": 1.0,
+            "last_calibration_observation": {
+                "spectral_support": "ai_generated",
+                "semantic_support": "inconclusive",
+                "disagreed": false,
+                "recorded_at": "2026-06-05T20:51:49.815012+00:00",
+                "streak": 0
+            },
+            "recent_events": []
+        },
+        "model_health_label": "All detector health gates operational",
+        "latency_seconds": 54.7233
+    },
+    "phoenix_trace_id": "d3d2e76ab1d24606417c323cb87e58e7",
+    "llm_health": {
+        "gemini_key_count": 32,
+        "gemini_available": true,
+        "gemini_model": "gemini-3.5-flash",
+        "gemini_vision_model": "gemini-3.5-flash",
+        "gemini_grounding_model": "gemini-3.5-flash",
+        "gemini_fallback_model": "gemini-2.5-flash",
+        "osint_use_grounding": true,
+        "explanation_provider": "gemini",
+        "explanation_model": "gemini-3.1-flash-lite",
+        "explanation_timeout_seconds": 30.0,
+        "provider_ready": "gemini"
+    }
+}

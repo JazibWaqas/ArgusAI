@@ -1171,7 +1171,9 @@ function AdminConsole({ onExit, onLogout, arizeHealth, onHealthUpdate, statsData
   const aiCount = verdictStats.likely_ai_generated || verdictStats.ai_generated || 0;
   const authCount = verdictStats.likely_authentic || verdictStats.authentic || 0;
   const incCount = verdictStats.inconclusive || 0;
-  const spansPerRun = traces[0]?.detectors ? Object.keys(traces[0].detectors).length : 7;
+  const detectorUniverse = new Set();
+  traces.forEach((t) => Object.keys(t.detectors || {}).forEach((d) => detectorUniverse.add(d)));
+  const detectorCount = detectorUniverse.size || 13;
   const phoenixProjectUrl = phoenixLinkInfo.base
     ? `${phoenixLinkInfo.base.replace(/\/$/, "")}/projects/${phoenixLinkInfo.projectId || phoenixLinkInfo.projectName}`
     : "";
@@ -1197,15 +1199,6 @@ function AdminConsole({ onExit, onLogout, arizeHealth, onHealthUpdate, statsData
         </div>
       </header>
       <div className="console-body">
-              <div className="console-stack-strip">
-                <span className="stack-label">Built on</span>
-                {["Gemini", "Google Agent Builder", "Arize Phoenix · MCP", "Firestore"].map((pillar) => (
-                  <span className="stack-pill" key={pillar}>
-                    <span className="stack-dot" /> {pillar}
-                  </span>
-                ))}
-              </div>
-
               <p className="admin-framing-copy">
                 Every investigation is stored in Firestore and recorded as a Phoenix trace, so any verdict can be reopened and inspected later.
               </p>
@@ -1226,9 +1219,9 @@ function AdminConsole({ onExit, onLogout, arizeHealth, onHealthUpdate, statsData
                     <p>Each analysis is recorded as a Phoenix trace with its detector spans, so the reasoning behind any verdict stays auditable.</p>
                   </div>
                   <div className="console-arize-card">
-                    <strong>{spansPerRun}</strong>
-                    <span>detector spans per run</span>
-                    <p>Phoenix captures each detector's latency and result. That is how we see where time goes and which checks start to misbehave.</p>
+                    <strong>{detectorCount}</strong>
+                    <span>forensic detectors</span>
+                    <p>Phoenix captures each detector's latency and result on every run, so we see where time goes and which checks start to misbehave.</p>
                   </div>
                   <div className="console-arize-card">
                     <strong>{governanceActions.length}</strong>
@@ -1238,38 +1231,16 @@ function AdminConsole({ onExit, onLogout, arizeHealth, onHealthUpdate, statsData
                 </div>
               </section>
 
-              <section className="agent-loop-card">
-                <h3>How the agent operates</h3>
-                <p className="admin-section-sub">
-                  ArgusAI already self-calibrates slowly from each detector's lifetime accuracy. The agent is the fast layer on top: it catches recent drift and behavioral problems in Phoenix that the slow loop cannot see, and it intervenes immediately under human oversight.
-                </p>
-                <div className="agent-loop-steps">
-                  <div className="agent-loop-step">
-                    <span className="agent-loop-num">1</span>
-                    <span className="agent-loop-name">Observe</span>
-                    <p>Reads Phoenix spans: latency, errors, token usage, recent accuracy.</p>
-                  </div>
-                  <div className="agent-loop-step">
-                    <span className="agent-loop-num">2</span>
-                    <span className="agent-loop-name">Decide</span>
-                    <p>Weighs that against human-confirmed accuracy in Firestore.</p>
-                  </div>
-                  <div className="agent-loop-step">
-                    <span className="agent-loop-num">3</span>
-                    <span className="agent-loop-name">Act</span>
-                    <p>Overrides detector weights, flags for review, drafts fact-check notes.</p>
-                  </div>
-                </div>
-              </section>
-
               <div className="agent-status-strip">
                 <span className="agent-status-item">
-                  <Target size={13} /> Investigator agent
+                  <Target size={14} /> Investigator agent
                 </span>
-                <span className={`agent-status-dot ${health?.phoenix_link?.project_id ? "live" : "off"}`}>
-                  {health?.phoenix_link?.project_id ? "Phoenix MCP · live" : "Phoenix MCP · offline"}
+                <span className="agent-pillar"><Cpu size={12} /> Google Agent Builder</span>
+                <span className={`agent-pillar ${health?.phoenix_link?.project_id ? "live" : "off"}`}>
+                  <Activity size={12} /> Phoenix MCP{health?.phoenix_link?.project_id ? "" : " · offline"}
                 </span>
-                <span className="agent-status-dot live">Gemini reasoning</span>
+                <span className="agent-pillar"><Sparkles size={12} /> Gemini</span>
+                <span className="agent-pillar"><Database size={12} /> Firestore</span>
                 <span className="agent-status-meta">Recalibrates, flags, and drafts from its own observability</span>
               </div>
 
@@ -1339,7 +1310,7 @@ function AdminConsole({ onExit, onLogout, arizeHealth, onHealthUpdate, statsData
                   </button>
                 </div>
                 <p className="admin-section-sub">
-                  The agent fuses human-confirmed accuracy from Firestore with live Phoenix telemetry, decides which detectors are earning their weight, and recalibrates any that have drifted. It governs the system, it does not just report on it.
+                  ArgusAI self-calibrates slowly from each detector's lifetime accuracy on its own. The agent is the fast layer: it fuses human-confirmed accuracy from Firestore with live Phoenix telemetry, catches recent drift the slow loop misses, and recalibrates under human oversight. It governs the system, it does not just report on it.
                 </p>
 
                 {(agentPhase === "booting" || agentResult) && (
@@ -1584,8 +1555,12 @@ function AdminConsole({ onExit, onLogout, arizeHealth, onHealthUpdate, statsData
                       <div className={`review-item ${it.source === "flagged" ? "flagged" : "low"}`} key={`${it.timestamp || i}-${i}`}>
                         <span className="review-media">{it.media_type || "—"}</span>
                         <span className="review-verdict">{formatVerdict(it.verdict || "unknown")}</span>
-                        <span className="review-reason">{it.reason}</span>
-                        {it.certainty != null && <span className="review-cert">{formatPercent(it.certainty)}</span>}
+                        <span className="review-reason">{it.reason}{it.timestamp ? ` · ${formatTime(it.timestamp)}` : ""}</span>
+                        {it.phoenix_trace_id ? (
+                          <a className="review-btn" href={phoenixTraceUrl(it.phoenix_trace_id)} target="_blank" rel="noreferrer">Review case</a>
+                        ) : (
+                          <span className="review-btn">Review case</span>
+                        )}
                       </div>
                     ))}
                   </div>

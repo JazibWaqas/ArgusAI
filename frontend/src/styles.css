@@ -2259,6 +2259,23 @@ audio {
 .agent-status-dot.live { color: #6df0b0; }
 .agent-status-dot.live::before { background: #34d399; box-shadow: 0 0 6px #34d399; }
 .agent-status-dot.off::before { background: #f87171; }
+.agent-pillar {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 9px;
+  border-radius: 7px;
+  border: 1px solid rgba(255,255,255,0.08);
+  background: rgba(255,255,255,0.02);
+  color: #9fb0c4;
+  font-size: 11px;
+  font-weight: 600;
+}
+.agent-pillar svg { color: var(--brand, #22d3ee); opacity: 0.85; flex-shrink: 0; }
+.agent-pillar.live { color: #cfe6f2; border-color: rgba(52,211,153,0.28); }
+.agent-pillar.live svg { color: #34d399; }
+.agent-pillar.off { color: #b9788a; border-color: rgba(248,113,113,0.3); }
+.agent-pillar.off svg { color: #f87171; }
 .agent-status-meta {
   margin-left: auto;
   color: #7f93ad;
@@ -2327,42 +2344,28 @@ audio {
   white-space: nowrap;
 }
 
-/* Stack strip: the four pillars the system is built on. */
+/* Stack strip: the pillars the system is built on. Subtle, icon-led. */
 .console-stack-strip {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   gap: 8px;
-  margin: 0 0 14px;
-}
-.stack-label {
-  color: var(--text-sub, #8195af);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  margin-right: 4px;
+  margin: 2px 0 16px;
 }
 .stack-pill {
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  padding: 5px 12px;
-  border-radius: 999px;
-  border: 1px solid rgba(34,211,238,0.28);
-  background: rgba(34,211,238,0.05);
-  color: #cfe6f2;
+  padding: 5px 11px;
+  border-radius: 8px;
+  border: 1px solid rgba(255,255,255,0.07);
+  background: rgba(255,255,255,0.02);
+  color: #9fb0c4;
   font-size: 12px;
-  font-weight: 700;
-  font-family: var(--mono, ui-monospace, monospace);
+  font-weight: 600;
+  letter-spacing: 0.01em;
 }
-.stack-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #34d399;
-  box-shadow: 0 0 8px rgba(52,211,153,0.7);
-}
+.stack-pill svg { color: var(--brand, #22d3ee); opacity: 0.85; flex-shrink: 0; }
 
 /* Agent boot sequence: names the runtime as the agent spins up. */
 .agent-boot {
@@ -2462,6 +2465,22 @@ audio {
 .review-item .review-verdict { font-weight: 700; color: #e7f0ff; font-size: 13px; }
 .review-item .review-reason { color: #8195af; font-size: 12px; flex: 1; }
 .review-item .review-cert { font-size: 12px; color: #c7d6ec; font-weight: 700; }
+.review-item .review-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 5px 12px;
+  border-radius: 8px;
+  border: 1px solid rgba(34,211,238,0.32);
+  background: rgba(34,211,238,0.07);
+  color: #7fe3f5;
+  font-size: 12px;
+  font-weight: 700;
+  text-decoration: none;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.review-item .review-btn:hover { background: rgba(34,211,238,0.14); border-color: rgba(34,211,238,0.5); }
 .agent-report-row {
   padding: 0;
   overflow: hidden;

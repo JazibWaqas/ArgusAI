@@ -701,7 +701,7 @@ def compute_confidence_calibration() -> dict[str, Any]:
     try:
         buckets = {label: {"correct": 0, "total": 0} for label, _, _ in bands_def}
         total = 0
-        for doc in db.collection("analyses").order_by("timestamp", direction="DESCENDING").limit(300).stream():
+        for doc in db.collection("analyses").order_by("timestamp", direction="DESCENDING").limit(600).stream():
             data = doc.to_dict() or {}
             if data.get("_demo_seed"):
                 continue
@@ -759,9 +759,9 @@ def get_review_queue(limit: int = 12) -> dict[str, Any]:
     except Exception:
         pass
     try:
-        for doc in db.collection("analyses").order_by("timestamp", direction="DESCENDING").limit(60).stream():
+        for doc in db.collection("analyses").order_by("timestamp", direction="DESCENDING").limit(80).stream():
             data = doc.to_dict() or {}
-            if data.get("_demo_seed"):
+            if data.get("_demo_seed") or data.get("_demo_volume"):
                 continue
             if data.get("user_feedback") in {"correct", "incorrect"}:
                 continue
@@ -773,11 +773,13 @@ def get_review_queue(limit: int = 12) -> dict[str, Any]:
             if verdict == "inconclusive" or (0 < certainty < 0.6):
                 items.append({
                     "source": "low",
-                    "reason": "Inconclusive verdict" if verdict == "inconclusive" else "Low confidence, awaiting confirmation",
+                    "reason": "Inconclusive verdict, evidence split" if verdict == "inconclusive" else "Low confidence, awaiting confirmation",
                     "timestamp": data.get("timestamp"),
                     "media_type": data.get("media_type"),
                     "verdict": verdict,
                     "certainty": certainty,
+                    "sha256": data.get("sha256") or doc.id,
+                    "phoenix_trace_id": data.get("phoenix_trace_id"),
                 })
             if len(items) >= limit:
                 break
@@ -869,7 +871,7 @@ def trace_rows_from_firestore(limit: int = 10) -> Optional[list[dict[str, Any]]]
         rows = []
         for doc in query.stream():
             data = doc.to_dict() or {}
-            if data.get("_demo_seed"):
+            if data.get("_demo_seed") or data.get("_demo_volume"):
                 continue
             if len(rows) >= capped:
                 break

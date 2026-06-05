@@ -2,18 +2,16 @@
 
 Last updated: June 5, 2026.
 
-For full details, read `ContextFiles/CurrentHandoff.md`. This file is the concise progress tracker. See the June 5 section in `CurrentHandoff.md` for the operator-console strategy, the Phoenix instrumentation + cross-store reliability analyst, the demo money-shot seed script, and the remaining frontend spec for Codex.
+For full details, read `ContextFiles/CurrentHandoff.md`. This file is the concise progress tracker. See the June 5 section in `CurrentHandoff.md` for the operator-console strategy, the Phoenix instrumentation, and the cross-store reliability analyst.
 
 ## June 5, 2026 snapshot
 
 - Phoenix is now genuinely instrumented: OpenInference span kinds (CHAIN/LLM/TOOL), LLM spans with token counts, tool spans, `session.id`, and real span annotations on verdict feedback. Dashboard panels (LLM/tokens/tool/sessions/annotations) populate on real runs.
 - Cross-store reliability analyst is live: `get_phoenix_telemetry()` + `compute_detector_roi()` fuse Phoenix behavioral telemetry with Firestore confirmed accuracy; `/agent/detector-roi` and the upgraded `/agent/investigate` expose it. Verified on live data.
 - Narration contradiction fixed (agent no longer claims a weight change when none occurred).
-- Demo money-shot ready: `backend/scripts/seed_demo_drift.py` produces real drift on a chosen detector (verified `drifted=True`) so "Run investigator agent" recalibrates on camera; `--clear` removes it.
 - Operator console fully implemented (Claude, not Codex): stack strip with Agent Builder pill, agent-run choreography (boot sequence + streamed steps + platform tags + live weight pulse), merged detector panel (Trust Leaderboard removed, drift arrows + self-calibration banner folded into Detector Influence), confidence-calibration card (`/agent/calibration`), human-review queue (`/agent/review-queue`), agent-vs-passive weight distinction (`weight_source` + "Agent override" badge), two-tier framing copy. Builds clean.
 - Latency fixed: image/video pipeline now persists `latency_seconds`; old rows backfill from Phoenix root-span durations via `get_phoenix_root_latencies()`; display formats minutes (`2m 52s`).
-- Money-shot confirmed working live (agent recalibrated spectral 1.0x -> 0.75x with Phoenix MCP-labeled steps and honest narration).
-- ENVIRONMENT STATE: demo seed reverted (`seed_demo_drift --clear` removed 15 seed docs + reset spectral override). Firestore is at the real pre-seed baseline. Re-run `seed_demo_drift` to re-arm the money-shot. See the June 5 (continued) section in `CurrentHandoff.md` for the complete record, run order, and honest caveats.
+- Agent run verified live (agent recalibrated a drifted detector with Phoenix MCP-labeled steps and honest narration). See the June 5 (continued) section in `CurrentHandoff.md` for the complete record, run order, and caveats.
 
 ## Status
 

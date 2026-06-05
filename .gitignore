@@ -105,3 +105,7 @@ frontend/node_modules/
 frontend/dist/
 frontend/.env
 frontend/.env.local
+
+# Demo-only seeding scripts (not for submission/history)
+backend/scripts/seed_demo_drift.py
+backend/scripts/seed_demo_volume.py

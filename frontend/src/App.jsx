@@ -2009,6 +2009,7 @@ export default function App() {
       if (!res.ok) throw new Error("session_create_failed");
       const data = await res.json();
       setSessionId(data.session_id);
+      setStatus("");
       return data.session_id;
     } finally {
       if (coldStartTimer) clearTimeout(coldStartTimer);
@@ -2026,7 +2027,10 @@ export default function App() {
       try {
         await createFreshSession();
       } catch {
-        if (!cancelled) setSessionError("Could not reach the API. Check backend and VITE_API_BASE.");
+        if (!cancelled) {
+          setSessionError("Could not reach the API. Check backend and VITE_API_BASE.");
+          setStatus("");
+        }
       }
     })();
     return () => { cancelled = true; };

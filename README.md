@@ -11,7 +11,7 @@ ArgusAI is not a single-score classifier. It builds an evidence trail: detector 
 - Frontend: https://argusai-frontend-1007754127412.us-central1.run.app
 - Backend API: https://argusai-backend-1007754127412.us-central1.run.app
 - Backend health: https://argusai-backend-1007754127412.us-central1.run.app/health
-- Demo video: <!-- TODO: paste YouTube link before submission -->`https://youtu.be/...`
+- Demo video: https://www.youtube.com/watch?v=c8wluI09DSE
 
 The public frontend supports normal user flows: upload media, run a forensic investigation, inspect evidence cards, ask follow-up questions, and export a report.
 

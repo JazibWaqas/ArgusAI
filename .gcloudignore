@@ -15,7 +15,13 @@ logs/
 logs/agent_actions/
 spectral_eval_out/
 Images Dataset/
+ContextFiles/
+AGENTS.md
+CLAUDE.md
+script.md
+devpost_story.md
 argusai_fuse_best/
+backend/models/
 *.pth
 *.pt
 firebase-key.json

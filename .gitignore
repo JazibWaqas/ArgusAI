@@ -93,12 +93,22 @@ active/
 .env.local
 .env.*.local
 argusai_fuse_best/
+backend/models/
 backend/models/wav2vec2-deepfake/
 argusai_latest.pth
 argusai_best_weights.pth
+*.pth
 spectral_eval_out/
 firebase-key.json
-logs/agent_actions/
+logs/
+Images Dataset/
+
+# Internal hackathon handoff/planning notes kept locally, not in public submission
+AGENTS.md
+CLAUDE.md
+ContextFiles/
+script.md
+devpost_story.md
 
 # Node/Vite Frontend
 frontend/node_modules/

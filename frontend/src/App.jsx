@@ -9,7 +9,7 @@ import {
 import "./styles.css";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
-const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || "argusai2026";
+const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || "";
 const PHOENIX_FALLBACK_BASE = "https://argusai-phoenix-ddmxiumrdq-uc.a.run.app";
 
 function renderInlineMarkdown(text) {

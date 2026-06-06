@@ -1,0 +1,135 @@
+{
+  "timestamp": "2026-06-05T23:37:06.515214+00:00",
+  "sha256": "9d4052e48e05d03f46736bcd075e2b737b8c71a237620d7dce4ddb4ea143740b",
+  "media_type": "audio",
+  "verdict": "ai_generated",
+  "certainty": 1.0,
+  "inference_source": "gemini_semantic",
+  "latency_seconds": 32.717,
+  "phoenix_trace_id": "3e7e85fca603568239fce5f77a81a1c3",
+  "signal": {
+    "id": "audio_semantic",
+    "name": "Gemini Semantic Listening",
+    "category": "semantic",
+    "status": "ok",
+    "reliability": 0.78,
+    "summary": "The audio exhibits clear characteristics of AI-generated speech, including a highly robotic cadence, metallic voice artifacts, and a complete absence of natural breathing. The flat intonation and choppy transitions between words strongly indicate a synthetic text-to-speech generator.",
+    "what_checked": "Gemini listened for synthetic speech, cloned-voice artifacts, unnatural cadence, missing breathing, and generated-audio production patterns.",
+    "what_found": "The audio exhibits clear characteristics of AI-generated speech, including a highly robotic cadence, metallic voice artifacts, and a complete absence of natural breathing. The flat intonation and choppy transitions between words strongly indicate a synthetic text-to-speech generator.",
+    "why_it_matters": "When the dedicated wav2vec2 detector is missing or uncertain, Gemini gives the product a direct semantic audio review instead of stopping at an inconclusive model score.",
+    "caveat": "Gemini is an expert semantic judge, not a calibrated audio classifier. Treat this as one evidence signal in the trail.",
+    "observations": [
+      "0:00-0:03: The opening phrase has a highly robotic, metallic resonance and choppy cadence.",
+      "0:04-0:10: Complete lack of natural breathing or physiological pauses between sentences, with a flat, uniform pitch.",
+      "0:11-0:22: Pronounced phasey and metallic artifacts throughout the speech, typical of text-to-speech or voice cloning models."
+    ],
+    "metrics": {
+      "confidence_raw": 1.0,
+      "confidence_label": "High",
+      "inference_source": "gemini_semantic",
+      "provider": "gemini",
+      "model": "gemini-3.5-flash",
+      "fallback_used": false
+    },
+    "confidence": 1.0,
+    "supports": "ai_generated",
+    "notes": "Gemini semantic audio fallback.",
+    "visible": true,
+    "verdict_influence_percent": null
+  },
+  "signals": [
+    {
+      "id": "audio_deepfake",
+      "name": "Voice Authenticity Model",
+      "category": "audio",
+      "status": "ok",
+      "reliability": 0.82,
+      "summary": "This audio appears to be AI-generated (TTS/voice cloning). Confidence: 98%. Inference via local wav2vec2.",
+      "what_checked": "A fine-tuned Wav2Vec2-XLSR transformer (160M params) was used to classify whether this audio was recorded from a real human voice or synthesised by a text-to-speech / voice cloning system (ElevenLabs, Amazon Polly, Kokoro, etc.).",
+      "what_found": "The model classified this audio as a AI-generated voice with 98% directional confidence. Probability real: 2% | Probability fake: 98%.",
+      "why_it_matters": "AI voice cloning is increasingly used to fabricate statements by public figures. This check catches spectral artifacts in the audio that TTS models leave behind.",
+      "caveat": "The model was fine-tuned on 6 TTS engines. Novel cloning systems not in its training set may evade detection. Short clips (<2.5 s) or heavily compressed audio may reduce accuracy.",
+      "observations": [
+        "Probability of AI-generated speech: 98%",
+        "Probability of real human speech: 2%",
+        "Confidence level: Very High",
+        "Inference source: Local wav2vec2 model",
+        "Inference latency: 17.57s"
+      ],
+      "metrics": {
+        "prob_real": 0.0206,
+        "prob_fake": 0.9794,
+        "inference_source": "local_wav2vec2",
+        "source_label": "Local wav2vec2 model",
+        "confidence_label": "Very High",
+        "latency_seconds": 17.569
+      },
+      "confidence": 0.9794,
+      "supports": "ai_generated",
+      "notes": null,
+      "visible": true,
+      "verdict_influence_percent": null
+    },
+    {
+      "id": "audio_acoustics",
+      "name": "Acoustic Micro-Signature",
+      "category": "spectral",
+      "status": "ok",
+      "reliability": 0.5,
+      "summary": "The voice shows natural micro-variation (jitter 5.07%, shimmer 22.14%), consistent with real vocal-fold behaviour.",
+      "what_checked": "We measured the physical micro-variation of the voice: pitch jitter, amplitude shimmer, harmonic-to-noise ratio, and spectral tonality.",
+      "what_found": "The voice shows natural micro-variation (jitter 5.07%, shimmer 22.14%), consistent with real vocal-fold behaviour.",
+      "why_it_matters": "Real vocal folds never repeat a cycle perfectly. Text-to-speech and voice clones tend to be smoother and more regular, so this measured signature is hard for a generator to fake without modelling true vocal physics.",
+      "caveat": "Heavy compression, noise reduction, and short or noisy clips can distort these measurements, so this is weighed with the other audio signals.",
+      "observations": [
+        "Pitch jitter (cycle-to-cycle F0 variation): 5.07%",
+        "Amplitude shimmer (loudness micro-variation): 22.14%",
+        "Spectral flatness (tonality): 0.019 | Harmonic-to-noise ratio: -2.7 dB",
+        "Voiced fraction: 78.27%",
+        "Real human speech carries small, irregular variation from cycle to cycle. Synthetic and cloned voices are often smoother and more regular than a real vocal tract."
+      ],
+      "metrics": {
+        "jitter": 0.05069142923897966,
+        "shimmer": 0.2213752716779709,
+        "spectral_flatness": 0.01947970502078533,
+        "hnr_db": -2.7325283318316105,
+        "voiced_ratio": 0.7827476038338658
+      },
+      "confidence": null,
+      "supports": "authentic",
+      "notes": "Measured acoustic micro-signature (librosa).",
+      "visible": true,
+      "verdict_influence_percent": null
+    },
+    {
+      "id": "audio_semantic",
+      "name": "Gemini Semantic Listening",
+      "category": "semantic",
+      "status": "ok",
+      "reliability": 0.78,
+      "summary": "The audio exhibits clear characteristics of AI-generated speech, including a highly robotic cadence, metallic voice artifacts, and a complete absence of natural breathing. The flat intonation and choppy transitions between words strongly indicate a synthetic text-to-speech generator.",
+      "what_checked": "Gemini listened for synthetic speech, cloned-voice artifacts, unnatural cadence, missing breathing, and generated-audio production patterns.",
+      "what_found": "The audio exhibits clear characteristics of AI-generated speech, including a highly robotic cadence, metallic voice artifacts, and a complete absence of natural breathing. The flat intonation and choppy transitions between words strongly indicate a synthetic text-to-speech generator.",
+      "why_it_matters": "When the dedicated wav2vec2 detector is missing or uncertain, Gemini gives the product a direct semantic audio review instead of stopping at an inconclusive model score.",
+      "caveat": "Gemini is an expert semantic judge, not a calibrated audio classifier. Treat this as one evidence signal in the trail.",
+      "observations": [
+        "0:00-0:03: The opening phrase has a highly robotic, metallic resonance and choppy cadence.",
+        "0:04-0:10: Complete lack of natural breathing or physiological pauses between sentences, with a flat, uniform pitch.",
+        "0:11-0:22: Pronounced phasey and metallic artifacts throughout the speech, typical of text-to-speech or voice cloning models."
+      ],
+      "metrics": {
+        "confidence_raw": 1.0,
+        "confidence_label": "High",
+        "inference_source": "gemini_semantic",
+        "provider": "gemini",
+        "model": "gemini-3.5-flash",
+        "fallback_used": false
+      },
+      "confidence": 1.0,
+      "supports": "ai_generated",
+      "notes": "Gemini semantic audio fallback.",
+      "visible": true,
+      "verdict_influence_percent": null
+    }
+  ]
+}

@@ -1,0 +1,23 @@
+AI-generated media is rapidly reaching the point where ordinary users can no longer distinguish fact from fiction. And the problem isn't only that synthetic content keeps getting better — it's that the methods used to detect it can become outdated just as fast.
+
+That is why we built ArgusAI. It is a forensic media investigation platform, not a classifier. Instead of a single black-box score, it works like a forensic auditor. It dissects content in ways that expose the fundamental limits of AI.
+
+And it does not just hand you a number. It shows you what every detector found. It investigates from several angles at once. Our own fine-tuned model. Provenance checks for the fingerprints AI tools leave behind. Mathematical analysis that catches construction too perfect to be real. Gemini, reasoning about physical inconsistencies. And a research agent that searches the web to see if the content has already been debunked.
+
+It is also careful. If it genuinely cannot tell, it says inconclusive instead of guessing. And you can question any verdict directly, to see exactly how it reached its conclusion.
+
+The same approach runs across audio and video. And this is the core idea. We do not chase surface looks. We target the deeper artifacts that come from how generators build content, not how it appears. No single signal is trusted on its own. Every verdict is built from multiple independent sources of evidence. And the system re-weights those signals as models evolve. So it adapts instead of going stale.
+
+<break time="1.0s" />
+
+But detecting media is only half the problem. As generators improve, a signal that is reliable today can quietly degrade tomorrow. So every verdict, and every human judgment of it, becomes evidence. Not about the media. About the system itself.
+
+The forensic pipeline investigates the media. A second agent, built on Google's Agent Builder, investigates the pipeline. It reads live telemetry from Arize Phoenix. Latency. Error rates. Cost. It combines that with human-confirmed outcomes in Firestore.
+
+<break time="1.0s" />
+
+Running it now. It ranks every detector by value for its cost, and checks for drift. And it acts. It finds a detector that is both unreliable and expensive. So it removes that detector from the verdict completely. And it writes that change to Firestore. This is the key. It is a decision the accuracy-only system could never make. Because the cost and operational signals live only in Arize Phoenix.
+
+And this is not just a dashboard. That weight is the exact value the verdict engine reads. The next investigation already trusts that detector less. And every step the agent took is a permanent Arize Phoenix trace. Fully auditable.
+
+It governs its own reliability over time. It uses Arize Phoenix not as a log, but as the evidence its agent acts on. So ArgusAI does not just analyze media. It investigates it, explains its reasoning, and continuously learns which evidence deserves trust.

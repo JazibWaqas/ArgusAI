@@ -12,6 +12,19 @@ const API_BASE = import.meta.env.VITE_API_BASE || "http://localhost:8000";
 const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD || "";
 const PHOENIX_FALLBACK_BASE = "https://argusai-phoenix-ddmxiumrdq-uc.a.run.app";
 
+// Start Cloud Run as soon as the site opens, without exposing infrastructure
+// state in the UI. All initial API reads share this one lightweight request so
+// a concurrency-1 cold backend is not hit by several requests at once.
+let backendWarmupPromise = null;
+function warmBackend() {
+  if (!backendWarmupPromise) {
+    backendWarmupPromise = fetch(`${API_BASE}/health`, { cache: "no-store" })
+      .then((res) => res.ok)
+      .catch(() => false);
+  }
+  return backendWarmupPromise;
+}
+
 function renderInlineMarkdown(text) {
   const parts = String(text || "").split(/(\*\*[^*]+\*\*)/g);
   return parts.map((part, idx) => {
@@ -1979,6 +1992,7 @@ export default function App() {
 
   const fileInputRef = useRef(null);
   const feedEndRef   = useRef(null);
+  const sessionRequestRef = useRef(null);
 
   // Cycle scan text while analyzing
   useEffect(() => {
@@ -1995,24 +2009,22 @@ export default function App() {
   }, [isSending]);
 
   const createFreshSession = useCallback(async () => {
-    let coldStartTimer = null;
-    try {
-      coldStartTimer = setTimeout(() => {
-        const localApi = API_BASE.includes("localhost") || API_BASE.includes("127.0.0.1");
-        setStatus((current) => current || (
-          localApi
-            ? "Connecting to local backend..."
-            : "Connecting to Google Cloud Run (waking up backend container)..."
-        ));
-      }, 3500);
+    if (sessionRequestRef.current) return sessionRequestRef.current;
+
+    const request = (async () => {
+      await warmBackend();
       const res = await fetch(`${API_BASE}/sessions`, { method: "POST" });
       if (!res.ok) throw new Error("session_create_failed");
       const data = await res.json();
       setSessionId(data.session_id);
-      setStatus("");
       return data.session_id;
+    })();
+
+    sessionRequestRef.current = request;
+    try {
+      return await request;
     } finally {
-      if (coldStartTimer) clearTimeout(coldStartTimer);
+      sessionRequestRef.current = null;
     }
   }, []);
 
@@ -2023,23 +2035,9 @@ export default function App() {
 
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      try {
-        await createFreshSession();
-      } catch {
-        if (!cancelled) {
-          setSessionError("Could not reach the API. Check backend and VITE_API_BASE.");
-          setStatus("");
-        }
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [createFreshSession]);
-
-  useEffect(() => {
-    let cancelled = false;
     const loadArizeHealth = async () => {
       try {
+        await warmBackend();
         const res = await fetch(`${API_BASE}/arize/health`);
         if (!res.ok) return;
         const data = await res.json();
@@ -2059,6 +2057,7 @@ export default function App() {
 
   const loadStats = useCallback(async () => {
     try {
+      await warmBackend();
       const res = await fetch(`${API_BASE}/stats`);
       if (!res.ok) return;
       const data = await res.json();
@@ -2092,6 +2091,11 @@ export default function App() {
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     // Audio has no visual preview — just store a blob URL for possible playback
     setPreviewUrl(URL.createObjectURL(file));
+
+    // Warm the scale-to-zero API while the visitor reviews their file and adds
+    // context. This is intentionally silent: infrastructure readiness should
+    // never block or replace the landing-page experience.
+    if (!sessionId) createFreshSession().catch(() => {});
   };
 
   const handleDrop = (e) => {
@@ -2198,11 +2202,7 @@ export default function App() {
       setContextText("");
       loadStats();
     } catch {
-      setStatus(
-        API_BASE.includes("localhost")
-          ? "Unable to reach the backend. For production, set VITE_API_BASE on Render and redeploy the static site."
-          : "Unable to reach the backend. If the API was asleep, wait and try again."
-      );
+      setStatus("The forensic engine could not start this investigation. Please try again in a moment.");
     } finally {
       setIsAnalyzing(false);
     }

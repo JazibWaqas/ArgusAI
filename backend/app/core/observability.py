@@ -50,6 +50,15 @@ def _init_tracer() -> Optional[Any]:
     if _tracer is not None or _tracing_error is not None:
         return _tracer
 
+    # phoenix.otel otherwise defaults to a localhost OTLP collector. On hosts
+    # without a Phoenix sidecar (for example the free Render deployment), its
+    # synchronous retries can add minutes to a single investigation. Tracing is
+    # optional and must be explicitly configured instead of silently targeting
+    # localhost.
+    if not (settings.phoenix_collector_endpoint or "").strip():
+        _tracing_error = "Phoenix collector not configured"
+        return None
+
     try:
         if settings.phoenix_project_name:
             os.environ.setdefault("PHOENIX_PROJECT_NAME", settings.phoenix_project_name)

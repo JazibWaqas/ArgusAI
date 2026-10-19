@@ -62,16 +62,20 @@ class LLMSettings:
         keys.extend(_split_gemini_keys(single))
         self.gemini_api_keys = _dedupe_keys([k for k in keys if k])
         self.gemini_api_key = self.gemini_api_keys[0] if self.gemini_api_keys else None
-        self.gemini_model = os.getenv("GEMINI_MODEL", "gemini-3-flash-preview")
+        # The rolling aliases keep routine model upgrades out of the codebase.
+        # A pinned stable fallback remains available if Google retires or
+        # temporarily breaks the alias. Deployments can still pin any role via
+        # environment variables when reproducibility matters more than freshness.
+        self.gemini_model = os.getenv("GEMINI_MODEL", "gemini-flash-latest")
         _vision = (os.getenv("GEMINI_VISION_MODEL") or "").strip()
         self.gemini_vision_model = _vision if _vision else self.gemini_model
         _ground = (os.getenv("GEMINI_GROUNDING_MODEL") or "").strip()
         self.gemini_grounding_model = _ground if _ground else self.gemini_model
-        self.gemini_fallback_model = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-2.5-flash")
+        self.gemini_fallback_model = os.getenv("GEMINI_FALLBACK_MODEL", "gemini-3.6-flash")
         self.osint_use_grounding = os.getenv("OSINT_USE_GROUNDING", "1") == "1"
         
         self.explanation_provider = os.getenv("LLM_EXPLANATION_PROVIDER", "gemini")
-        self.explanation_model = os.getenv("LLM_EXPLANATION_MODEL", self.gemini_model)
+        self.explanation_model = os.getenv("LLM_EXPLANATION_MODEL", "gemini-flash-lite-latest")
         self.explanation_max_tokens = int(os.getenv("LLM_EXPLANATION_MAX_TOKENS", "900"))
         self.explanation_timeout_seconds = float(os.getenv("LLM_EXPLANATION_TIMEOUT_SECONDS", "8"))
         self.vision_timeout_seconds = float(os.getenv("LLM_VISION_TIMEOUT_SECONDS", "20"))
@@ -89,6 +93,7 @@ class LLMSettings:
             "gemini_vision_model": self.gemini_vision_model,
             "gemini_grounding_model": self.gemini_grounding_model,
             "gemini_fallback_model": self.gemini_fallback_model,
+            "model_update_policy": "rolling_alias" if "latest" in self.gemini_model else "pinned",
             "osint_use_grounding": self.osint_use_grounding,
             "explanation_provider": self.explanation_provider,
             "explanation_model": self.explanation_model,

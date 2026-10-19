@@ -188,6 +188,28 @@ Important variables:
 
 Do not commit real secrets or admin credentials.
 
+Gemini model selection is environment-driven. The default policy uses Google's
+rolling `gemini-flash-latest` and `gemini-flash-lite-latest` aliases, with the
+pinned stable `gemini-3.6-flash` as the compatibility fallback. This allows
+routine model upgrades without repository edits. Pin explicit model IDs in the
+environment when exact reproducibility is required.
+
+## Operations and maintenance
+
+Run the maintenance check before deploying or when the public URL is unhealthy:
+
+```powershell
+.\ops\maintain.ps1
+```
+
+It verifies project billing, Cloud Run revision readiness, both public URL forms,
+and the deployed model policy. Cloud Run's free usage allowance still requires
+an active billing account. The script never enables billing or deploys by itself.
+
+GitHub Actions validates backend syntax and the production frontend build on
+each push and pull request. A daily scheduled check probes the public frontend
+and backend health endpoint, while Dependabot proposes weekly dependency updates.
+
 ## Validation
 
 Run before deploy or submission:

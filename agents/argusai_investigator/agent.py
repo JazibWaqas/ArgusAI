@@ -85,7 +85,7 @@ detector, explicitly state the multiplier, detector id, and why the change is bo
 
 root_agent = Agent(
     name="argusai_investigator",
-    model=os.getenv("ADK_GEMINI_MODEL", os.getenv("GEMINI_MODEL", "gemini-3.5-flash")),
+    model=os.getenv("ADK_GEMINI_MODEL", os.getenv("GEMINI_MODEL", "gemini-flash-latest")),
     description="ArgusAI forensic investigator and self-governing reliability agent.",
     instruction=INSTRUCTION,
     tools=[

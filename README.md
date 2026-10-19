@@ -82,6 +82,12 @@ Cloud services:
 - Phoenix Cloud Run: `argusai-phoenix`
 - Firebase project: `argusai-8d9fe`
 
+Render deployment uses a static frontend and a memory-conscious Python backend.
+The free backend intentionally omits local Torch/Transformers weights and falls
+back to Gemini plus the hosted audio detector. This keeps the public demo usable
+without weakening the evidence trail: unavailable local detectors are reported
+as unavailable rather than producing fabricated evidence.
+
 ## Key API Endpoints
 
 - `GET /health`

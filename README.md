@@ -8,9 +8,9 @@ ArgusAI is not a single-score classifier. It builds an evidence trail: detector 
 
 ## Live Demo
 
-- Frontend: https://argusai-frontend-1007754127412.us-central1.run.app
-- Backend API: https://argusai-backend-1007754127412.us-central1.run.app
-- Backend health: https://argusai-backend-1007754127412.us-central1.run.app/health
+- Frontend: https://argusai-frontend.onrender.com
+- Backend API: https://argusai-backend-qvrp.onrender.com
+- Backend health: https://argusai-backend-qvrp.onrender.com/health
 - Demo video: https://www.youtube.com/watch?v=c8wluI09DSE
 
 The public frontend supports normal user flows: upload media, run a forensic investigation, inspect evidence cards, ask follow-up questions, and export a report.
@@ -77,6 +77,8 @@ Persistent state:
 
 Cloud services:
 
+- Primary frontend: Render Static Site `argusai-frontend`
+- Primary backend: Render Web Service `argusai-backend`
 - Backend Cloud Run: `argusai-backend`
 - Frontend Cloud Run: `argusai-frontend`
 - Phoenix Cloud Run: `argusai-phoenix`
@@ -208,9 +210,8 @@ Run the maintenance check before deploying or when the public URL is unhealthy:
 .\ops\maintain.ps1
 ```
 
-It verifies project billing, Cloud Run revision readiness, both public URL forms,
-and the deployed model policy. Cloud Run's free usage allowance still requires
-an active billing account. The script never enables billing or deploys by itself.
+It verifies the Render frontend, backend readiness, Gemini availability, and the
+deployed model policy. The script is read-only and never deploys by itself.
 
 GitHub Actions validates backend syntax and the production frontend build on
 each push and pull request. A daily scheduled check probes the public frontend

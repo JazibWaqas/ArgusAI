@@ -42,9 +42,9 @@ jobs:
         run: |
           set -euo pipefail
           curl --fail --show-error --silent --retry 2 --retry-delay 10 --max-time 120 \
-            https://argusai-frontend-1007754127412.us-central1.run.app/ >/dev/null
+            https://argusai-frontend.onrender.com/ >/dev/null
           curl --fail --show-error --silent --retry 2 --retry-delay 10 --max-time 120 \
-            https://argusai-backend-1007754127412.us-central1.run.app/health >/tmp/health.json
+            https://argusai-backend-qvrp.onrender.com/health >/tmp/health.json
           python - <<'PY'
           import json
           from pathlib import Path
